@@ -32,18 +32,24 @@ fn sdf_test() -> Result<()> {
 }
 
 fn tree_test(tree: Quadtree) -> Result<()> {
-  let mut img = BitMapBackend::new("out.png", (1080, 1080));
+  let mut img = BitMapBackend::new("out.png", (1025, 1025));
 
   tree.traverse(&mut move |depth, tree| {
     let rect = tree.boundary;
     let color =
       if tree.data { RGBColor(255, 32, 32) } else { RGBColor(32, 32, 255) }
-        .mix(1.0 / 1.5f64.powf(depth as f64));
+        .mix(if tree.data {
+          //0.060466176 / 0.6f64.powf(depth as f64)
+          4.0 / 1.5f64.powf(depth as f64)
+        } else {
+          1.0 / 1.5f64.powf(depth as f64)
+        }
+    );
     img.draw_rect(
       ((rect.center.x - rect.size / 2.0) as i32, (rect.center.y - rect.size / 2.0) as i32),
       ((rect.center.x + rect.size / 2.0) as i32, (rect.center.y + rect.size / 2.0) as i32),
       &color,
-      false
+      tree.data
       ).ok()?;
     Ok(())
   })

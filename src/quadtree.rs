@@ -131,14 +131,14 @@ impl Quadtree {
 
   pub fn insert_sdf(&mut self, sdf: &impl Fn(Point) -> f32) {
     let distance = sdf(self.boundary.center);
-    if distance.abs() < self.boundary.size {
+    if distance.abs() < self.boundary.size / 2.0 * std::f32::consts::SQRT_2 {
       if let Some(children) = self.subdivide() {
         for child in children.iter_mut() {
           child.insert_sdf(sdf)
         }
       }
     }
-    self.data = distance < 0.0;
+    self.data = self.data || self.children.is_none() && distance < 0.0;
   }
 
   pub fn print_stats(&self) {
@@ -161,11 +161,18 @@ impl Quadtree {
 }
 
 pub fn exec() -> Result<Quadtree> {
-  let mut tree = Quadtree::new(1079.0, Point { x: 539.5, y: 539.5 }, 10);
+  let mut tree = Quadtree::new(1024.0, Point { x: 512.0, y: 512.0 }, 10);
+
   tree.insert_sdf(&|sample|
     sdf::circle(sample, sdf::Circle {
-      xy: Point { x: 539.5, y: 539.5 },
-      r: 269.75
+      xy: Point { x: 512.0 - 128.0, y: 512.0 },
+      r: 128.0
+    })
+  );
+  tree.insert_sdf(&|sample|
+    sdf::circle(sample, sdf::Circle {
+      xy: Point { x: 512.0 + 128.0, y: 512.0 },
+      r: 128.0
     })
   );
 
