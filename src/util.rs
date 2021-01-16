@@ -39,14 +39,15 @@ macro_rules! profile(
 );
 
 impl Point {
+  /// vector length
   pub fn length(self) -> f32 {
     (self.x * self.x + self.y * self.y).sqrt()
   }
-
+  /// vector offset
   pub fn translate(self, offset: Self) -> Self {
     self - offset
   }
-
+  /// determine whether a point is inside a rectangle
   pub fn in_rect(self, rect: crate::quadtree::Rect) -> bool {
     let (l, t, r, b) = (
       rect.center.x - rect.size / 2.0,

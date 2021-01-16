@@ -10,6 +10,15 @@ pub struct Rect {
   pub size: f32,
 }
 
+/// Example usage:
+/// ```
+/// let tree = Quadtree::new(512.0, Point { x: 256.0, y: 256.0 }, 9);
+/// tree.insert_sdf(&|sample|
+///   sdf::circle(sample, sdf::Circle {
+///     xy: Point { x: 256.0, y: 256.0 },
+///     r: 128.0
+/// }));
+/// ```
 pub struct Quadtree {
   pub rect: Rect,
   pub children: Option<Box<[Quadtree; 4]>>,
@@ -31,6 +40,7 @@ impl Debug for Quadtree {
 
 #[repr(u8)]
 #[derive(Debug)]
+/// 4 sections of a rectangle
 enum Quadtrant {
   TL = 0,
   TR = 1,
@@ -46,6 +56,7 @@ const CENTER_MAT: [[f32; 2]; 4] = [
 ];
 
 impl Quadtrant {
+  /// determine the section of a rectangle, containing `pt`
   pub fn get(rect: Rect, pt: Point) -> Option<Self> {
     let center: [Point; 4] = (0..4).into_iter()
       .map(|i| Point {
@@ -105,7 +116,8 @@ impl Quadtree {
     &mut self.children
   }
 
-  pub fn subdivide_deep(&mut self, depth: u8) {
+  /// subdivide recursively until reaching `depth`
+  fn subdivide_deep(&mut self, depth: u8) {
     if depth == 0 { return; }
     if let Some(children) = self.subdivide() {
       for child in children.iter_mut() {
@@ -114,12 +126,14 @@ impl Quadtree {
     }
   }
 
+  /// apply `f` to every node of the tree
   pub fn traverse(&self, f: &mut impl FnMut(u8, &Self) -> Result<()>) -> Result<()> {
     f(self.depth, self)?;
     self.traverse_a(f)?;
     Ok(())
   }
 
+  #[doc(hidden)]
   fn traverse_a(&self, f: &mut impl FnMut(u8, &Self) -> Result<()>) -> Result<()> {
     if let Some(children) = &self.children {
       for child in children.iter() {
@@ -132,6 +146,7 @@ impl Quadtree {
     Ok(())
   }
 
+  #[doc(hidden)]
   fn nodes_planar(&mut self) -> Vec<&mut Self> {
     let mut result = vec![];
     if let Some(children) = self.children.as_deref_mut() {
@@ -142,6 +157,7 @@ impl Quadtree {
     result
   }
 
+  /// return all nodes, containing `pt`
   pub fn path_to_pt(&self, pt: Point) -> Vec<&Self> {
     let mut result = vec![self];
     match self.children.as_deref() {
@@ -155,6 +171,7 @@ impl Quadtree {
     result
   }
 
+  /// find empty node. **too deterministic** for visualizations
   pub fn find_empty_pt(&mut self) -> Option<Point> {
     let mut result = None;
     self.traverse(&mut |_, node| {
@@ -167,6 +184,8 @@ impl Quadtree {
     result
   }
 
+  /// subdivides the tree recursively on an edge of a shape, provided by `sdf` (signed distance function).
+  /// marks nodes that are inside of a shape (`self.data`)
   pub fn insert_sdf(&mut self, sdf: &impl Fn(Point) -> f32) {
     if self.data { return; }
     let distance = sdf(self.rect.center);
@@ -188,6 +207,7 @@ impl Quadtree {
     }
   }
 
+  /// prints amount of total nodes in the tree, max subdivisions, and memory usage
   pub fn print_stats(&self) {
     let mut total_nodes = 0u64;
     let mut max_depth = 0u8;
@@ -207,17 +227,8 @@ impl Quadtree {
   }
 }
 
-pub fn exec() -> Result<Quadtree> {
-  let mut tree = Quadtree::new(1024.0, Point { x: 512.0, y: 512.0 }, 10);
-
-  tree.insert_sdf(&|sample|
-    sdf::circle(sample, sdf::Circle {
-      xy: Point { x: 512.0, y: 512.0 },
-      r: 256.0
-    })
-  );
-
-  /* use rayon::prelude::*;
+/*pub fn exec() -> Result<Quadtree> {
+  use rayon::prelude::*;
   tree.subdivide_deep(1);
   tree
     .nodes_planar()
@@ -229,17 +240,17 @@ pub fn exec() -> Result<Quadtree> {
           r: 256.0
         })
       )
-    );*/
+    );
 
-  /*tree.insert_sdf(&|sample|
+  tree.insert_sdf(&|sample|
     sdf::circle(sample, sdf::Circle {
       xy: Point { x: 512.0, y: 512.0 },
       r: 256.0
     })
-  );*/
+  );
 
   //let mut rng = rand_pcg::Pcg32::seed_from_u64(0);
-  /*for _ in 0..10 {
+  for _ in 0..10 {
     let x: f32 = rng.gen_range(0.0..511.0);
     let y: f32 = rng.gen_range(0.0..511.0);
     let nearest = tree
@@ -251,6 +262,6 @@ pub fn exec() -> Result<Quadtree> {
       println!("([{}, {}], {})", x, y, dist);
       tree.add([x, y], Circle { x, y, r: dist })?;
     }
-  }*/
+  }
   Ok(tree)
-}
+}*/

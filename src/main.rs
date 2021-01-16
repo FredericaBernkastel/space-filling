@@ -22,6 +22,7 @@ fn main() -> Result<()> {
     .unwrap()
 }
 
+/// single circle in the middle, draw tree layout
 fn basic_test() -> Result<()> {
   let mut tree = Quadtree::new(
     WORLD_SIZE,
@@ -41,6 +42,7 @@ fn basic_test() -> Result<()> {
   Ok(())
 }
 
+/// 10'000 random non-intersecting circles
 fn insert_10000() -> Result<()> {
   use rand::prelude::*;
   use rand_pcg::Pcg64;

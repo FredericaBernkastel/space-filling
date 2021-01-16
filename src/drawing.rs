@@ -6,8 +6,10 @@ use crate::{
   quadtree::Quadtree,
 };
 
+/// final image resolution is `WORLD_SIZE` * `IMG_SCALE`
 const IMG_SCALE: f32 = 4.0;
 
+/// draw a set of circles
 pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
   let img = BitMapBackend::new(
     &path,
@@ -38,6 +40,7 @@ fn sdf_test() -> Result<()> {
   Ok(())
 }
 
+/// draw the quadree layout
 pub fn tree_test(tree: Quadtree, path: String) -> Result<()> {
   let mut img = BitMapBackend::new(
     &path,
