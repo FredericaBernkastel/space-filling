@@ -12,6 +12,7 @@ image = { version = "0.23.12", default_features = false, features = ["png"] }
 plotters = { version = "^0.3.0", default_features = false, features = ["bitmap_backend", "bitmap_encoder"] }
 rand = "0.8.2"
 rand_pcg = "0.3.0"
+rayon = "1.5.0"
 open = "1.4.0"
 
 [profile.release]

@@ -1,26 +1,75 @@
 use crate::lib::{Result, Point};
+use std::convert::TryInto;
+use std::fmt::{Debug, Formatter};
 
 pub mod sdf;
 
 #[derive(Copy, Clone, Debug)]
-pub struct AABB {
+pub struct Rect {
   pub center: Point,
   pub size: f32,
 }
 
-#[derive(Debug)]
 pub struct Quadtree {
-  pub boundary: AABB,
+  pub rect: Rect,
   pub children: Option<Box<[Quadtree; 4]>>,
   pub depth: u8,
   pub max_depth: u8,
   pub data: bool
 }
 
+impl Debug for Quadtree {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Quadtree")
+      .field("rect", &self.rect)
+      .field("children", &if self.children.is_some() { "Some(...)" } else { "None" })
+      .field("depth", &self.depth)
+      .field("data", &self.data)
+      .finish()
+  }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+enum Quadtrant {
+  TL = 0,
+  TR = 1,
+  BL = 2,
+  BR = 3
+}
+
+const CENTER_MAT: [[f32; 2]; 4] = [
+  [-1.0, -1.0],
+  [ 1.0, -1.0],
+  [-1.0,  1.0],
+  [ 1.0,  1.0]
+];
+
+impl Quadtrant {
+  pub fn get(rect: Rect, pt: Point) -> Option<Self> {
+    let center: [Point; 4] = (0..4).into_iter()
+      .map(|i| Point {
+        x: rect.size * CENTER_MAT[i][0] / 4.0 + rect.center.x,
+        y: rect.size * CENTER_MAT[i][1] / 4.0 + rect.center.y,
+      })
+      .collect::<Vec<_>>()
+      .try_into()
+      .unwrap();
+    let size = rect.size / 2.0;
+    match pt {
+      z if z.in_rect(Rect { center: center[Quadtrant::TL as usize], size }) => Some(Self::TL),
+      z if z.in_rect(Rect { center: center[Quadtrant::TR as usize], size }) => Some(Self::TR),
+      z if z.in_rect(Rect { center: center[Quadtrant::BL as usize], size }) => Some(Self::BL),
+      z if z.in_rect(Rect { center: center[Quadtrant::BR as usize], size }) => Some(Self::BR),
+      _ => None
+    }
+  }
+}
+
 impl Quadtree {
   pub fn new(size: f32, center: Point, max_depth: u8) -> Self {
     Quadtree {
-      boundary: AABB {
+      rect: Rect {
         center,
         size,
       },
@@ -33,61 +82,25 @@ impl Quadtree {
 
   fn subdivide(&mut self) -> &mut Option<Box<[Quadtree; 4]>> {
     if self.depth < self.max_depth && self.children.is_none() {
-      let aabb = self.boundary;
-      self.children = Some(box [
-        Quadtree {
-          boundary: AABB {
+      let rect = self.rect;
+      let children: [Quadtree; 4] = (0..4).into_iter()
+        .map(|i| Quadtree {
+          rect: Rect {
             center: Point {
-              x: -aabb.size / 4.0 + aabb.center.x,
-              y: -aabb.size / 4.0 + aabb.center.y,
+              x: rect.size * CENTER_MAT[i][0] / 4.0 + rect.center.x,
+              y: rect.size * CENTER_MAT[i][1] / 4.0 + rect.center.y,
             },
-            size: aabb.size / 2.0,
+            size: rect.size / 2.0,
           },
           children: None,
           depth: self.depth + 1,
           max_depth: self.max_depth,
           data: false
-        },
-        Quadtree {
-          boundary: AABB {
-            center: Point {
-              x: aabb.size / 4.0 + aabb.center.x,
-              y: -aabb.size / 4.0 + aabb.center.y,
-            },
-            size: aabb.size / 2.0,
-          },
-          children: None,
-          depth: self.depth + 1,
-          max_depth: self.max_depth,
-          data: false
-        },
-        Quadtree {
-          boundary: AABB {
-            center: Point {
-              x: -aabb.size / 4.0 + aabb.center.x,
-              y: aabb.size / 4.0 + aabb.center.y,
-            },
-            size: aabb.size / 2.0,
-          },
-          children: None,
-          depth: self.depth + 1,
-          max_depth: self.max_depth,
-          data: false
-        },
-        Quadtree {
-          boundary: AABB {
-            center: Point {
-              x: aabb.size / 4.0 + aabb.center.x,
-              y: aabb.size / 4.0 + aabb.center.y,
-            },
-            size: aabb.size / 2.0,
-          },
-          children: None,
-          depth: self.depth + 1,
-          max_depth: self.max_depth,
-          data: false
-        }
-      ]);
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+      self.children = Some(box children);
     }
     &mut self.children
   }
@@ -129,16 +142,50 @@ impl Quadtree {
     result
   }
 
+  pub fn path_to_pt(&self, pt: Point) -> Vec<&Self> {
+    let mut result = vec![self];
+    match self.children.as_deref() {
+      Some(children) => {
+        if let Some(quad) = Quadtrant::get(self.rect, pt) {
+          result.append(&mut children[quad as usize].path_to_pt(pt));
+        }
+      },
+      None => ()
+    }
+    result
+  }
+
+  pub fn find_empty_pt(&mut self) -> Option<Point> {
+    let mut result = None;
+    self.traverse(&mut |_, node| {
+      if node.children.is_none() && !node.data {
+        result = Some(node.rect.center);
+        error_chain::bail!("");
+      }
+      Ok(())
+    }).ok();
+    result
+  }
+
   pub fn insert_sdf(&mut self, sdf: &impl Fn(Point) -> f32) {
-    let distance = sdf(self.boundary.center);
-    if distance.abs() < self.boundary.size / 2.0 * std::f32::consts::SQRT_2 {
+    if self.data { return; }
+    let distance = sdf(self.rect.center);
+    if distance.abs() < self.rect.size / 2.0 * std::f32::consts::SQRT_2 {
       if let Some(children) = self.subdivide() {
         for child in children.iter_mut() {
-          child.insert_sdf(sdf)
+          child.insert_sdf(sdf);
         }
       }
     }
-    self.data = self.data || self.children.is_none() && distance < 0.0;
+
+    match (self.children.as_deref_mut(), distance < 0.0) {
+      (None, true) => self.data = true,
+      // for intersecting cases, slower
+      /*(Some(children), true) => for child in children {
+        child.insert_sdf(sdf);
+      }*/
+      _ => ()
+    }
   }
 
   pub fn print_stats(&self) {
@@ -165,14 +212,8 @@ pub fn exec() -> Result<Quadtree> {
 
   tree.insert_sdf(&|sample|
     sdf::circle(sample, sdf::Circle {
-      xy: Point { x: 512.0 - 128.0, y: 512.0 },
-      r: 128.0
-    })
-  );
-  tree.insert_sdf(&|sample|
-    sdf::circle(sample, sdf::Circle {
-      xy: Point { x: 512.0 + 128.0, y: 512.0 },
-      r: 128.0
+      xy: Point { x: 512.0, y: 512.0 },
+      r: 256.0
     })
   );
 

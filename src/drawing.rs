@@ -1,19 +1,26 @@
 use plotters::prelude::*;
 use crate::{
-  lib::{Result},
+  WORLD_SIZE,
+  quadtree::{sdf},
+  lib::{Point, Result},
   quadtree::Quadtree,
 };
-use crate::quadtree::{sdf};
-use crate::lib::Point;
 
-pub fn exec(tree: Quadtree) -> Result<()> {
-  tree_test(tree)?;
-  open::that("out.png")?;
-  /*img.draw(&Circle::new(
-    (entry.x as i32, entry.y as i32),
-    entry.r as u32,
-    Into::<ShapeStyle>::into(&WHITE).filled()
-  ))?;*/
+const IMG_SCALE: f32 = 4.0;
+
+pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
+  let img = BitMapBackend::new(
+    &path,
+    ((WORLD_SIZE * IMG_SCALE) as u32, (WORLD_SIZE * IMG_SCALE) as u32)
+  ).into_drawing_area();
+
+  for circle in data {
+    img.draw(&Circle::new(
+      ((circle.xy.x * IMG_SCALE) as i32, (circle.xy.y * IMG_SCALE) as i32),
+      (circle.r * IMG_SCALE) as u32,
+      Into::<ShapeStyle>::into(&RGBColor(0xe0, 0xe0, 0xe0)).filled()
+    )).ok()?;
+  }
   Ok(())
 }
 
@@ -31,23 +38,30 @@ fn sdf_test() -> Result<()> {
   Ok(())
 }
 
-fn tree_test(tree: Quadtree) -> Result<()> {
-  let mut img = BitMapBackend::new("out.png", (1025, 1025));
+pub fn tree_test(tree: Quadtree, path: String) -> Result<()> {
+  let mut img = BitMapBackend::new(
+    &path,
+    ((WORLD_SIZE * IMG_SCALE) as u32 + 1, (WORLD_SIZE * IMG_SCALE) as u32 + 1)
+  );
 
   tree.traverse(&mut move |depth, tree| {
-    let rect = tree.boundary;
+    let rect = tree.rect;
     let color =
-      if tree.data { RGBColor(255, 32, 32) } else { RGBColor(32, 32, 255) }
+      if tree.data { RGBColor(255, (255.0 / 1.5f32.powf((10 - depth) as f32)) as u8, 0) } else { RGBColor(32, 32, 255) }
         .mix(if tree.data {
-          //0.060466176 / 0.6f64.powf(depth as f64)
-          4.0 / 1.5f64.powf(depth as f64)
+          0.0282475249 / 0.7f64.powf(depth as f64)
+          //4.0 / 1.5f64.powf(depth as f64)
         } else {
-          1.0 / 1.5f64.powf(depth as f64)
+          1.0 / 1.1f64.powf(depth as f64)
         }
     );
     img.draw_rect(
-      ((rect.center.x - rect.size / 2.0) as i32, (rect.center.y - rect.size / 2.0) as i32),
-      ((rect.center.x + rect.size / 2.0) as i32, (rect.center.y + rect.size / 2.0) as i32),
+      (
+        ((rect.center.x - rect.size / 2.0) * IMG_SCALE) as i32,
+        ((rect.center.y - rect.size / 2.0) * IMG_SCALE) as i32),
+      (
+        ((rect.center.x + rect.size / 2.0) * IMG_SCALE) as i32,
+        ((rect.center.y + rect.size / 2.0) * IMG_SCALE) as i32),
       &color,
       tree.data
       ).ok()?;

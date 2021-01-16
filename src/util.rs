@@ -29,6 +29,15 @@ impl std::ops::Sub for Point {
   }
 }
 
+#[macro_export]
+macro_rules! profile(
+  ($title: literal, $stmt: stmt) => {{
+    let t0 = std::time::Instant::now();
+    $stmt
+    println!("{} profile: {}ms", $title, t0.elapsed().as_millis());
+  }}
+);
+
 impl Point {
   pub fn length(self) -> f32 {
     (self.x * self.x + self.y * self.y).sqrt()
@@ -36,6 +45,17 @@ impl Point {
 
   pub fn translate(self, offset: Self) -> Self {
     self - offset
+  }
+
+  pub fn in_rect(self, rect: crate::quadtree::Rect) -> bool {
+    let (l, t, r, b) = (
+      rect.center.x - rect.size / 2.0,
+      rect.center.y - rect.size / 2.0,
+      rect.center.x + rect.size / 2.0,
+      rect.center.y + rect.size / 2.0
+    );
+    self.x >= l && self.x < r &&
+    self.y >= t && self.y < b
   }
 }
 
