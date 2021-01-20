@@ -1,13 +1,14 @@
 use plotters::prelude::*;
 use crate::{
   WORLD_SIZE,
+  IMG_SCALE,
   quadtree::{sdf},
   lib::{Point, Result},
   quadtree::Quadtree,
 };
-
-/// final image resolution is `WORLD_SIZE` * `IMG_SCALE`
-const IMG_SCALE: f32 = 4.0;
+use walkdir::{WalkDir, DirEntry};
+use image::{GenericImageView, DynamicImage, ImageBuffer, Rgba};
+use image::imageops::FilterType;
 
 /// draw a set of circles
 pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
@@ -26,6 +27,102 @@ pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
   Ok(())
 }
 
+pub fn exec_rng(data: Vec<sdf::Circle>, path: String, rng: &mut (impl rand::Rng + ?Sized)) -> Result<()> {
+  let img = BitMapBackend::new(
+    &path,
+    ((WORLD_SIZE * IMG_SCALE) as u32, (WORLD_SIZE * IMG_SCALE) as u32)
+  ).into_drawing_area();
+
+  for circle in data {
+    let color = rng.gen_range(0x90..=0xff);
+    img.draw(&Circle::new(
+      ((circle.xy.x * IMG_SCALE) as i32, (circle.xy.y * IMG_SCALE) as i32),
+      (circle.r * IMG_SCALE) as u32,
+      Into::<ShapeStyle>::into(&RGBColor(color, color, color)).filled()
+    )).ok()?;
+  }
+  Ok(())
+}
+
+pub fn exec_img(circles: Vec<sdf::Circle>, path: String) -> Result<()> {
+
+  fn image_proc(circle: sdf::Circle, img_path: String) -> DynamicImage {
+    let mut img =
+      image::DynamicImage::ImageRgba8(
+        image::open(img_path)
+          .unwrap_or(
+            image::DynamicImage::ImageRgba8(
+              image::ImageBuffer::from_fn(1, 1, |_, _|
+                image::Rgba([0xff, 0xff, 0xff, 0]))
+            )
+          )
+          .into_rgba8());
+    let (w, h) = img.dimensions();
+    let size = w.min(h);
+    let radii = circle.r * IMG_SCALE;
+    img = img
+      .crop_imm((w - size) / 2, (h - size) / 2, size, size)
+      .resize_exact((radii * 2.0).ceil() as u32, (radii * 2.0).ceil() as u32, FilterType::Triangle);
+    img
+      .as_mut_rgba8().unwrap()
+      .enumerate_pixels_mut()
+      .for_each( |(x, y, pixel)| {
+        let sdf = sdf::circle(
+          Point {x: x as f32, y: y as f32},
+          sdf::Circle { xy: Point {x: radii, y: radii}, r: radii }
+        ) / radii;
+        let alpha = (1.0 - (1.0 - sdf.abs()).powf(radii / 2.0)) * ((sdf < 0.0) as u8 as f32);
+        pixel.0[3] = (alpha * 255.0) as u8;
+      });
+    img
+  }
+
+  let files = WalkDir::new("H:\\Temp\\export\\bottle-fairy")
+    .sort_by(|a, b| {
+      let [a, b] = [a, b].map(|x| x.file_name().to_string_lossy().to_string());
+      lexical_sort::natural_cmp(&b, &a) // reversed
+    })
+    .into_iter()
+    .filter_map(std::result::Result::ok)
+    .map(|file: DirEntry| file.path().to_owned())
+    .filter(|file| {
+      let f = file.to_string_lossy();
+      f.ends_with(".png") || f.ends_with(".jpg")
+    });
+
+  let mut framebuffer: ImageBuffer<Rgba<u8>, _> =
+    ImageBuffer::new((WORLD_SIZE * IMG_SCALE) as u32, (WORLD_SIZE * IMG_SCALE) as u32);
+
+  circles
+    .into_iter()
+    .zip(files)
+    .map(|(circle, file)| (
+      circle,
+      file.file_name()
+        .map(|x| x.to_string_lossy())
+        .unwrap_or("?".into())
+        .to_string(),
+      image_proc(circle, file.to_string_lossy().into()))
+    )
+    .enumerate()
+    .for_each(|(i, (circle, filename, img))| {
+      let circle = sdf::Circle {
+        xy: Point { x: circle.xy.x * IMG_SCALE, y: circle.xy.y * IMG_SCALE },
+        r: circle.r * IMG_SCALE
+      };
+      let coord = { sdf::Rect {
+        center: Point { x: circle.xy.x, y: circle.xy.y },
+        size: circle.r * 2.0
+      }}.into(): sdf::TLBR;
+      println!("#{}: {:?} -> \"{}\"", i, circle, filename);
+      image::imageops::overlay(&mut framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32)
+    });
+
+  framebuffer.save(path)?;
+
+  Ok(())
+}
+
 fn sdf_test() -> Result<()> {
   image::ImageBuffer::from_fn(512, 512, |x, y| {
     if sdf::circle(Point { x: x as f32, y: y as f32 }, sdf::Circle {
@@ -41,33 +138,35 @@ fn sdf_test() -> Result<()> {
 }
 
 /// draw the quadree layout
-pub fn tree_test(tree: Quadtree, path: String) -> Result<()> {
+pub fn tree_test<'a>(tree: &Quadtree, path: &'a str) -> Result<BitMapBackend<'a>> {
   let mut img = BitMapBackend::new(
-    &path,
+    path,
     ((WORLD_SIZE * IMG_SCALE) as u32 + 1, (WORLD_SIZE * IMG_SCALE) as u32 + 1)
   );
 
-  tree.traverse(&mut move |depth, tree| {
-    let rect = tree.rect;
+  tree.traverse(&mut |tree| {
+    let (rect, depth) : (sdf::TLBR, _) = (tree.rect.into(), tree.depth);
     let color =
-      if tree.data { RGBColor(255, (255.0 / 1.5f32.powf((10 - depth) as f32)) as u8, 0) } else { RGBColor(32, 32, 255) }
+      if tree.data { RGBColor(255, (255.0 / 1.5f32.powf((11 - depth) as f32)) as u8, 0) } else { RGBColor(32, 32, 255) }
         .mix(if tree.data {
           0.0282475249 / 0.7f64.powf(depth as f64)
           //4.0 / 1.5f64.powf(depth as f64)
         } else {
-          1.0 / 1.1f64.powf(depth as f64)
+          1.0 / 1.4f64.powf(depth as f64)
         }
     );
     img.draw_rect(
       (
-        ((rect.center.x - rect.size / 2.0) * IMG_SCALE) as i32,
-        ((rect.center.y - rect.size / 2.0) * IMG_SCALE) as i32),
+        (rect.tl.x * IMG_SCALE) as i32,
+        (rect.tl.y * IMG_SCALE) as i32),
       (
-        ((rect.center.x + rect.size / 2.0) * IMG_SCALE) as i32,
-        ((rect.center.y + rect.size / 2.0) * IMG_SCALE) as i32),
+        (rect.br.x * IMG_SCALE) as i32,
+        (rect.br.y * IMG_SCALE) as i32),
       &color,
       tree.data
       ).ok()?;
     Ok(())
-  })
+  })?;
+
+  Ok(img)
 }

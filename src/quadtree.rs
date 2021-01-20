@@ -1,14 +1,10 @@
 use crate::lib::{Result, Point};
 use std::convert::TryInto;
 use std::fmt::{Debug, Formatter};
+use sdf::Rect;
+use crate::quadtree::sdf::TLBR;
 
 pub mod sdf;
-
-#[derive(Copy, Clone, Debug)]
-pub struct Rect {
-  pub center: Point,
-  pub size: f32,
-}
 
 /// Example usage:
 /// ```
@@ -39,9 +35,9 @@ impl Debug for Quadtree {
 }
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 /// 4 sections of a rectangle
-enum Quadtrant {
+pub enum Quadtrant {
   TL = 0,
   TR = 1,
   BL = 2,
@@ -68,11 +64,41 @@ impl Quadtrant {
       .unwrap();
     let size = rect.size / 2.0;
     match pt {
-      z if z.in_rect(Rect { center: center[Quadtrant::TL as usize], size }) => Some(Self::TL),
-      z if z.in_rect(Rect { center: center[Quadtrant::TR as usize], size }) => Some(Self::TR),
-      z if z.in_rect(Rect { center: center[Quadtrant::BL as usize], size }) => Some(Self::BL),
-      z if z.in_rect(Rect { center: center[Quadtrant::BR as usize], size }) => Some(Self::BR),
+      z if z.in_rect(Rect { center: center[Quadtrant::TL as usize], size }.into()) => Some(Self::TL),
+      z if z.in_rect(Rect { center: center[Quadtrant::TR as usize], size }.into()) => Some(Self::TR),
+      z if z.in_rect(Rect { center: center[Quadtrant::BL as usize], size }.into()) => Some(Self::BL),
+      z if z.in_rect(Rect { center: center[Quadtrant::BR as usize], size }.into()) => Some(Self::BR),
       _ => None
+    }
+  }
+
+  pub fn inv(self: Self) -> Self {
+    use Quadtrant::*;
+    match self {
+      TL => BR,
+      BR => TL,
+      TR => BL,
+      BL => TR,
+    }
+  }
+
+  pub fn mirror_x(self: Self) -> Self {
+    use Quadtrant::*;
+    match self {
+      TL => TR,
+      TR => TL,
+      BL => BR,
+      BR => BL,
+    }
+  }
+
+  pub fn mirror_y(self: Self) -> Self {
+    use Quadtrant::*;
+    match self {
+      TL => BL,
+      TR => BR,
+      BL => TL,
+      BR => TR,
     }
   }
 }
@@ -91,7 +117,7 @@ impl Quadtree {
     }
   }
 
-  fn subdivide(&mut self) -> &mut Option<Box<[Quadtree; 4]>> {
+  pub fn subdivide(&mut self) -> &mut Option<Box<[Quadtree; 4]>> {
     if self.depth < self.max_depth && self.children.is_none() {
       let rect = self.rect;
       let children: [Quadtree; 4] = (0..4).into_iter()
@@ -127,20 +153,51 @@ impl Quadtree {
   }
 
   /// apply `f` to every node of the tree
-  pub fn traverse(&self, f: &mut impl FnMut(u8, &Self) -> Result<()>) -> Result<()> {
-    f(self.depth, self)?;
+  pub fn traverse(&self, f: &mut impl FnMut(&Self) -> Result<()>) -> Result<()> {
+    f(self)?;
     self.traverse_a(f)?;
     Ok(())
   }
 
   #[doc(hidden)]
-  fn traverse_a(&self, f: &mut impl FnMut(u8, &Self) -> Result<()>) -> Result<()> {
+  fn traverse_a(&self, f: &mut impl FnMut(&Self) -> Result<()>) -> Result<()> {
     if let Some(children) = &self.children {
       for child in children.iter() {
-        f(child.depth, child)?;
+        f(child)?;
       }
       for child in children.iter() {
         child.traverse_a(f)?;
+      }
+    }
+    Ok(())
+  }
+
+  /// apply `f` to every node of the tree, choosing next child randomly
+  pub fn traverse_undeterministic(
+    &self,
+    f: &mut impl FnMut(&Self) -> Result<()>,
+    rng: &mut (impl rand::Rng + ?Sized)
+  ) -> Result<()> {
+    f(self)?;
+    self.traverse_undeterministic_a(f, rng)?;
+    Ok(())
+  }
+
+  #[doc(hidden)]
+  fn traverse_undeterministic_a(
+    &self,
+    f: &mut impl FnMut(&Self) -> Result<()>,
+    rng: &mut (impl rand::Rng + ?Sized)
+  ) -> Result<()> {
+    use rand::prelude::*;
+    if let Some(children) = &self.children {
+      let mut ord: Vec<usize> = (0..4).collect();
+      ord.shuffle(rng);
+      for i in ord.iter() {
+        f(&children[*i])?;
+      }
+      for i in ord.iter() {
+        children[*i].traverse_undeterministic_a(f, rng)?;
       }
     }
     Ok(())
@@ -171,35 +228,54 @@ impl Quadtree {
     result
   }
 
-  /// find empty node. **too deterministic** for visualizations
-  pub fn find_empty_pt(&mut self) -> Option<Point> {
-    let mut result = None;
-    self.traverse(&mut |_, node| {
-      if node.children.is_none() && !node.data {
-        result = Some(node.rect.center);
+  /// find empty node, having max size. **too deterministic** for visualizations
+  pub fn find_empty_pt(&self, rng: &mut (impl rand::Rng + ?Sized)) -> Option<Point> {
+    let mut candidate: Option<(Point, u8)> = None;
+    let mut count = 0;
+    self.traverse_undeterministic(&mut |node| {
+      if count > 8192 && candidate.is_some() {
         error_chain::bail!("");
       }
+      if node.children.is_none() && !node.data {
+        match &mut candidate {
+          Some((_, depth))
+            if *depth > node.depth
+               => candidate = Some((node.rect.center, node.depth)),
+          None => candidate = Some((node.rect.center, node.depth)),
+          _ => ()
+        }
+        //result = Some(node.rect.center);
+        //error_chain::bail!("");
+      };
+      count += 1;
       Ok(())
-    }).ok();
-    result
+    }, rng).ok();
+
+    candidate
+      .map(|(point, _)| point)
   }
 
   /// subdivides the tree recursively on an edge of a shape, provided by `sdf` (signed distance function).
   /// marks nodes that are inside of a shape (`self.data`)
-  pub fn insert_sdf(&mut self, sdf: &impl Fn(Point) -> f32) {
+  pub fn insert_sdf(
+    &mut self,
+    sdf: &impl Fn(Point) -> f32,
+    poly: impl sdf::Intersect<Rhs = sdf::Rect> + Copy)
+  {
     if self.data { return; }
     let distance = sdf(self.rect.center);
-    if distance.abs() < self.rect.size / 2.0 * std::f32::consts::SQRT_2 {
-      if let Some(children) = self.subdivide() {
-        for child in children.iter_mut() {
-          child.insert_sdf(sdf);
-        }
-      }
+    if poly.intersects(self.rect) &&
+      distance.abs() < self.rect.size / 2.0 * std::f32::consts::SQRT_2 {
+      self
+        .subdivide()
+        .as_deref_mut()
+        .map(|children| children
+          .iter_mut()
+          .for_each(|child| child.insert_sdf(sdf, poly)));
     }
-
     match (self.children.as_deref_mut(), distance < 0.0) {
       (None, true) => self.data = true,
-      // for intersecting cases, slower
+      // for intersecting areas, slower
       /*(Some(children), true) => for child in children {
         child.insert_sdf(sdf);
       }*/
@@ -211,7 +287,7 @@ impl Quadtree {
   pub fn print_stats(&self) {
     let mut total_nodes = 0u64;
     let mut max_depth = 0u8;
-    self.traverse(&mut |_, node| {
+    self.traverse(&mut |node| {
       total_nodes += 1;
       max_depth = (max_depth).max(node.depth);
       Ok(())
@@ -225,43 +301,112 @@ impl Quadtree {
       std::mem::size_of::<Quadtree>() * total_nodes as usize
     );
   }
-}
 
-/*pub fn exec() -> Result<Quadtree> {
-  use rayon::prelude::*;
-  tree.subdivide_deep(1);
-  tree
-    .nodes_planar()
-    .par_iter_mut()
-    .for_each(|tree|
-      tree.insert_sdf(&|sample|
-        sdf::circle(sample, sdf::Circle {
-          xy: Point { x: 512.0, y: 512.0 },
-          r: 256.0
-        })
-      )
-    );
-
-  tree.insert_sdf(&|sample|
-    sdf::circle(sample, sdf::Circle {
-      xy: Point { x: 512.0, y: 512.0 },
-      r: 256.0
-    })
-  );
-
-  //let mut rng = rand_pcg::Pcg32::seed_from_u64(0);
-  for _ in 0..10 {
-    let x: f32 = rng.gen_range(0.0..511.0);
-    let y: f32 = rng.gen_range(0.0..511.0);
-    let nearest = tree
-      .nearest(&[x, y], 1, &squared_euclidean)?
-      .get(0)
-      .cloned()?;
-    let dist = nearest.0.sqrt() - nearest.1.r;
-    if dist > 0.0 {
-      println!("([{}, {}], {})", x, y, dist);
-      tree.add([x, y], Circle { x, y, r: dist })?;
+  const fn vertex(rect: sdf::TLBR, quad: Quadtrant) -> Point {
+    match quad {
+      Quadtrant::TL => rect.tl,
+      Quadtrant::BR => rect.br,
+      Quadtrant::BL => Point { x: rect.tl.x, y: rect.br.y },
+      Quadtrant::TR => Point { x: rect.br.x, y: rect.tl.y },
     }
   }
-  Ok(tree)
-}*/
+
+  pub fn find_max_free_area_attempt_6(&self, seed: Point) -> Result<sdf::TLBR> {
+
+    fn walk(root: &Quadtree, dir: Quadtrant, dir_orig: Quadtrant) -> Point {
+      match root.children.as_deref() {
+        Some(children) => {
+          if children[dir as usize].children.is_some() {
+            walk(&children[dir as usize], dir, dir_orig)
+          } else if children[dir.inv() as usize].children.is_some() {
+            walk(&children[dir.inv() as usize], dir.inv(), dir_orig)
+          } else if children[dir.mirror_x() as usize].children.is_some() {
+            walk(&children[dir.mirror_x() as usize], dir.mirror_x(), dir_orig)
+          } else if children[dir.mirror_y() as usize].children.is_some() {
+            walk(&children[dir.mirror_y() as usize], dir.mirror_y(), dir_orig)
+          } else {
+            Quadtree::vertex(root.rect.into(), dir_orig)
+          }
+        },
+        None => Quadtree::vertex(root.rect.into(), dir_orig)
+      }
+    }
+
+    let path = self.path_to_pt(seed);
+
+    let mut max_rect: sdf::TLBR = path.last()?.rect.into();
+
+    if let Some(root) = path.get(path.len() - 2) {
+      use Quadtrant::*;
+      let mat = [TL, TR, BL, BR]
+        .map(|quad| {
+          walk(&root.children.as_ref().unwrap()[quad as usize], quad.inv(), quad)
+        });
+
+      println!("{:#?}", mat);
+
+      max_rect = sdf::TLBR {
+        tl: Point {
+          x: mat[TL as usize].x.max(mat[BL as usize].x),
+          //x: mat[TL as usize].x,
+          y: mat[TL as usize].y.max(mat[TR as usize].y),
+          //y: mat[TL as usize].y
+        },
+        br: Point {
+          //x: max_rect.br.x,
+          x: mat[TR as usize].x.min(mat[BR as usize].x),
+          //y: max_rect.br.y,
+          y: mat[BL as usize].y.min(mat[BR as usize].y)
+        }
+      };
+      println!("{:?}", max_rect);
+    }
+
+    Ok(max_rect)
+  }
+
+  pub fn find_max_free_area_attempt_7(&self, seed: Point) -> Result<(sdf::TLBR, Vec<Point>)> {
+    fn walk(tree: &Quadtree, domain: TLBR, seed: Point, mut nearest: Point, mut nearest_dist: f32) -> (Point, f32) {
+      if let Some(children) = tree.children.as_deref() {
+        for child in children.iter() {
+          let dist = (child.rect.center - seed).length();
+          if child.data && dist < nearest_dist && child.rect.center.in_rect(domain) {
+            nearest = child.rect.center;
+            nearest_dist = dist;
+          }
+          let (point, dist) = walk(child, domain, seed, nearest, nearest_dist);
+          if dist < nearest_dist {
+            nearest = point;
+            nearest_dist = dist;
+          }
+        }
+      }
+      (nearest, nearest_dist)
+    };
+
+    let children = self.children.as_deref()?;
+
+    use Quadtrant::*;
+
+    let domain_tl: TLBR = children[TL as usize].rect.into();
+    let domain_tr: TLBR = children[TR as usize].rect.into();
+    let domain_bl: TLBR = children[BL as usize].rect.into();
+    let domain_br: TLBR = children[BR as usize].rect.into();
+
+    let tl = walk(self, domain_tl, seed, domain_tl.tl, (seed - domain_tl.tl).length()).0;
+    let tr = walk(self, domain_tr, seed, domain_tr.tr(), (seed - domain_tr.tr()).length()).0;
+    let bl = walk(self, domain_bl, seed, domain_bl.bl(), (seed - domain_bl.bl()).length()).0;
+    let br = walk(self, domain_br, seed, domain_br.br, (seed - domain_br.br).length()).0;
+
+    Ok((TLBR {
+      tl: Point {
+        x: tl.x.max(bl.x),
+        y: tl.y.max(tr.y),
+      },
+      br: Point {
+        x: tr.x.min(br.x),
+        y: bl.y.min(br.y)
+      }
+    }, vec![tl, tr, bl, br]))
+  }
+}

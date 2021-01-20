@@ -48,15 +48,9 @@ impl Point {
     self - offset
   }
   /// determine whether a point is inside a rectangle
-  pub fn in_rect(self, rect: crate::quadtree::Rect) -> bool {
-    let (l, t, r, b) = (
-      rect.center.x - rect.size / 2.0,
-      rect.center.y - rect.size / 2.0,
-      rect.center.x + rect.size / 2.0,
-      rect.center.y + rect.size / 2.0
-    );
-    self.x >= l && self.x < r &&
-    self.y >= t && self.y < b
+  pub fn in_rect(self, rect: crate::quadtree::sdf::TLBR) -> bool {
+    self.x >= rect.tl.x && self.x < rect.br.x &&
+    self.y >= rect.tl.y && self.y < rect.br.y
   }
 }
 
