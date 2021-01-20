@@ -6,7 +6,6 @@ use crate::{
   lib::{Point, Result},
   quadtree::Quadtree,
 };
-use walkdir::{WalkDir, DirEntry};
 use image::{GenericImageView, DynamicImage, ImageBuffer, Rgba};
 use image::imageops::FilterType;
 
@@ -44,7 +43,10 @@ pub fn exec_rng(data: Vec<sdf::Circle>, path: String, rng: &mut (impl rand::Rng 
   Ok(())
 }
 
-pub fn exec_img(circles: Vec<sdf::Circle>, path: String) -> Result<()> {
+pub fn exec_img(
+  data: impl Iterator<Item = (sdf::Circle, std::path::PathBuf)>,
+  framebuffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>
+) -> Result<()> {
 
   fn image_proc(circle: sdf::Circle, img_path: String) -> DynamicImage {
     let mut img =
@@ -77,26 +79,7 @@ pub fn exec_img(circles: Vec<sdf::Circle>, path: String) -> Result<()> {
     img
   }
 
-  let files = WalkDir::new("H:\\Temp\\export\\bottle-fairy")
-    .sort_by(|a, b| {
-      let [a, b] = [a, b].map(|x| x.file_name().to_string_lossy().to_string());
-      lexical_sort::natural_cmp(&b, &a) // reversed
-    })
-    .into_iter()
-    .filter_map(std::result::Result::ok)
-    .map(|file: DirEntry| file.path().to_owned())
-    .filter(|file| {
-      let f = file.to_string_lossy();
-      f.ends_with(".png") || f.ends_with(".jpg")
-    });
-
-  let mut framebuffer: ImageBuffer<Rgba<u8>, _> =
-    ImageBuffer::new((WORLD_SIZE * IMG_SCALE) as u32, (WORLD_SIZE * IMG_SCALE) as u32);
-
-  circles
-    .into_iter()
-    .zip(files)
-    .map(|(circle, file)| (
+  data.map(|(circle, file)| (
       circle,
       file.file_name()
         .map(|x| x.to_string_lossy())
@@ -115,10 +98,8 @@ pub fn exec_img(circles: Vec<sdf::Circle>, path: String) -> Result<()> {
         size: circle.r * 2.0
       }}.into(): sdf::TLBR;
       println!("#{}: {:?} -> \"{}\"", i, circle, filename);
-      image::imageops::overlay(&mut framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32)
+      image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32)
     });
-
-  framebuffer.save(path)?;
 
   Ok(())
 }
