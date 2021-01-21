@@ -8,6 +8,7 @@ use crate::{
 };
 use image::{GenericImageView, DynamicImage, ImageBuffer, Rgba};
 use image::imageops::FilterType;
+use crate::quadtree::sdf::SDF;
 
 /// draw a set of circles
 pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
@@ -20,7 +21,7 @@ pub fn exec(data: Vec<sdf::Circle>, path: String) -> Result<()> {
     img.draw(&Circle::new(
       ((circle.xy.x * IMG_SCALE) as i32, (circle.xy.y * IMG_SCALE) as i32),
       (circle.r * IMG_SCALE) as u32,
-      Into::<ShapeStyle>::into(&RGBColor(0xe0, 0xe0, 0xe0)).filled()
+      Into::<ShapeStyle>::into(&RGBColor(0xff, 0xff, 0xff)).filled()
     )).ok()?;
   }
   Ok(())
@@ -69,10 +70,9 @@ pub fn exec_img(
       .as_mut_rgba8().unwrap()
       .enumerate_pixels_mut()
       .for_each( |(x, y, pixel)| {
-        let sdf = sdf::circle(
-          Point {x: x as f32, y: y as f32},
-          sdf::Circle { xy: Point {x: radii, y: radii}, r: radii }
-        ) / radii;
+        let sdf = sdf::Circle {
+          xy: Point {x: radii, y: radii}, r: radii
+        }.sdf( Point {x: x as f32, y: y as f32}) / radii;
         let alpha = (1.0 - (1.0 - sdf.abs()).powf(radii / 2.0)) * ((sdf < 0.0) as u8 as f32);
         pixel.0[3] = (alpha * 255.0) as u8;
       });
@@ -104,17 +104,21 @@ pub fn exec_img(
   Ok(())
 }
 
-fn sdf_test() -> Result<()> {
+pub fn sdf_test() -> Result<()> {
   image::ImageBuffer::from_fn(512, 512, |x, y| {
-    if sdf::circle(Point { x: x as f32, y: y as f32 }, sdf::Circle {
-      xy: Point { x: 256.0, y: 256.0 },
-      r: 128.0,
-    }) > 0.0 {
+    let rect = sdf::Rect { center: Point { x: 256.0, y: 256.0 }, size: 64.0 };
+    let sample = Point { x: x as f32, y: y as f32 };
+
+    /*if c1.sdf(sample) > 0.0 {
       image::Luma([0u8])
     } else {
       image::Luma([255u8])
-    }
+    }*/
+    image::Luma([
+      rect.sdf(sample).abs() as u8
+    ])
   }).save("out.png")?;
+  open::that("out.png")?;
   Ok(())
 }
 
@@ -133,7 +137,7 @@ pub fn tree_test<'a>(tree: &Quadtree, path: &'a str) -> Result<BitMapBackend<'a>
           0.0282475249 / 0.7f64.powf(depth as f64)
           //4.0 / 1.5f64.powf(depth as f64)
         } else {
-          1.0 / 1.4f64.powf(depth as f64)
+          1.0 / 1.6f64.powf(depth as f64)
         }
     );
     img.draw_rect(

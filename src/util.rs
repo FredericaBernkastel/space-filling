@@ -59,6 +59,7 @@ error_chain! {
     IoError(std::io::Error);
     FromUtf8Error(std::string::FromUtf8Error);
     ImageError(image::error::ImageError);
+    EXRError(exr::error::Error);
   }
 
   errors {

@@ -19,6 +19,34 @@ pub struct TLBR {
   pub br: Point
 }
 
+pub trait SDF {
+  fn sdf(self, pixel: Point) -> f32;
+}
+
+impl SDF for Circle {
+  fn sdf(self, pixel: Point) -> f32 {
+    pixel.translate(self.xy).length() - self.r
+  }
+}
+
+impl SDF for Rect {
+  fn sdf(self, pixel: Point) -> f32 {
+    let pixel = pixel.translate(self.center);
+    let component_wise_edge_distance = Point {
+      x: pixel.x.abs() - self.size / 2.0,
+      y: pixel.y.abs() - self.size / 2.0
+    };
+    let outside_distance = Point {
+      x: component_wise_edge_distance.x.max(0.0),
+      y: component_wise_edge_distance.y.max(0.0)
+    }.length();
+    let inside_distance = component_wise_edge_distance.x
+      .max(component_wise_edge_distance.y)
+      .min(0.0);
+    outside_distance + inside_distance
+  }
+}
+
 impl TLBR {
   pub fn bl(self) -> Point {
     Point { x: self.tl.x, y: self.br.y }
@@ -79,9 +107,4 @@ impl Intersect for Circle {
   fn intersects(self, r: Self::Rhs) -> bool {
     r.intersects(self)
   }
-}
-
-/// Circle SDF
-pub fn circle(sample: Point, circle: Circle) -> f32 {
-  sample.translate(circle.xy).length() - circle.r
 }

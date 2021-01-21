@@ -8,20 +8,24 @@ use std::{thread};
 use lib::{Result, Point};
 use quadtree::{sdf, Quadtree};
 use std::convert::TryInto;
+use crate::quadtree::sdf::{SDF, Circle};
 
 mod quadtree;
 mod drawing;
 #[path = "util.rs"]
 mod lib;
 
-const WORLD_SIZE: f32 = 512.0;
+const WORLD_SIZE: f32 = 1024.0;
 /// final image resolution is `WORLD_SIZE` * `IMG_SCALE`
 const IMG_SCALE: f32 = 8.0;
 
 fn main() -> Result<()> {
   thread::Builder::new()
     .spawn(||{
-      img_test_parallel()
+      img_test_parallel(
+        sdf_argmax_bruteforce_test()?
+      )?;
+      Ok(())
     })?
     .join()
     .unwrap()
@@ -39,12 +43,17 @@ fn basic_test() -> Result<()> {
         xy: Point { x: WORLD_SIZE / 2.0, y: WORLD_SIZE / 2.0 },
         r: WORLD_SIZE / 4.0 - 1e-4
     };
-    tree.insert_sdf(&|sample| sdf::circle(sample, c), c);
+    tree.insert_sdf(&|sample| c.sdf(sample), c);
   });
   tree.print_stats();
   profile!("draw", { drawing::tree_test(&tree, "out.png".into())?; });
   open::that("out.png")?;
   Ok(())
+}
+
+/// 1'000'000 random non-intersecting circles
+fn test_1000000() -> Result<()> {
+  unimplemented!()
 }
 
 fn img_test() -> Result<()> {
@@ -60,7 +69,7 @@ fn img_test() -> Result<()> {
 
   let mut circles = vec![];
   profile!("tree", {
-    for _ in 0..6153 {
+    for _ in 0..10 {
       //println!("{}", i);
       let rect = loop {
         let pt = Point { x: rng.gen_range(0.0..WORLD_SIZE), y: rng.gen_range(0.0..WORLD_SIZE)};
@@ -81,7 +90,7 @@ fn img_test() -> Result<()> {
         },
         r
       };
-      tree.insert_sdf(&|sample| sdf::circle(sample, c), c);
+      tree.insert_sdf(&|sample| c.sdf(sample), c);
       circles.push(c);
     };
   });
@@ -91,47 +100,12 @@ fn img_test() -> Result<()> {
   Ok(())
 }
 
-fn img_test_parallel() -> Result<()> {
-  use rand::prelude::*;
+fn img_test_parallel(circles: Vec<Circle>) -> Result<()> {
   use image::ImageBuffer;
   use walkdir::{WalkDir, DirEntry};
+  use rand::prelude::*;
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-
-  let mut tree = Quadtree::new(
-    WORLD_SIZE,
-    Point { x: WORLD_SIZE / 2.0, y: WORLD_SIZE / 2.0 },
-    9
-  );
-
-  let mut circles = vec![];
-  profile!("tree", {
-    for _ in 0..6153 {
-      //println!("{}", i);
-      let rect = loop {
-        let pt = Point { x: rng.gen_range(0.0..WORLD_SIZE), y: rng.gen_range(0.0..WORLD_SIZE)};
-        //let pt = match tree.find_empty_pt(&mut rng)
-        let path = tree.path_to_pt(pt);
-        let node = path.last()?;
-        if !node.data {
-          break node.rect;
-        }
-      };
-      //let rect = node.last()?.rect;
-      let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * rect.size / (3.0 + 1e-3)).max(0.5 - 1e-3);
-      let delta = rect.size / 2.0 - r;
-      let c = sdf::Circle {
-        xy: Point {
-          x: rng.gen_range(rect.center.x - delta..rect.center.x + delta),
-          y: rng.gen_range(rect.center.y - delta..rect.center.y + delta)
-        },
-        r
-      };
-      tree.insert_sdf(&|sample| sdf::circle(sample, c), c);
-      circles.push(c);
-    };
-  });
-  tree.print_stats();
 
   let files = WalkDir::new("H:\\Temp\\export\\bottle-fairy")
     .sort_by(|a, b| {
@@ -186,6 +160,8 @@ fn img_test_parallel() -> Result<()> {
       image::imageops::overlay(&mut final_buffer, buffer, 0, 0)
     );
 
+  std::io::stdin().read_line(&mut String::new())?;
+
   final_buffer.save("out_parallel.png")?;
   open::that("out_parallel.png")?;
 
@@ -204,7 +180,7 @@ fn expand_area_test() -> Result<()> {
     xy: Point { x: WORLD_SIZE / 2.0, y: WORLD_SIZE / 2.0 },
     r: WORLD_SIZE / 4.0 - 1e-4
   };
-  tree.insert_sdf(&|sample| sdf::circle(sample, big_circle), big_circle);
+  tree.insert_sdf(&|sample| big_circle.sdf(sample), big_circle);
 
   /*let c = sdf::Circle {
     xy: Point { x: 165.0, y: 858.5 },
@@ -216,7 +192,7 @@ fn expand_area_test() -> Result<()> {
   let img = drawing::tree_test(&tree, &path)?;
   drop(img);
 
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 
   for frame in 1..10 {
     //for _ in 1..16 {
@@ -232,7 +208,7 @@ fn expand_area_test() -> Result<()> {
           xy: rect.center,
           r: rect.size / 2.0 - 1e-4
         };
-        tree.insert_sdf(&|sample| sdf::circle(sample, c), c);
+        tree.insert_sdf(&|sample| c.sdf(sample), c);
 
         use plotters::prelude::*;
         let path = format!("anim/#{:04}.png", frame);
@@ -265,4 +241,111 @@ fn expand_area_test() -> Result<()> {
   }
   open::that("anim\\#0001.png")?;
   Ok(())
+}
+
+fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
+  use rayon::prelude::*;
+  use rand::prelude::*;
+
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+
+  let mut circles: Vec<Circle> = vec![];
+
+  let mut max_dist_map = image::ImageBuffer::<image::Luma<f32>, _>::from_fn(
+    WORLD_SIZE as u32,
+    WORLD_SIZE as u32,
+    |_, _| {
+      image::Luma([f32::MAX / 2.0])
+    });
+
+  // insert boundary rect SDF
+  max_dist_map
+    .as_mut()
+    .par_iter_mut()
+    .enumerate()
+    .for_each(|(i, pixel)| {
+      let (x, y) = ((i % WORLD_SIZE as usize) as f32, (i / WORLD_SIZE as usize) as f32);
+      let size = WORLD_SIZE;
+      let sdf = sdf::Rect { center: Point {x: size / 2.0, y: size / 2.0}, size }
+        .sdf(Point { x, y } );
+      *pixel = pixel.min(sdf * -1.0)
+    });
+
+  profile! ("argmax", {
+    'argmax: for i in 0..6153 {
+      #[derive(Copy, Clone, Debug)]
+      struct Argmax {
+        distance: f32,
+        point: Point
+      }
+      let argmax: Argmax = max_dist_map
+        .as_ref()
+        .par_iter()
+        .enumerate()
+        .map(|(i, distance)| {
+          let (x, y) = ((i % WORLD_SIZE as usize) as f32, (i / WORLD_SIZE as usize) as f32);
+          Argmax { distance: *distance, point: Point { x, y } }
+        })
+        .reduce(
+          || Argmax { distance: -f32::MAX / 2.0, point: Point { x: 0.0, y: 0.0 } }, // identity element
+          |a, b| if a.distance < b.distance { b } else { a }
+        );
+
+      const MIN_DISTANCE: f32 = 1.2;
+
+      if argmax.distance < MIN_DISTANCE {
+        println!("#{}: reached minimum, breaking: {:?}", i, argmax);
+        break 'argmax;
+      }
+
+      let circle = {
+        use std::f32::consts::PI;
+
+        let angle = rng.gen_range::<f32, _>(-PI..=PI);
+        let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * argmax.distance)
+          .min(WORLD_SIZE / 6.0)
+          .max(MIN_DISTANCE);
+        let delta = argmax.distance - r;
+        let offset = Point { x: delta * angle.sin(), y: delta * angle.cos() };
+
+        sdf::Circle {
+          xy: argmax.point.translate(offset), r
+        }
+      };
+
+      if i % 100 == 0 { println!("argmax #{}", i); }
+
+      max_dist_map
+        .as_mut()
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, pixel)| {
+          let (x, y) = ((i % WORLD_SIZE as usize) as f32, (i / WORLD_SIZE as usize) as f32);
+          let sdf = circle.sdf(Point { x: x as f32, y: y as f32 });
+          *pixel = pixel.min(sdf)
+        });
+      circles.push(circle);
+
+      /*exr::image::write::write_rgb_f32_file(
+        format!("anim/#{:04}.exr", i),
+        (WORLD_SIZE as usize, WORLD_SIZE as usize),
+        |x, y| {
+          let color = max_dist_map.get_pixel(x as u32, y as u32).0[0] / 128.0;
+          let mut color = if color > 0.0 {
+            (color.abs(), color.abs(), color.abs())
+          } else {
+            (color.abs(), 1.0 / 32.0, 1.0 / 32.0)
+          };
+          if {
+            sdf::Circle { xy: argmax.point, r: 8.0 }
+              .sdf(Point { x: x as f32, y: y as f32 }) < 0.0
+          } {
+            color = (0.0, 0.0, 1.0)
+          }
+          color
+        })?;*/
+    };
+  });
+
+  Ok(circles)
 }
