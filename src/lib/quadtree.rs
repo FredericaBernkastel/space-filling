@@ -1,10 +1,10 @@
-use crate::lib::{Result, Point};
 use std::convert::TryInto;
 use std::fmt::{Debug, Formatter};
-use sdf::Rect;
-use crate::quadtree::sdf::TLBR;
-
-pub mod sdf;
+use crate::{
+  *,
+  error::Result,
+  geometry::{Point, TLBR, Rect},
+};
 
 /// Example usage:
 /// ```
@@ -16,7 +16,7 @@ pub mod sdf;
 /// }));
 /// ```
 pub struct Quadtree {
-  pub rect: Rect,
+  pub rect: Rect<f32>,
   pub children: Option<Box<[Quadtree; 4]>>,
   pub depth: u8,
   pub max_depth: u8,
@@ -53,8 +53,8 @@ const CENTER_MAT: [[f32; 2]; 4] = [
 
 impl Quadtrant {
   /// determine the section of a rectangle, containing `pt`
-  pub fn get(rect: Rect, pt: Point) -> Option<Self> {
-    let center: [Point; 4] = (0..4).into_iter()
+  pub fn get(rect: Rect<f32>, pt: Point<f32>) -> Option<Self> {
+    let center: [Point<f32>; 4] = (0..4).into_iter()
       .map(|i| Point {
         x: rect.size * CENTER_MAT[i][0] / 4.0 + rect.center.x,
         y: rect.size * CENTER_MAT[i][1] / 4.0 + rect.center.y,
@@ -104,7 +104,7 @@ impl Quadtrant {
 }
 
 impl Quadtree {
-  pub fn new(size: f32, center: Point, max_depth: u8) -> Self {
+  pub fn new(size: f32, center: Point<f32>, max_depth: u8) -> Self {
     Quadtree {
       rect: Rect {
         center,
@@ -215,7 +215,7 @@ impl Quadtree {
   }
 
   /// return all nodes, containing `pt`
-  pub fn path_to_pt(&self, pt: Point) -> Vec<&Self> {
+  pub fn path_to_pt(&self, pt: Point<f32>) -> Vec<&Self> {
     let mut result = vec![self];
     match self.children.as_deref() {
       Some(children) => {
@@ -229,8 +229,8 @@ impl Quadtree {
   }
 
   /// find empty node, having max size. **too deterministic** for visualizations
-  pub fn find_empty_pt(&self, rng: &mut (impl rand::Rng + ?Sized)) -> Option<Point> {
-    let mut candidate: Option<(Point, u8)> = None;
+  pub fn find_empty_pt(&self, rng: &mut (impl rand::Rng + ?Sized)) -> Option<Point<f32>> {
+    let mut candidate: Option<(Point<f32>, u8)> = None;
     let mut count = 0;
     self.traverse_undeterministic(&mut |node| {
       if count > 8192 && candidate.is_some() {
@@ -259,8 +259,8 @@ impl Quadtree {
   /// marks nodes that are inside of a shape (`self.data`)
   pub fn insert_sdf(
     &mut self,
-    sdf: &impl Fn(Point) -> f32,
-    poly: impl sdf::Intersect<Rhs = sdf::Rect> + Copy)
+    sdf: &impl Fn(Point<f32>) -> f32,
+    poly: impl geometry::Intersect<Rhs = Rect<f32>> + Copy)
   {
     if self.data { return; }
     let distance = sdf(self.rect.center);
@@ -302,7 +302,7 @@ impl Quadtree {
     );
   }
 
-  const fn vertex(rect: sdf::TLBR, quad: Quadtrant) -> Point {
+  const fn vertex(rect: TLBR<f32>, quad: Quadtrant) -> Point<f32> {
     match quad {
       Quadtrant::TL => rect.tl,
       Quadtrant::BR => rect.br,
@@ -311,9 +311,9 @@ impl Quadtree {
     }
   }
 
-  pub fn find_max_free_area_attempt_6(&self, seed: Point) -> Result<sdf::TLBR> {
+  pub fn find_max_free_area_attempt_6(&self, seed: Point<f32>) -> Result<TLBR<f32>> {
 
-    fn walk(root: &Quadtree, dir: Quadtrant, dir_orig: Quadtrant) -> Point {
+    fn walk(root: &Quadtree, dir: Quadtrant, dir_orig: Quadtrant) -> Point<f32> {
       match root.children.as_deref() {
         Some(children) => {
           if children[dir as usize].children.is_some() {
@@ -334,7 +334,7 @@ impl Quadtree {
 
     let path = self.path_to_pt(seed);
 
-    let mut max_rect: sdf::TLBR = path.last()?.rect.into();
+    let mut max_rect: TLBR<f32> = path.last()?.rect.into();
 
     if let Some(root) = path.get(path.len() - 2) {
       use Quadtrant::*;
@@ -345,7 +345,7 @@ impl Quadtree {
 
       println!("{:#?}", mat);
 
-      max_rect = sdf::TLBR {
+      max_rect = TLBR {
         tl: Point {
           x: mat[TL as usize].x.max(mat[BL as usize].x),
           //x: mat[TL as usize].x,
@@ -365,8 +365,8 @@ impl Quadtree {
     Ok(max_rect)
   }
 
-  pub fn find_max_free_area_attempt_7(&self, seed: Point) -> Result<(sdf::TLBR, Vec<Point>)> {
-    fn walk(tree: &Quadtree, domain: TLBR, seed: Point, mut nearest: Point, mut nearest_dist: f32) -> (Point, f32) {
+  pub fn find_max_free_area_attempt_7(&self, seed: Point<f32>) -> Result<(TLBR<f32>, Vec<Point<f32>>)> {
+    fn walk(tree: &Quadtree, domain: TLBR<f32>, seed: Point<f32>, mut nearest: Point<f32>, mut nearest_dist: f32) -> (Point<f32>, f32) {
       if let Some(children) = tree.children.as_deref() {
         for child in children.iter() {
           let dist = (child.rect.center - seed).length();
@@ -388,10 +388,10 @@ impl Quadtree {
 
     use Quadtrant::*;
 
-    let domain_tl: TLBR = children[TL as usize].rect.into();
-    let domain_tr: TLBR = children[TR as usize].rect.into();
-    let domain_bl: TLBR = children[BL as usize].rect.into();
-    let domain_br: TLBR = children[BR as usize].rect.into();
+    let domain_tl: TLBR<f32> = children[TL as usize].rect.into();
+    let domain_tr: TLBR<f32> = children[TR as usize].rect.into();
+    let domain_bl: TLBR<f32> = children[BL as usize].rect.into();
+    let domain_br: TLBR<f32> = children[BR as usize].rect.into();
 
     let tl = walk(self, domain_tl, seed, domain_tl.tl, (seed - domain_tl.tl).length()).0;
     let tr = walk(self, domain_tr, seed, domain_tr.tr(), (seed - domain_tr.tr()).length()).0;
