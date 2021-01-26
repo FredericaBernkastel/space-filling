@@ -2,12 +2,14 @@
 #![feature(type_ascription)]
 #![feature(try_trait)]
 #![feature(array_map)]
+#![feature(associated_type_defaults)]
 #![allow(dead_code)]
 
 pub mod error;
 pub mod quadtree;
 pub mod sdf;
 pub mod argmax;
+pub mod gpu;
 pub mod drawing;
 pub mod geometry;
 

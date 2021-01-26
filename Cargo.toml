@@ -24,6 +24,7 @@ float-cmp = "0.8.0"
 walkdir = "2.3.1"
 lexical-sort = "0.3.1"
 exr = "1.0.0"
+ocl = "0.19.3"
 
 [profile.release]
 lto = true

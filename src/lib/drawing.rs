@@ -132,6 +132,7 @@ pub fn exec_img_parallel(
   // will distribute the load between threads [statistically] evenly
   draw_data.shuffle(&mut rng);
 
+  let num_threads = num_threads.min(draw_data.len());
 
   let draw_data_chunks = draw_data
     .chunks((draw_data.len() as f32 / num_threads as f32).ceil() as usize)
@@ -190,7 +191,7 @@ pub fn sdf_test() -> Result<()> {
 }
 
 /// draw the quadree layout
-pub fn tree_test<'a>(path: &'a str, tree: &Quadtree, resolution: Point<u32>) -> Result<BitMapBackend<'a>> {
+pub fn tree_display<'a, T: >(path: &'a str, tree: &Quadtree<T>, resolution: Point<u32>) -> Result<BitMapBackend<'a>> {
   let mut img = BitMapBackend::new(
     path,
     (resolution.x + 1, resolution.y + 1)
@@ -199,14 +200,18 @@ pub fn tree_test<'a>(path: &'a str, tree: &Quadtree, resolution: Point<u32>) -> 
   let scale = tree.rect.size;
 
   tree.traverse(&mut |tree| {
-    let (rect, depth) : (TLBR<f32>, _) = (tree.rect.into(), tree.depth);
+    let rect: TLBR<f32> = tree.rect.into();
     let color =
-      if tree.data { RGBColor(255, (255.0 / 1.5f32.powf((11 - depth) as f32)) as u8, 0) } else { RGBColor(32, 32, 255) }
-        .mix(if tree.data {
-          0.0282475249 / 0.7f64.powf(depth as f64)
+      if tree.is_inside {
+        RGBColor(255, (255.0 / 1.5f32.powf((tree.max_depth - tree.depth) as f32)) as u8, 0)
+      } else {
+        RGBColor(32, 32, 255)
+      }
+        .mix(if tree.is_inside {
+          0.0282475249 / 0.7f64.powf(tree.depth as f64)
           //4.0 / 1.5f64.powf(depth as f64)
         } else {
-          1.0 / 1.6f64.powf(depth as f64)
+          1.0 / 1.6f64.powf(tree.depth as f64)
         }
     );
     let rect = TLBR {
@@ -217,8 +222,56 @@ pub fn tree_test<'a>(path: &'a str, tree: &Quadtree, resolution: Point<u32>) -> 
       (rect.tl.x as i32, rect.tl.y as i32),
       (rect.br.x as i32, rect.br.y as i32),
       &color,
-      tree.data
+      tree.is_inside
       ).ok()?;
+    Ok(())
+  })?;
+
+  Ok(img)
+}
+
+/// draw the quadree argmax values
+pub fn tree_display_argmax<'a>(
+  path: &'a str,
+  root: &Quadtree<crate::argmax::ArgmaxResult<f32>>,
+  resolution: Point<u32>
+) -> Result<BitMapBackend<'a>> {
+  let mut img = BitMapBackend::new(
+    path,
+    (resolution.x + 1, resolution.y + 1)
+  );
+
+  let scale = root.rect.size;
+
+  root.traverse(&mut |tree| {
+    // is leaf
+    if tree.children.is_none() {
+      let (rect, _) : (TLBR<f32>, _) = (tree.rect.into(), tree.depth);
+
+      let distance_color = (tree.data.distance / root.data.distance * 255.0) as u8;
+
+      let rect = TLBR {
+        tl: rect.tl / scale * resolution.x as f32,
+        br: rect.br / scale * resolution.y as f32
+      };
+      img.draw_rect(
+        (rect.tl.x as i32, rect.tl.y as i32),
+        (rect.br.x as i32, rect.br.y as i32),
+        &RGBColor(distance_color, distance_color, distance_color),
+        true
+      ).ok()?;
+      img.draw_circle(
+        ((tree.data.point.x * resolution.x as f32) as i32, (tree.data.point.y * resolution.y as f32) as i32),
+        2, //?
+        &RGBColor(0xff, 0x00, 0x00).mix(distance_color as f64 / 128.0),
+        true
+      ).ok()?;
+      img.draw_line(
+        ((tree.rect.center.x * resolution.x as f32) as i32, (tree.rect.center.y * resolution.y as f32) as i32),
+        ((tree.data.point.x * resolution.x as f32) as i32, (tree.data.point.y * resolution.y as f32) as i32),
+        &RGBColor(0xff, 0x00, 0x00).mix(distance_color as f64 / 1.5 / 255.0)
+      ).ok()?;
+    }
     Ok(())
   })?;
 

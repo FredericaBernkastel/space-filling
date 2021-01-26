@@ -4,19 +4,30 @@ use {
   crate::{
     sdf::SDF,
     geometry::{Point, Circle, TLBR},
-    error::Result
+    error::Result,
+    quadtree::Quadtree
   }
 };
 
 pub struct Argmax {
-  dist_map: ImageBuffer::<Luma<f32>, Vec<f32>>,
+  pub dist_map: ImageBuffer::<Luma<f32>, Vec<f32>>,
   pub size: Point<u32>
 }
 
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub struct ArgmaxResult<T> {
   pub distance: f32,
   pub point: Point<T>
+}
+
+impl<T: Default> Default for ArgmaxResult<T> {
+  fn default() -> Self {
+    ArgmaxResult {
+      distance: -f32::MAX / 2.0,
+      point: Point { x: T::default(), y: T::default() }
+    }
+  }
 }
 
 impl Argmax {
@@ -92,7 +103,7 @@ impl Argmax {
         ArgmaxResult { distance: self.dist_map.get_pixel(xy.x, xy.y)[0], point: xy }
       })
       .reduce(
-        || ArgmaxResult { distance: -f32::MAX / 2.0, point: Point { x: 0, y: 0 } }, // identity element
+        || ArgmaxResult::default(), // identity element
         |a, b| if a.distance < b.distance { b } else { a }
       );
     ArgmaxResult {
@@ -117,8 +128,13 @@ impl Argmax {
           (color.abs(), 1.0 / 32.0, 1.0 / 32.0)
         };
         if let Some(point) = point {
-          if { Circle { xy: point, r: 8.0 } }
-            .sdf(Point { x: x as f32, y: y as f32 }) < 0.0 {
+          if { Circle {
+            xy: Point {
+              x: point.x * self.dist_map.width() as f32,
+              y: point.y * self.dist_map.height() as f32
+            },
+            r: 8.0
+          }}.sdf(Point { x: x as f32, y: y as f32 }) < 0.0 {
             color = (0.0, 0.0, 1.0)
           }
         }
@@ -126,4 +142,26 @@ impl Argmax {
       })?;
     Ok(())
   }
+}
+
+impl Quadtree<ArgmaxResult<f32>> {
+
+  pub fn argmax_backpropagation(&mut self, argmax: &Argmax) -> ArgmaxResult<f32> {
+    use rayon::prelude::*;
+
+    match (self.children.as_deref_mut(), self.is_inside) {
+      (Some(children), false) => // backpropagate
+        self.data = children
+          .par_iter_mut()
+          .map(|x| x.argmax_backpropagation(argmax))
+          .max_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap())
+          .unwrap(),
+      (None, false) => // find argmax for this node
+        self.data = argmax
+          .find_max_domain(self.rect.into()),
+      (_, true) => self.data = ArgmaxResult::default()
+    }
+    self.data
+  }
+
 }

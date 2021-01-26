@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use crate::{
   *,
   error::Result,
-  geometry::{Point, TLBR, Rect},
+  geometry::{Point, Rect},
 };
 
 /// Example usage:
@@ -15,15 +15,16 @@ use crate::{
 ///     r: 128.0
 /// }));
 /// ```
-pub struct Quadtree {
+pub struct Quadtree<T> {
   pub rect: Rect<f32>,
-  pub children: Option<Box<[Quadtree; 4]>>,
+  pub children: Option<Box<[Quadtree<T>; 4]>>,
   pub depth: u8,
   pub max_depth: u8,
-  pub data: bool
+  pub is_inside: bool,
+  pub data: T
 }
 
-impl Debug for Quadtree {
+impl<T: Debug> Debug for Quadtree<T> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Quadtree")
       .field("rect", &self.rect)
@@ -103,55 +104,13 @@ impl Quadtrant {
   }
 }
 
-impl Quadtree {
-  pub fn new(size: f32, center: Point<f32>, max_depth: u8) -> Self {
-    Quadtree {
-      rect: Rect {
-        center,
-        size,
-      },
-      children: None,
-      depth: 0,
-      max_depth,
-      data: false
-    }
-  }
+#[derive(PartialEq)]
+pub enum TraverseCommand {
+  Ok,
+  Skip
+}
 
-  pub fn subdivide(&mut self) -> &mut Option<Box<[Quadtree; 4]>> {
-    if self.depth < self.max_depth && self.children.is_none() {
-      let rect = self.rect;
-      let children: [Quadtree; 4] = (0..4).into_iter()
-        .map(|i| Quadtree {
-          rect: Rect {
-            center: Point {
-              x: rect.size * CENTER_MAT[i][0] / 4.0 + rect.center.x,
-              y: rect.size * CENTER_MAT[i][1] / 4.0 + rect.center.y,
-            },
-            size: rect.size / 2.0,
-          },
-          children: None,
-          depth: self.depth + 1,
-          max_depth: self.max_depth,
-          data: false
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-      self.children = Some(box children);
-    }
-    &mut self.children
-  }
-
-  /// subdivide recursively until reaching `depth`
-  fn subdivide_deep(&mut self, depth: u8) {
-    if depth == 0 { return; }
-    if let Some(children) = self.subdivide() {
-      for child in children.iter_mut() {
-        child.subdivide_deep(depth - 1);
-      }
-    }
-  }
-
+impl<T> Quadtree<T> {
   /// apply `f` to every node of the tree
   pub fn traverse(&self, f: &mut impl FnMut(&Self) -> Result<()>) -> Result<()> {
     f(self)?;
@@ -203,6 +162,77 @@ impl Quadtree {
     Ok(())
   }
 
+  pub fn traverse_managed(&self, f: &mut impl FnMut(&Self) -> Result<TraverseCommand>) -> Result<()> {
+    if f(self)? == TraverseCommand::Ok {
+      self.traverse_managed_a(f)?;
+    }
+    Ok(())
+  }
+
+  #[doc(hidden)]
+  fn traverse_managed_a(&self, f: &mut impl FnMut(&Self) -> Result<TraverseCommand>) -> Result<()> {
+    if let Some(children) = &self.children {
+      for child in children.iter() {
+        if f(child)? == TraverseCommand::Ok {
+          child.traverse_managed_a(f)?;
+        }
+      }
+    }
+    Ok(())
+  }
+}
+
+impl<T: Default + Debug> Quadtree<T> {
+  pub fn new(size: f32, center: Point<f32>, max_depth: u8) -> Self {
+    Quadtree {
+      rect: Rect {
+        center,
+        size,
+      },
+      children: None,
+      depth: 0,
+      max_depth,
+      is_inside: false,
+      data: T::default()
+    }
+  }
+
+  pub fn subdivide(&mut self) -> &mut Option<Box<[Quadtree<T>; 4]>> {
+    if self.depth < self.max_depth && self.children.is_none() {
+      let rect = self.rect;
+      let children: [Quadtree<T>; 4] = (0..4).into_iter()
+        .map(|i| Quadtree {
+          rect: Rect {
+            center: Point {
+              x: rect.size * CENTER_MAT[i][0] / 4.0 + rect.center.x,
+              y: rect.size * CENTER_MAT[i][1] / 4.0 + rect.center.y,
+            },
+            size: rect.size / 2.0,
+          },
+          children: None,
+          depth: self.depth + 1,
+          max_depth: self.max_depth,
+          is_inside: false,
+          data: T::default()
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+      self.children = Some(box children);
+    }
+    &mut self.children
+  }
+
+  /// subdivide recursively until reaching `depth`
+  fn subdivide_deep(&mut self, depth: u8) {
+    if depth == 0 { return; }
+    if let Some(children) = self.subdivide() {
+      for child in children.iter_mut() {
+        child.subdivide_deep(depth - 1);
+      }
+    }
+  }
+
   #[doc(hidden)]
   fn nodes_planar(&mut self) -> Vec<&mut Self> {
     let mut result = vec![];
@@ -236,7 +266,7 @@ impl Quadtree {
       if count > 8192 && candidate.is_some() {
         error_chain::bail!("");
       }
-      if node.children.is_none() && !node.data {
+      if node.children.is_none() && !node.is_inside {
         match &mut candidate {
           Some((_, depth))
             if *depth > node.depth
@@ -255,14 +285,42 @@ impl Quadtree {
       .map(|(point, _)| point)
   }
 
+  pub fn find_max_empty_node(&self) -> Option<Point<f32>> {
+    let mut candidate: Option<(Point<f32>, u8)> = None;
+
+    self.traverse_managed(&mut |node| {
+      match (node.children.is_none(), node.is_inside) {
+        (_, true) => Ok(TraverseCommand::Skip), // is inside, skip
+        (true, false) => {
+          match &mut candidate {
+            Some((_, depth))
+              if *depth > node.depth
+                 => candidate = Some((node.rect.center, node.depth)),
+            None => candidate = Some((node.rect.center, node.depth)),
+            _ => ()
+          };
+          Ok(TraverseCommand::Skip)
+        },
+        (false, false) =>
+          if candidate.map(|x| x.1).unwrap_or(node.max_depth) > node.depth {
+            Ok(TraverseCommand::Ok)
+          } else {
+            Ok(TraverseCommand::Skip)
+          }
+      }
+    }).ok();
+
+    candidate.map(|x| x.0)
+  }
+
   /// subdivides the tree recursively on an edge of a shape, provided by `sdf` (signed distance function).
   /// marks nodes that are inside of a shape (`self.data`)
   pub fn insert_sdf(
     &mut self,
     sdf: &impl Fn(Point<f32>) -> f32,
-    poly: impl geometry::Intersect<Rhs = Rect<f32>> + Copy)
+    poly: impl geometry::Intersect<Rect<f32>> + Copy)
   {
-    if self.data { return; }
+    if self.is_inside { return; }
     let distance = sdf(self.rect.center);
     if poly.intersects(self.rect) &&
       distance.abs() < self.rect.size / 2.0 * std::f32::consts::SQRT_2 {
@@ -274,11 +332,33 @@ impl Quadtree {
           .for_each(|child| child.insert_sdf(sdf, poly)));
     }
     match (self.children.as_deref_mut(), distance < 0.0) {
-      (None, true) => self.data = true,
+      (None, true) => self.is_inside = true,
       // for intersecting areas, slower
       /*(Some(children), true) => for child in children {
         child.insert_sdf(sdf);
       }*/
+      _ => ()
+    }
+  }
+
+  pub fn insert_sdf_strict(
+    &mut self,
+    sdf: &impl Fn(Point<f32>) -> f32,
+    poly: impl geometry::Intersect<Rect<f32>> + Copy)
+  {
+    if self.is_inside { return; }
+    let distance = sdf(self.rect.center);
+    if poly.intersects(self.rect) &&
+      distance.abs() < self.rect.size / 2.0 * std::f32::consts::SQRT_2 {
+      self
+        .subdivide()
+        .as_deref_mut()
+        .map(|children| children
+          .iter_mut()
+          .for_each(|child| child.insert_sdf_strict(sdf, poly)));
+    }
+    match (self.children.as_deref_mut(), distance < -self.rect.size / 2.0 * std::f32::consts::SQRT_2) {
+      (None, true) => self.is_inside = true,
       _ => ()
     }
   }
@@ -295,118 +375,10 @@ impl Quadtree {
     println!(
       "total nodes: {}\n\
       max subdivisions: {}\n\
-      mem::size_of::<Quadtree>(): {}",
+      mem::size_of::<Quadtree<T>(): {}",
       total_nodes,
       max_depth,
-      std::mem::size_of::<Quadtree>() * total_nodes as usize
+      std::mem::size_of::<Quadtree<T>>() * total_nodes as usize
     );
-  }
-
-  const fn vertex(rect: TLBR<f32>, quad: Quadtrant) -> Point<f32> {
-    match quad {
-      Quadtrant::TL => rect.tl,
-      Quadtrant::BR => rect.br,
-      Quadtrant::BL => Point { x: rect.tl.x, y: rect.br.y },
-      Quadtrant::TR => Point { x: rect.br.x, y: rect.tl.y },
-    }
-  }
-
-  pub fn find_max_free_area_attempt_6(&self, seed: Point<f32>) -> Result<TLBR<f32>> {
-
-    fn walk(root: &Quadtree, dir: Quadtrant, dir_orig: Quadtrant) -> Point<f32> {
-      match root.children.as_deref() {
-        Some(children) => {
-          if children[dir as usize].children.is_some() {
-            walk(&children[dir as usize], dir, dir_orig)
-          } else if children[dir.inv() as usize].children.is_some() {
-            walk(&children[dir.inv() as usize], dir.inv(), dir_orig)
-          } else if children[dir.mirror_x() as usize].children.is_some() {
-            walk(&children[dir.mirror_x() as usize], dir.mirror_x(), dir_orig)
-          } else if children[dir.mirror_y() as usize].children.is_some() {
-            walk(&children[dir.mirror_y() as usize], dir.mirror_y(), dir_orig)
-          } else {
-            Quadtree::vertex(root.rect.into(), dir_orig)
-          }
-        },
-        None => Quadtree::vertex(root.rect.into(), dir_orig)
-      }
-    }
-
-    let path = self.path_to_pt(seed);
-
-    let mut max_rect: TLBR<f32> = path.last()?.rect.into();
-
-    if let Some(root) = path.get(path.len() - 2) {
-      use Quadtrant::*;
-      let mat = [TL, TR, BL, BR]
-        .map(|quad| {
-          walk(&root.children.as_ref().unwrap()[quad as usize], quad.inv(), quad)
-        });
-
-      println!("{:#?}", mat);
-
-      max_rect = TLBR {
-        tl: Point {
-          x: mat[TL as usize].x.max(mat[BL as usize].x),
-          //x: mat[TL as usize].x,
-          y: mat[TL as usize].y.max(mat[TR as usize].y),
-          //y: mat[TL as usize].y
-        },
-        br: Point {
-          //x: max_rect.br.x,
-          x: mat[TR as usize].x.min(mat[BR as usize].x),
-          //y: max_rect.br.y,
-          y: mat[BL as usize].y.min(mat[BR as usize].y)
-        }
-      };
-      println!("{:?}", max_rect);
-    }
-
-    Ok(max_rect)
-  }
-
-  pub fn find_max_free_area_attempt_7(&self, seed: Point<f32>) -> Result<(TLBR<f32>, Vec<Point<f32>>)> {
-    fn walk(tree: &Quadtree, domain: TLBR<f32>, seed: Point<f32>, mut nearest: Point<f32>, mut nearest_dist: f32) -> (Point<f32>, f32) {
-      if let Some(children) = tree.children.as_deref() {
-        for child in children.iter() {
-          let dist = (child.rect.center - seed).length();
-          if child.data && dist < nearest_dist && child.rect.center.in_rect(domain) {
-            nearest = child.rect.center;
-            nearest_dist = dist;
-          }
-          let (point, dist) = walk(child, domain, seed, nearest, nearest_dist);
-          if dist < nearest_dist {
-            nearest = point;
-            nearest_dist = dist;
-          }
-        }
-      }
-      (nearest, nearest_dist)
-    };
-
-    let children = self.children.as_deref()?;
-
-    use Quadtrant::*;
-
-    let domain_tl: TLBR<f32> = children[TL as usize].rect.into();
-    let domain_tr: TLBR<f32> = children[TR as usize].rect.into();
-    let domain_bl: TLBR<f32> = children[BL as usize].rect.into();
-    let domain_br: TLBR<f32> = children[BR as usize].rect.into();
-
-    let tl = walk(self, domain_tl, seed, domain_tl.tl, (seed - domain_tl.tl).length()).0;
-    let tr = walk(self, domain_tr, seed, domain_tr.tr(), (seed - domain_tr.tr()).length()).0;
-    let bl = walk(self, domain_bl, seed, domain_bl.bl(), (seed - domain_bl.bl()).length()).0;
-    let br = walk(self, domain_br, seed, domain_br.br, (seed - domain_br.br).length()).0;
-
-    Ok((TLBR {
-      tl: Point {
-        x: tl.x.max(bl.x),
-        y: tl.y.max(tr.y),
-      },
-      br: Point {
-        x: tr.x.min(br.x),
-        y: bl.y.min(br.y)
-      }
-    }, vec![tl, tr, bl, br]))
   }
 }

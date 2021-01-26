@@ -156,15 +156,12 @@ impl<T> TLBR<T> {
   }
 }
 
-pub trait Intersect {
-  type Rhs;
-  fn intersects(self, rhs: Self::Rhs) -> bool;
+pub trait Intersect<Rhs> {
+  fn intersects(self, rhs: Rhs) -> bool;
 }
 
-impl Intersect for Rect<f32> {
-  type Rhs = Circle;
-
-  fn intersects(self, c: Self::Rhs) -> bool {
+impl Intersect<Circle> for Rect<f32> {
+  fn intersects(self, c: Circle) -> bool {
     let dist = Point {
       x: (c.xy.x - self.center.x).abs(),
       y: (c.xy.y - self.center.y).abs(),
@@ -183,9 +180,22 @@ impl Intersect for Rect<f32> {
   }
 }
 
-impl Intersect for Circle {
-  type Rhs = Rect<f32>;
-  fn intersects(self, r: Self::Rhs) -> bool {
+impl Intersect<Self> for Rect<f32> {
+  fn intersects(self, rhs: Self) -> bool {
+    let a = self.into(): TLBR<f32>;
+    let b = rhs.into(): TLBR<f32>;
+
+    [a.tl, a.tr(), a.bl(), a.br]
+      .iter()
+      .any(|pt| pt.in_rect(b)) ||
+    [b.tl, b.tr(), b.bl(), b.br]
+      .iter()
+      .any(|pt| pt.in_rect(a))
+  }
+}
+
+impl Intersect<Rect<f32>> for Circle {
+  fn intersects(self, r: Rect<f32>) -> bool {
     r.intersects(self)
   }
 }
