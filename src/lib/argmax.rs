@@ -53,9 +53,10 @@ impl Argmax {
   }
 
   pub fn insert_sdf_domain(&mut self, domain: TLBR<f32>, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) -> Result<()> {
-    if domain.br.x > 1.0 || domain.br.y > 1.0 {
-      error_chain::bail!("domain is out of bounds");
-    }
+    let domain = TLBR {
+      tl: Point { x: domain.tl.x.max(0.0), y: domain.tl.y.max(0.0) },
+      br: Point { x: domain.br.x.min(1.0), y: domain.br.y.min(1.0) }
+    };
 
     let (width, height) = self.dist_map.dimensions();
     let dist_map_ptr = self.dist_map.as_mut_ptr() as usize;

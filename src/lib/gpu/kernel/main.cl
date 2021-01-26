@@ -15,7 +15,7 @@ __kernel void main(
   unsigned int local_size = get_local_size(0);
   unsigned int image_x = global_id % image_w;
   unsigned int image_y = global_id / image_w;
-  __local struct ArgmaxResult fast_mem[512];
+  __local struct ArgmaxResult fast_mem[128];
 
   fast_mem[local_id] = (struct ArgmaxResult){
     .distance = framebuffer[global_id],
@@ -44,7 +44,7 @@ __kernel void find_max_phase1(
   unsigned int local_id = get_local_id(0);
   unsigned int workgroup_id = get_group_id(0);
   unsigned int local_size = get_local_size(0);
-  __local struct ArgmaxResult fast_mem[512];
+  __local struct ArgmaxResult fast_mem[128];
 
   fast_mem[local_id] = reduced_result[global_id];
 

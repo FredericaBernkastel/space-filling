@@ -15,16 +15,18 @@ use lib::{
   profile
 };
 use lib::argmax::ArgmaxResult;
+use lib::geometry::TLBR;
 
 fn main() -> Result<()> {
   thread::Builder::new()
     .spawn(||{
-      let circles = sdf_argmax_gpu_test()?;
-      drawing::exec(
-        "out_gpu.png",
-        circles.into_iter(),
-        Point { x: 2048, y: 2048 },
-      )
+      let circles_a = sdf_argmax_bruteforce_test()?;
+      let circles_b = sdf_argmax_domain_hypothesis_test()?;
+      println!("{}", circles_a.iter().zip(circles_b.iter())
+        .all(|(a, b)| a.xy.x == b.xy.x && a.xy.y == b.xy.y && a.r == b.r));
+      drawing::exec("out_groundtruth.png", circles_a.into_iter(), Point { x: 4096, y: 4096 })?;
+      drawing::exec("out_domain_reduce.png", circles_b.into_iter(), Point { x: 4096, y: 4096 })?;
+      Ok(())
     })?
     .join()
     .unwrap()
@@ -137,7 +139,10 @@ fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
         }
       };
 
-      if i % 1000 == 0 { println!("argmax #{}", i); }
+      if i % 1000 == 0 {
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+      }
+
       argmax.insert_sdf(|pixel| circle.sdf(pixel))?;
       circles.push(circle);
     };
@@ -159,7 +164,7 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
   // insert boundary rect SDF
   argmax.insert_sdf(
     |pixel| {
-      -Rect { center: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, size: 1.0 }
+      -Circle { xy: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, r: 1.0 / 2.0 }
         .sdf(pixel)
     }
   )?;
@@ -169,8 +174,8 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
   gpu_kernel.write_to_device(&argmax.dist_map).unwrap();
 
   profile!("argmax", {
-    'argmax: for i in 0..6153 {
-      let min_distance = 1.0 / argmax.size.x as f32;
+    'argmax: for i in 0..100000 {
+      let min_distance = 0.0 / argmax.size.x as f32;
 
       let argmax_ret: ArgmaxResult<f32> = gpu_kernel.find_max().unwrap()
         .into_iter()
@@ -199,6 +204,63 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
         }*/
 
         let angle = rng.gen_range::<f32, _>(-PI..=PI);
+        //let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(1.5) * argmax_ret.distance)
+        let r = (0.5 * argmax_ret.distance)
+          .min(1.0 / 6.0)
+          .max(min_distance);
+        let delta = argmax_ret.distance - r;
+        let offset = Point { x: delta * angle.sin(), y: delta * angle.cos() };
+
+        Circle {
+          xy: { argmax_ret.point.into(): Point<f32> }, r
+        }
+      };
+
+      if i % 1000 == 0 {
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+      }
+
+      //argmax.insert_sdf(|pixel| circle.sdf(pixel))?;
+      gpu_kernel.insert_sdf_circle(circle).unwrap();
+      circles.push(circle);
+    }
+  });
+
+  Ok(circles)
+}
+
+fn sdf_argmax_domain_hypothesis_test() -> Result<Vec<Circle>> {
+  use rand::prelude::*;
+
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+  let mut circles: Vec<Circle> = vec![];
+  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
+
+  // insert boundary rect SDF
+  argmax.insert_sdf(
+    |pixel| {
+      -Rect { center: Point {x: 1.0 / 2.0, y: 1.0 / 2.0}, size: 1.0 }
+        .sdf(pixel)
+    }
+  )?;
+
+  profile! ("argmax", {
+    'argmax: for i in 0..6153 {
+      let min_distance = 1.0 / argmax.size.x as f32;
+
+      let argmax_ret = argmax.find_max();
+
+      if argmax_ret.distance < min_distance {
+        println!("#{}: reached minimum, breaking: {:?}", i, argmax_ret);
+        break 'argmax;
+      }
+
+      //argmax.display_debug(&format!("anim/dist_map_{:04}.exr", i), Some(argmax_ret.point))?;
+
+      let circle = {
+        use std::f32::consts::PI;
+
+        let angle = rng.gen_range::<f32, _>(-PI..=PI);
         let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * argmax_ret.distance)
           .min(1.0 / 6.0)
           .max(min_distance);
@@ -210,12 +272,16 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
         }
       };
 
-      if i % 1000 == 0 { println!("argmax #{}", i); }
+      if i % 1000 == 0 {
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+      }
 
-      //argmax.insert_sdf(|pixel| circle.sdf(pixel))?;
-      gpu_kernel.insert_sdf_circle(circle).unwrap();
+      argmax.insert_sdf_domain(
+        Rect { center: circle.xy, size: argmax_ret.distance * 4.0 * std::f32::consts::SQRT_2 }.into(): TLBR<f32>,
+        |pixel| circle.sdf(pixel)
+      )?;
       circles.push(circle);
-    }
+    };
   });
 
   Ok(circles)

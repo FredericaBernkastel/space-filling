@@ -20,7 +20,7 @@ pub struct KernelWrapper{
 }
 
 type Framebuffer = image::ImageBuffer<image::Luma<f32>, Vec<f32>>;
-const WORKGROUP_SIZE: usize = 512;
+const WORKGROUP_SIZE: usize = 128;
 
 impl KernelWrapper {
 
@@ -129,7 +129,7 @@ impl KernelWrapper {
     };
 
     // phase 1
-    if ret_len / WORKGROUP_SIZE > 0 && ret_len % WORKGROUP_SIZE == 0  {
+    while ret_len / WORKGROUP_SIZE > 0 && ret_len % WORKGROUP_SIZE == 0  {
       self.kernels.find_max_phase1.set_default_global_work_size(ret_len.into());
       ret_len = ret_len / WORKGROUP_SIZE;
       unsafe {
