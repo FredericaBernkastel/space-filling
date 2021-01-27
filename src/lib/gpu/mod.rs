@@ -3,7 +3,8 @@ use ocl::core::{Float3, Uint2};
 
 use crate::{
   argmax::ArgmaxResult,
-  geometry::{Point, TLBR, Circle}
+  geometry::{Point, TLBR, Circle},
+  error::Result
 };
 
 struct Kernels {
@@ -36,7 +37,7 @@ impl KernelWrapper {
   fn build_buffers(
     queue: Queue,
     framebuffer: &image::ImageBuffer<image::Luma<f32>, Vec<f32>>,
-  ) -> ocl::Result<Args> {
+  ) -> Result<Args> {
     const RESULT_BPP: usize = std::mem::size_of::<ArgmaxResult<u32>>();
     let result_len = framebuffer.len() / WORKGROUP_SIZE;
     Ok(Args {
@@ -53,7 +54,7 @@ impl KernelWrapper {
     })
   }
 
-  fn build_kernels(que: &ProQue, args: &Args, image_size: Point<u32>) -> ocl::Result<Kernels> {
+  fn build_kernels(que: &ProQue, args: &Args, image_size: Point<u32>) -> Result<Kernels> {
     Ok(Kernels {
       main: que.kernel_builder("main")
         .arg(&args.framebuffer)
@@ -75,7 +76,7 @@ impl KernelWrapper {
     })
   }
 
-  pub fn new(framebuffer: &Framebuffer) -> ocl::Result<KernelWrapper> {
+  pub fn new(framebuffer: &Framebuffer) -> Result<KernelWrapper> {
 
     let device = ocl::Device::list(
       ocl::Platform::default(), Some(ocl::flags::DEVICE_TYPE_GPU))?
@@ -126,7 +127,7 @@ impl KernelWrapper {
     Ok(())
   }*/
 
-  pub fn find_max(&mut self) -> ocl::Result<Vec<ArgmaxResult<u32>>> {
+  pub fn find_max(&mut self) -> Result<Vec<ArgmaxResult<u32>>> {
     const ARGMAX_SIZE: usize = std::mem::size_of::<ArgmaxResult<u32>>();
 
     // phase 0
@@ -162,7 +163,7 @@ impl KernelWrapper {
     self.args.framebuffer.read(dist_map.as_mut()).enq()
   }
 
-  pub fn insert_sdf_circle(&mut self, circle: crate::geometry::Circle) -> ocl::Result<()> {
+  pub fn insert_sdf_circle(&mut self, circle: crate::geometry::Circle) -> Result<()> {
     let domain = TLBR {
       tl: Point { x: 0.0, y: 0.0 },
       br: Point { x: 1.0, y: 1.0 }
@@ -170,7 +171,7 @@ impl KernelWrapper {
     self.insert_sdf_circle_domain(circle, domain)
   }
 
-  pub fn insert_sdf_circle_domain(&mut self, circle: Circle, domain: TLBR<f32>) -> ocl::Result<()> {
+  pub fn insert_sdf_circle_domain(&mut self, circle: Circle, domain: TLBR<f32>) -> Result<()> {
     let domain = TLBR {
       tl: (Point {
         x: domain.tl.x.max(0.0),
