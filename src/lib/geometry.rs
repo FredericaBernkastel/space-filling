@@ -47,10 +47,10 @@ impl<T: std::ops::Sub<Output = T>> std::ops::Sub for Point<T> {
   }
 }
 
-impl<RHS: Copy, T: std::ops::Mul<RHS, Output = T>> std::ops::Mul<RHS> for Point<T> {
+impl<T: Copy + std::ops::Mul<T, Output = T>> std::ops::Mul<T> for Point<T> {
   type Output = Self;
 
-  fn mul(self, rhs: RHS) -> Self::Output {
+  fn mul(self, rhs: T) -> Self::Output {
     Self {
       x: self.x * rhs,
       y: self.y * rhs
@@ -65,6 +65,17 @@ impl<RHS: Copy, T: std::ops::Div<RHS, Output = T>> std::ops::Div<RHS> for Point<
     Self {
       x: self.x / rhs,
       y: self.y / rhs
+    }
+  }
+}
+
+impl<T: Copy + std::ops::Mul<T, Output = T>> std::ops::Mul<Point<T>> for Point<T> {
+  type Output = Self;
+
+  fn mul(self, rhs: Point<T>) -> Self::Output {
+    Self {
+      x: self.x * rhs.x,
+      y: self.y * rhs.y
     }
   }
 }
@@ -93,6 +104,15 @@ impl From<Point<u32>> for Point<f32> {
     Point {
       x: pt.x as f32,
       y: pt.y as f32
+    }
+  }
+}
+
+impl From<Point<f32>> for Point<u32> {
+  fn from(pt: Point<f32>) -> Self {
+    Point {
+      x: pt.x as u32,
+      y: pt.y as u32
     }
   }
 }

@@ -20,12 +20,10 @@ use lib::geometry::TLBR;
 fn main() -> Result<()> {
   thread::Builder::new()
     .spawn(||{
-      let circles_a = sdf_argmax_bruteforce_test()?;
-      let circles_b = sdf_argmax_domain_hypothesis_test()?;
-      println!("{}", circles_a.iter().zip(circles_b.iter())
-        .all(|(a, b)| a.xy.x == b.xy.x && a.xy.y == b.xy.y && a.r == b.r));
-      drawing::exec("out_groundtruth.png", circles_a.into_iter(), Point { x: 4096, y: 4096 })?;
-      drawing::exec("out_domain_reduce.png", circles_b.into_iter(), Point { x: 4096, y: 4096 })?;
+      let circles = sdf_argmax_gpu_test()?;
+      drawing::exec("out_gpu.png", circles.into_iter(), Point { x: 4096, y: 4096 } )?;
+      let circles = sdf_argmax_bruteforce_test()?;
+      drawing::exec("out_cpu.png", circles.into_iter(), Point { x: 4096, y: 4096 } )?;
       Ok(())
     })?
     .join()
@@ -51,7 +49,7 @@ fn basic_test() -> Result<()> {
     drawing::tree_display(
       "out.png".into(),
       &tree,
-      Point { x: 1024, y: 1024 }
+      Point { x: 2048, y: 2048 }
     )?;
   });
   open::that("out.png")?;
@@ -103,7 +101,7 @@ fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
   let mut circles: Vec<Circle> = vec![];
-  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
+  let mut argmax = Argmax::new(Point { x: 4096, y: 4096 });
 
   // insert boundary rect SDF
   argmax.insert_sdf(
@@ -158,13 +156,13 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
   let mut circles: Vec<Circle> = vec![];
-  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
+  let mut argmax = Argmax::new(Point { x: 4096, y: 4096 });
   let mut gpu_kernel = gpu::KernelWrapper::new(&argmax.dist_map).unwrap();
 
   // insert boundary rect SDF
   argmax.insert_sdf(
     |pixel| {
-      -Circle { xy: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, r: 1.0 / 2.0 }
+      -Rect { center: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, size: 1.0 }
         .sdf(pixel)
     }
   )?;
@@ -174,7 +172,7 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
   gpu_kernel.write_to_device(&argmax.dist_map).unwrap();
 
   profile!("argmax", {
-    'argmax: for i in 0..100000 {
+    'argmax: for i in 0..6153 {
       let min_distance = 0.0 / argmax.size.x as f32;
 
       let argmax_ret: ArgmaxResult<f32> = gpu_kernel.find_max().unwrap()
@@ -204,15 +202,15 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
         }*/
 
         let angle = rng.gen_range::<f32, _>(-PI..=PI);
-        //let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(1.5) * argmax_ret.distance)
-        let r = (0.5 * argmax_ret.distance)
+        let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * argmax_ret.distance)
+        //let r = (0.5 * argmax_ret.distance)
           .min(1.0 / 6.0)
           .max(min_distance);
         let delta = argmax_ret.distance - r;
         let offset = Point { x: delta * angle.sin(), y: delta * angle.cos() };
 
         Circle {
-          xy: { argmax_ret.point.into(): Point<f32> }, r
+          xy: { argmax_ret.point.into(): Point<f32> }.translate(offset), r
         }
       };
 
@@ -221,7 +219,11 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
       }
 
       //argmax.insert_sdf(|pixel| circle.sdf(pixel))?;
-      gpu_kernel.insert_sdf_circle(circle).unwrap();
+      let domain = Rect {
+        center: circle.xy,
+        size: argmax_ret.distance * 4.0 * std::f32::consts::SQRT_2
+      }.into(): TLBR<f32>;
+      gpu_kernel.insert_sdf_circle_domain(circle, domain).unwrap();
       circles.push(circle);
     }
   });

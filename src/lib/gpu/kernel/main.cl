@@ -75,13 +75,16 @@ float sdf_circle(struct Circle circle, float2 pixel) {
 
 __kernel void insert_sdf_circle(
   __global float * framebuffer,
-  __private unsigned int image_w,
+  __private uint2 image_size,
+  __private uint2 coords_offset,
   __private struct Circle circle
 ) {
   unsigned int global_id = get_global_id(0);
-  unsigned int image_x = global_id % image_w;
-  unsigned int image_y = global_id / image_w;
-  float2 pixel = (float2)((float)image_x / (float)image_w, (float)image_y / (float)image_w); //?
+  unsigned int sub_image_x = (global_id % image_size.y) + coords_offset.x;
+  unsigned int sub_image_y = (global_id / image_size.y) + coords_offset.y;
+  float2 pixel = (float2)((float)sub_image_x / (float)image_size.x, (float)sub_image_y / (float)image_size.x);
 
-  framebuffer[global_id] = min(framebuffer[global_id], sdf_circle(circle, pixel));
+  unsigned int offset_id = sub_image_y * image_size.x + sub_image_x;
+
+  framebuffer[offset_id] = min(framebuffer[offset_id], sdf_circle(circle, pixel));
 }

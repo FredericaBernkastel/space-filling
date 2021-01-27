@@ -1,6 +1,10 @@
-use ocl::{ProQue, Buffer, flags, Queue};
-use crate::argmax::ArgmaxResult;
-use ocl::core::Float3;
+use ocl::{Buffer, flags, ProQue, Queue};
+use ocl::core::{Float3, Uint2};
+
+use crate::{
+  argmax::ArgmaxResult,
+  geometry::{Point, TLBR, Circle}
+};
 
 struct Kernels {
   main: ocl::Kernel,
@@ -16,7 +20,8 @@ struct Args {
 pub struct KernelWrapper{
   main_que: ProQue,
   kernels: Kernels,
-  args: Args
+  args: Args,
+  image_size: Point<u32>
 }
 
 type Framebuffer = image::ImageBuffer<image::Luma<f32>, Vec<f32>>;
@@ -48,11 +53,11 @@ impl KernelWrapper {
     })
   }
 
-  fn build_kernels(que: &ProQue, args: &Args, image_width: u32) -> ocl::Result<Kernels> {
+  fn build_kernels(que: &ProQue, args: &Args, image_size: Point<u32>) -> ocl::Result<Kernels> {
     Ok(Kernels {
       main: que.kernel_builder("main")
         .arg(&args.framebuffer)
-        .arg(image_width)
+        .arg(image_size.x)
         .arg(&args.reduced_result)
         .global_work_size(args.framebuffer.len())
         .local_work_size(WORKGROUP_SIZE)
@@ -63,9 +68,9 @@ impl KernelWrapper {
         .build()?,
       insert_sdf_circle: que.kernel_builder("insert_sdf_circle")
         .arg(&args.framebuffer)
-        .arg(image_width)
+        .arg_named("image_size", Uint2::new(0, 0))
+        .arg_named("coords_offset", Uint2::new(0, 0))
         .arg_named("circle", Float3::new(0.0, 0.0, 0.0))
-        .global_work_size(args.framebuffer.len())
         .build()?
     })
   }
@@ -90,9 +95,11 @@ impl KernelWrapper {
       framebuffer,
     )?;
 
-    let kernels = Self::build_kernels(&main_que, &args, framebuffer.width())?;
+    let image_size = Point { x: framebuffer.width(), y: framebuffer.height() };
 
-    Ok(KernelWrapper { main_que, kernels, args })
+    let kernels = Self::build_kernels(&main_que, &args, image_size)?;
+
+    Ok(KernelWrapper { main_que, kernels, args, image_size })
   }
 
   /*pub fn recompile(&mut self) -> ocl::Result<()>{
@@ -155,11 +162,41 @@ impl KernelWrapper {
     self.args.framebuffer.read(dist_map.as_mut()).enq()
   }
 
-  pub fn insert_sdf_circle(&self, circle: crate::geometry::Circle) -> ocl::Result<()> {
+  pub fn insert_sdf_circle(&mut self, circle: crate::geometry::Circle) -> ocl::Result<()> {
+    let domain = TLBR {
+      tl: Point { x: 0.0, y: 0.0 },
+      br: Point { x: 1.0, y: 1.0 }
+    };
+    self.insert_sdf_circle_domain(circle, domain)
+  }
+
+  pub fn insert_sdf_circle_domain(&mut self, circle: Circle, domain: TLBR<f32>) -> ocl::Result<()> {
+    let domain = TLBR {
+      tl: (Point {
+        x: domain.tl.x.max(0.0),
+        y: domain.tl.y.max(0.0)
+      } * (self.image_size.into(): Point<f32>)).into(): Point<u32>,
+      br: (Point {
+        x: domain.br.x.min(1.0),
+        y: domain.br.y.min(1.0)
+      } * (self.image_size.into(): Point<f32>)).into(): Point<u32>
+    };
+
+    self.kernels.insert_sdf_circle.set_arg(
+      "image_size",
+      Uint2::new(self.image_size.x, domain.br.x - domain.tl.x)
+    )?;
+    self.kernels.insert_sdf_circle.set_arg(
+      "coords_offset",
+      Uint2::new(domain.tl.x, domain.tl.y)
+    )?;
     self.kernels.insert_sdf_circle.set_arg(
       "circle",
       Float3::new(circle.xy.x, circle.xy.y, circle.r)
     )?;
+    self.kernels.insert_sdf_circle.set_default_global_work_size(
+      ((domain.br.x - domain.tl.x) * (domain.br.y - domain.tl.y)).into()
+    );
     unsafe {
       self.kernels.insert_sdf_circle.enq()?;
     }
