@@ -224,7 +224,7 @@ impl<T: Default + Debug> Quadtree<T> {
   }
 
   /// subdivide recursively until reaching `depth`
-  fn subdivide_deep(&mut self, depth: u8) {
+  pub fn subdivide_deep(&mut self, depth: u8) {
     if depth == 0 { return; }
     if let Some(children) = self.subdivide() {
       for child in children.iter_mut() {
@@ -233,15 +233,24 @@ impl<T: Default + Debug> Quadtree<T> {
     }
   }
 
-  #[doc(hidden)]
-  fn nodes_planar(&mut self) -> Vec<&mut Self> {
-    let mut result = vec![];
-    if let Some(children) = self.children.as_deref_mut() {
-      for child in children.iter_mut() {
-        result.push(child);
+  pub fn leaves_planar(&mut self) -> Vec<&mut Quadtree<T>> {
+
+    fn nodes_planar_a<T>(tree: &mut Quadtree<T>) -> Vec<*mut Quadtree<T>> {
+      let mut result = vec![];
+      if let Some(children) = tree.children.as_deref_mut() {
+        for child in children.iter_mut() {
+          result.append(&mut nodes_planar_a(child));
+        }
+      } else {
+        result.push(tree)
       }
+      result
     }
-    result
+
+    nodes_planar_a(self)
+      .into_iter()
+      .map(|x| unsafe { x.as_mut().unwrap() })
+      .collect()
   }
 
   /// return all nodes, containing `pt`

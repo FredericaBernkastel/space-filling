@@ -171,16 +171,7 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
     'argmax: for i in 0..4 {
       let min_distance = 0.0 / argmax.size.x as f32;
 
-      let argmax_ret: ArgmaxResult<f32> = gpu_kernel.find_max()?
-        .into_iter()
-        .map(|x| ArgmaxResult {
-          point: Point {
-            x: x.point.x as f32 / argmax.dist_map.width() as f32,
-            y: x.point.y as f32 / argmax.dist_map.height() as f32,
-          },
-          distance: x.distance
-        })
-        .max_by(|a, b| a.distance.total_cmp(&b.distance))?;
+      let argmax_ret = gpu_kernel.find_max()?;
 
       if argmax_ret.distance < min_distance {
         println!("#{}: reached minimum, breaking: {:?}", i, argmax_ret);

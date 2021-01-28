@@ -58,10 +58,10 @@ impl<T: Copy + std::ops::Mul<T, Output = T>> std::ops::Mul<T> for Point<T> {
   }
 }
 
-impl<RHS: Copy, T: std::ops::Div<RHS, Output = T>> std::ops::Div<RHS> for Point<T> {
+impl<T: Copy + std::ops::Div<T, Output = T>> std::ops::Div<T> for Point<T> {
   type Output = Self;
 
-  fn div(self, rhs: RHS) -> Self::Output {
+  fn div(self, rhs: T) -> Self::Output {
     Self {
       x: self.x / rhs,
       y: self.y / rhs
@@ -76,6 +76,17 @@ impl<T: Copy + std::ops::Mul<T, Output = T>> std::ops::Mul<Point<T>> for Point<T
     Self {
       x: self.x * rhs.x,
       y: self.y * rhs.y
+    }
+  }
+}
+
+impl<T: Copy + std::ops::Div<T, Output = T>> std::ops::Div<Point<T>> for Point<T> {
+  type Output = Self;
+
+  fn div(self, rhs: Point<T>) -> Self::Output {
+    Self {
+      x: self.x / rhs.x,
+      y: self.y / rhs.y
     }
   }
 }

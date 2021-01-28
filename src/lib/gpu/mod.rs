@@ -127,7 +127,8 @@ impl KernelWrapper {
     Ok(())
   }*/
 
-  pub fn find_max(&mut self) -> Result<Vec<ArgmaxResult<u32>>> {
+  pub fn find_max(&mut self) -> Result<ArgmaxResult<f32>> {
+
     const ARGMAX_SIZE: usize = std::mem::size_of::<ArgmaxResult<u32>>();
 
     // phase 0
@@ -152,7 +153,15 @@ impl KernelWrapper {
         std::slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, ret_len * ARGMAX_SIZE)
       ).enq()?;
     }
-    Ok(result)
+
+    Ok(result
+      .into_iter()
+      .map(|x| ArgmaxResult {
+        point: (x.point.into(): Point<f32>) / (self.image_size.into(): Point<f32>),
+        distance: x.distance
+      })
+      .max_by(|a, b| a.distance.total_cmp(&b.distance))?
+    )
   }
 
   pub fn write_to_device(&self, dist_map: &Framebuffer) -> ocl::Result<()> {

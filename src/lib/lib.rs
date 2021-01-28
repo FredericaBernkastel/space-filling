@@ -3,6 +3,7 @@
 #![feature(try_trait)]
 #![feature(array_map)]
 #![feature(associated_type_defaults)]
+#![feature(total_cmp)]
 #![allow(dead_code)]
 
 pub mod error;
