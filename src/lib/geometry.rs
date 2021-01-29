@@ -6,7 +6,7 @@ pub struct Point<T> {
   pub y: T,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Circle {
   pub xy: Point<f32>,
   pub r: f32,
@@ -125,6 +125,12 @@ impl From<Point<f32>> for Point<u32> {
       x: pt.x as u32,
       y: pt.y as u32
     }
+  }
+}
+
+impl<T> From<(T, T)> for Point<T> {
+  fn from(tu: (T, T)) -> Self {
+    Point { x: tu.0, y: tu.1 }
   }
 }
 

@@ -9,9 +9,11 @@ use {
   }
 };
 
+mod convolution_vector;
+
 pub struct Argmax {
   pub dist_map: ImageBuffer::<Luma<f32>, Vec<f32>>,
-  pub size: Point<u32>
+  pub convolution_vector: Vec<ArgmaxResult<u32>>
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -38,7 +40,7 @@ impl Argmax {
         size.y,
         |_, _| { Luma([f32::MAX / 2.0]) }
       ),
-      size
+      convolution_vector: vec![ArgmaxResult::default(); size.y as usize]
     }
   }
 
@@ -62,10 +64,10 @@ impl Argmax {
     let dist_map_ptr = self.dist_map.as_mut_ptr() as usize;
 
     // cartesian product
-    ((domain.tl.y * self.size.y as f32) as u32 .. (domain.br.y * self.size.y as f32) as u32)
+    ((domain.tl.y * self.dist_map.height() as f32) as u32 .. (domain.br.y * self.dist_map.height() as f32) as u32)
       .into_par_iter()
       .flat_map(move |y|
-        ((domain.tl.x * self.size.x as f32) as u32 .. (domain.br.x * self.size.x as f32) as u32)
+        ((domain.tl.x * self.dist_map.width() as f32) as u32 .. (domain.br.x * self.dist_map.width() as f32) as u32)
           .into_par_iter().map(move |x| (x, y))
       )
       .for_each(move |(x, y)| {
@@ -93,10 +95,10 @@ impl Argmax {
 
   pub fn find_max_domain(&self, domain: TLBR<f32>) -> ArgmaxResult<f32> {
     // cartesian product
-    let result = ((domain.tl.y * self.size.y as f32) as u32 .. (domain.br.y * self.size.y as f32) as u32)
+    let result = ((domain.tl.y * self.dist_map.height() as f32) as u32 .. (domain.br.y * self.dist_map.height() as f32) as u32)
       .into_par_iter()
       .flat_map(|y|
-        ((domain.tl.x * self.size.x as f32) as u32 .. (domain.br.x * self.size.x as f32) as u32)
+        ((domain.tl.x * self.dist_map.width() as f32) as u32 .. (domain.br.x * self.dist_map.width() as f32) as u32)
           .into_par_iter()
           .map(move |x| Point { x, y })
       )
@@ -109,8 +111,8 @@ impl Argmax {
       );
     ArgmaxResult {
       point: Point{
-        x: result.point.x as f32 / self.size.x as f32,
-        y: result.point.y as f32 / self.size.y as f32
+        x: result.point.x as f32 / self.dist_map.width() as f32,
+        y: result.point.y as f32 / self.dist_map.height() as f32
       },
       distance: result.distance
     }
@@ -128,6 +130,7 @@ impl Argmax {
         } else {
           (color.abs(), 1.0 / 32.0, 1.0 / 32.0)
         };
+
         if let Some(point) = point {
           if { Circle {
             xy: Point {

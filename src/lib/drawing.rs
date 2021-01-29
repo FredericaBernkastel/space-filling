@@ -5,6 +5,7 @@ use crate::{
   geometry::{Point, Circle, Rect, TLBR},
   error::Result,
   quadtree::Quadtree,
+  argmax::*
 };
 use image::{GenericImageView, DynamicImage, ImageBuffer, Rgba};
 use image::imageops::FilterType;
@@ -276,4 +277,52 @@ pub fn tree_display_argmax<'a>(
   })?;
 
   Ok(img)
+}
+
+pub fn display_debug_convolution(output_file: &str, argmax: &Argmax, point: Option<Point<f32>>) -> Result<()> {
+  let img = BitMapBackend::new(output_file, argmax.dist_map.dimensions());
+  let img = img.into_drawing_area();
+
+  // dist map
+  argmax.dist_map
+    .enumerate_pixels()
+    .for_each(|(x, y, pixel)| {
+      let color = pixel[0] * 4.0 * 255.0;
+      let color = if color > 0.0 {
+        RGBColor(color.abs() as u8, color.abs() as u8, color.abs() as u8)
+      } else {
+        RGBColor(color.abs() as u8, 8, 8)
+      };
+      img.draw_pixel((x as i32, y as i32), &color).ok();
+    });
+
+  // argmax
+  if let Some(point) = point {
+    img.draw(&plotters::element::Circle::new(
+      ((point.x * argmax.dist_map.width() as f32) as i32, (point.y * argmax.dist_map.height() as f32) as i32),
+      8,
+      RGBColor(8, 8, 0xff).filled(),
+    )).ok()?;
+  }
+
+  // convolution vector
+  let argmax_ret = argmax.find_max_convolution();
+  argmax.convolution_vector.iter()
+    .for_each(|row_argmax| {
+      let (x, y) = (row_argmax.point.x as i32, row_argmax.point.y as i32);
+      img.draw_pixel(
+        (x, y),
+        &RED.mix(1.0)
+      ).ok();
+      img.draw(
+        &plotters::element::Polygon::new(
+          vec![(x, y), (img.dim_in_pixel().0 as i32 - 1, y)],
+          RGBColor(8, 8, 0xff)
+            .mix((row_argmax.distance as f64 / argmax_ret.distance as f64).powf(8.0) * 0.5)
+            .stroke_width(1)
+        )
+      ).ok();
+    });
+
+  Ok(())
 }

@@ -6,7 +6,7 @@
 use std::thread;
 use lib::{
   error::Result,
-  geometry::{Point, Circle, Rect},
+  geometry::{Point, Circle, Rect, TLBR},
   sdf::SDF,
   quadtree::Quadtree,
   argmax::Argmax,
@@ -14,14 +14,20 @@ use lib::{
   drawing,
   profile
 };
-use lib::argmax::ArgmaxResult;
-use lib::geometry::TLBR;
 
 fn main() -> Result<()> {
   thread::Builder::new()
     .spawn(||{
-      let circles = sdf_argmax_gpu_test()?;
-      drawing::exec("out_gpu.png", circles.into_iter(), Point { x: 4096, y: 4096 } )?;
+      /*drawing::exec(
+        "out_gt.png",
+        sdf_argmax_bruteforce_test()?.into_iter(),
+        (2048, 2048).into()
+      )?;*/
+      drawing::exec(
+        "out_convolution.png",
+        sdf_convolution_domain_test()?.into_iter(),
+        (2048, 2048).into()
+      )?;
       Ok(())
     })?
     .join()
@@ -99,7 +105,7 @@ fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
   let mut circles: Vec<Circle> = vec![];
-  let mut argmax = Argmax::new(Point { x: 4096, y: 4096 });
+  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
 
   // insert boundary rect SDF
   argmax.insert_sdf(
@@ -111,9 +117,10 @@ fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
 
   profile! ("argmax", {
     'argmax: for i in 0..6153 {
-      let min_distance = 1.0 / argmax.size.x as f32;
+      let min_distance = 1.0 / argmax.dist_map.width() as f32;
 
       let argmax_ret = argmax.find_max();
+      //argmax.display_debug(&format!("tmp/{}_gt.exr", i), Some(argmax_ret.point))?;
 
       if argmax_ret.distance < min_distance {
         println!("#{}: reached minimum, breaking: {:?}", i, argmax_ret);
@@ -136,15 +143,13 @@ fn sdf_argmax_bruteforce_test() -> Result<Vec<Circle>> {
       };
 
       if i % 1000 == 0 {
-        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.dist_map.width() as f32);
       }
 
       argmax.insert_sdf(|pixel| circle.sdf(pixel))?;
       circles.push(circle);
     };
   });
-
-  //argmax.display_debug("out_dist_map.exr", None)?;
 
   Ok(circles)
 }
@@ -162,14 +167,13 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
     let rect = Rect { center: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, size: 1.0 };
     argmax.insert_sdf(|pixel| -rect.sdf(pixel))?;
   }
-
   //argmax.display_debug(&format!("anim/dist_map_{:04}.exr", 0), None)?;
 
   gpu_kernel.write_to_device(&argmax.dist_map)?;
 
   profile!("argmax", {
     'argmax: for i in 0..4 {
-      let min_distance = 0.0 / argmax.size.x as f32;
+      let min_distance = 1.0 / 2.0 / argmax.dist_map.width() as f32;
 
       let argmax_ret = gpu_kernel.find_max()?;
 
@@ -183,10 +187,6 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
 
       let circle = {
         use std::f32::consts::PI;
-
-        /*Circle {
-          xy: { argmax_ret.point.into(): Point<f32> }, r: argmax_ret.distance.min(1.0 / 4.0)
-        }*/
 
         let angle = rng.gen_range::<f32, _>(-PI..=PI);
         let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * argmax_ret.distance)
@@ -202,7 +202,7 @@ fn sdf_argmax_gpu_test() -> Result<Vec<Circle>> {
       };
 
       if i % 1000 == 0 {
-        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.dist_map.width() as f32);
       }
 
       let domain = Rect {
@@ -222,7 +222,7 @@ fn sdf_argmax_domain_hypothesis_test() -> Result<Vec<Circle>> {
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
   let mut circles: Vec<Circle> = vec![];
-  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
+  let mut argmax = Argmax::new(Point { x: 1024, y: 1024 });
 
   // insert boundary rect SDF
   argmax.insert_sdf(
@@ -234,7 +234,7 @@ fn sdf_argmax_domain_hypothesis_test() -> Result<Vec<Circle>> {
 
   profile! ("argmax", {
     'argmax: for i in 0..6153 {
-      let min_distance = 1.0 / argmax.size.x as f32;
+      let min_distance = 1.0 / argmax.dist_map.width() as f32;
 
       let argmax_ret = argmax.find_max();
 
@@ -261,7 +261,7 @@ fn sdf_argmax_domain_hypothesis_test() -> Result<Vec<Circle>> {
       };
 
       if i % 1000 == 0 {
-        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.size.x as f32);
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.dist_map.width() as f32);
       }
 
       argmax.insert_sdf_domain(
@@ -273,4 +273,88 @@ fn sdf_argmax_domain_hypothesis_test() -> Result<Vec<Circle>> {
   });
 
   Ok(circles)
+}
+
+fn sdf_convolution_domain_test() -> Result<Vec<Circle>> {
+  use rand::prelude::*;
+
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+  let mut circles: Vec<Circle> = vec![];
+  let mut argmax = Argmax::new(Point { x: 2048, y: 2048 });
+
+  // insert boundary rect SDF
+  argmax.insert_sdf(
+    |pixel| {
+      -Rect { center: Point {x: 1.0 / 2.0, y: 1.0 / 2.0}, size: 1.0 }
+        .sdf(pixel)
+    }
+  )?;
+  argmax.convolute_domain([0.0, 1.0]);
+
+  profile! ("argmax", {
+    'argmax: for i in 0..6153 {
+      let min_distance = 1.0 / argmax.dist_map.width() as f32;
+
+      let argmax_ret = argmax.find_max_convolution();
+      /*drawing::display_debug_convolution(
+        &format!("tmp/{}_conv.png", i),
+        &argmax,
+        Some(argmax_ret.point)
+      )?;*/
+
+      if argmax_ret.distance < min_distance {
+        println!("#{}: reached minimum, breaking: {:?}", i, argmax_ret);
+        break 'argmax;
+      }
+
+      let circle = {
+        use std::f32::consts::PI;
+
+        let angle = rng.gen_range::<f32, _>(-PI..=PI);
+        let r = (rng.gen_range::<f32, _>(0.0..1.0).powf(0.5) * argmax_ret.distance)
+          .min(1.0 / 6.0)
+          .max(min_distance);
+        let delta = argmax_ret.distance - r;
+        let offset = Point { x: delta * angle.sin(), y: delta * angle.cos() };
+
+        Circle {
+          xy: { argmax_ret.point.into(): Point<f32> }.translate(offset), r
+        }
+      };
+
+      if i % 1000 == 0 {
+        println!("#{} argmax = {}", i, argmax_ret.distance * argmax.dist_map.width() as f32);
+      }
+
+      let domain: TLBR<f32> = Rect {
+        center: circle.xy,
+        size: argmax_ret.distance * 4.0 * std::f32::consts::SQRT_2
+      }.into();
+      argmax.insert_sdf_domain(
+        domain,
+        |pixel| circle.sdf(pixel)
+      )?;
+      argmax.convolute_domain([domain.tl.y, domain.br.y]);
+
+      circles.push(circle);
+    };
+  });
+
+  Ok(circles)
+}
+
+// only for testing, O(n^2)
+fn intersection_test(circles: &Vec<Circle>) -> bool {
+  for a in circles {
+    for b in circles {
+      if (a.xy - b.xy).length() + 1e-6 < a.r + b.r && a != b {
+        println!("there are collisions:");
+        println!("{:?}\n{:?}", a, b);
+        println!("dist = {}, a.r: {}, b.r: {}", (a.xy - b.xy).length(), a.r, b.r);
+        return true;
+      }
+    }
+  }
+  println!("there are no collisions");
+  false
 }
