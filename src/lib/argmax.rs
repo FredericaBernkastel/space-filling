@@ -44,6 +44,21 @@ impl Argmax {
     }
   }
 
+  pub fn from_image(path: &str) -> Result<Self> {
+    let img = exr::image::read::read_first_flat_layer_from_file(path)?;
+    let size = img.layer_data.size;
+
+    let img = ImageBuffer::from_fn(
+      size.0 as u32, size.1 as u32, |x, y| {
+        let pixel = img.layer_data.sample_vec_at((x as usize, y as usize).into())[0].to_f32();
+        Luma([pixel * 1.0])
+      });
+    Ok(Argmax {
+      dist_map: img,
+      convolution_vector: vec![ArgmaxResult::default(); size.1]
+    })
+  }
+
   pub fn insert_sdf(&mut self, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) -> Result<()> {
     self.insert_sdf_domain(
       TLBR {
@@ -145,6 +160,13 @@ impl Argmax {
         color
       })?;
     Ok(())
+  }
+
+  pub fn invert(&mut self) {
+    self.dist_map
+      .as_mut()
+      .into_par_iter()
+      .for_each(|pixel| *pixel *= -1.0);
   }
 }
 
