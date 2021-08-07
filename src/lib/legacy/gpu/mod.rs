@@ -2,9 +2,9 @@ use ocl::{Buffer, flags, ProQue, Queue};
 use ocl::core::{Float3, Uint2};
 
 use crate::{
-  argmax::ArgmaxResult,
+  legacy::argmax::ArgmaxResult,
   geometry::{Point, TLBR, Circle},
-  error::Result
+  error::{ErrorKind::NoneError, Result}
 };
 
 struct Kernels {
@@ -160,7 +160,7 @@ impl KernelWrapper {
         point: (x.point.into(): Point<f32>) / (self.image_size.into(): Point<f32>),
         distance: x.distance
       })
-      .max_by(|a, b| a.distance.total_cmp(&b.distance))?
+      .max_by(|a, b| a.distance.total_cmp(&b.distance)).ok_or(NoneError)?
     )
   }
 

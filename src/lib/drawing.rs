@@ -1,17 +1,20 @@
-use std::thread;
-use plotters::prelude::*;
-use crate::{
-  sdf::SDF,
-  geometry::{Point, Circle, Rect, TLBR},
-  error::Result,
-  quadtree::Quadtree,
-  argmax::*
+use std::{
+  collections::HashMap,
+  thread
 };
-use image::{GenericImageView, DynamicImage, ImageBuffer, Rgba};
+
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
 use image::imageops::FilterType;
+use plotters::prelude::*;
+
+use crate::{
+  error::{ErrorKind::NoneError, Result},
+  geometry::{Circle, Point, Rect, TLBR},
+  sdf::SDF
+};
 
 /// draw a set of circles
-pub fn exec(
+pub fn draw_circles(
   path: &str,
   circles: impl Iterator<Item = Circle>,
   resolution: Point<u32>
@@ -26,12 +29,13 @@ pub fn exec(
       ((circle.xy.x * resolution.x as f32) as i32, (circle.xy.y * resolution.y as f32) as i32),
       (circle.r * resolution.x as f32) as u32, //?
       Into::<ShapeStyle>::into(&RGBColor(0xff, 0xff, 0xff)).filled()
-    )).ok()?;
+    )).ok();
   }
   Ok(())
 }
 
-pub fn exec_rng(
+/// draw a set of circles, random colors
+pub fn draw_circles_rng(
   path: String,
   data: Vec<Circle>,
   resolution: Point<u32>,
@@ -48,12 +52,13 @@ pub fn exec_rng(
       ((circle.xy.x * resolution.x as f32) as i32, (circle.xy.y * resolution.y as f32) as i32),
       (circle.r * resolution.y as f32) as u32, //?
       Into::<ShapeStyle>::into(&RGBColor(color, color, color)).filled()
-    )).ok()?;
+    )).ok();
   }
   Ok(())
 }
 
-pub fn exec_img(
+/// draw image in each circle
+pub fn draw_img(
   data: impl Iterator<Item = (Circle, std::path::PathBuf)>,
   framebuffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>
 ) -> Result<()> {
@@ -88,6 +93,31 @@ pub fn exec_img(
     img
   }
 
+  // for sprite usecases
+  fn image_proc_cached(
+    circle_r: f32,
+    img_path: &str,
+    cache: &mut HashMap::<String, DynamicImage>
+  ) -> DynamicImage {
+    let img = cache.entry(img_path.to_owned()).or_insert_with(||
+      image::DynamicImage::ImageRgba8(
+        image::open(img_path)
+          .unwrap_or(
+            image::DynamicImage::ImageRgba8(
+              image::ImageBuffer::from_fn(1, 1, |_, _|
+                image::Rgba([0xff, 0xff, 0xff, 0]))
+            )
+          )
+          .into_rgba8())
+    );
+    let (w, h) = img.dimensions();
+    let size = w.min(h);
+    let img = img
+      .crop_imm((w - size) / 2, (h - size) / 2, size, size)
+      .resize_exact((circle_r * 2.0).ceil() as u32, (circle_r * 2.0).ceil() as u32, FilterType::Triangle);
+    img
+  }
+
   data.map(|(circle, file)| (
       circle,
       file.file_name()
@@ -96,9 +126,9 @@ pub fn exec_img(
         .to_string(),
       image_proc(
         circle.r * resolution.x as f32, //?
-        file.to_string_lossy().into())
+        file.to_string_lossy().to_string()
       )
-    )
+    ))
     .enumerate()
     .for_each(|(i, (circle, filename, img))| {
       let circle = Circle {
@@ -109,6 +139,7 @@ pub fn exec_img(
         center: Point { x: circle.xy.x, y: circle.xy.y },
         size: circle.r * 2.0
       }}.into(): TLBR<f32>;
+
       println!("#{}: {:?} -> \"{}\"", i, circle, filename);
       image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32)
     });
@@ -116,7 +147,8 @@ pub fn exec_img(
   Ok(())
 }
 
-pub fn exec_img_parallel(
+/// draw image in each circle, parallel
+pub fn draw_img_parallel(
   path: &str,
   circles: impl Iterator<Item = Circle>,
   files: impl Iterator<Item = std::path::PathBuf>,
@@ -149,7 +181,7 @@ pub fn exec_img_parallel(
       let mut framebuffer: ImageBuffer<image::Rgba<u8>, _> =
         ImageBuffer::new(resolution.x, resolution.y);
 
-      exec_img(chunk.into_iter(), &mut framebuffer).ok();
+      draw_img(chunk.into_iter(), &mut framebuffer).ok();
 
       framebuffer
     })
@@ -158,7 +190,7 @@ pub fn exec_img_parallel(
     .map(|thread| thread.join().unwrap())
     .collect::<Vec<_>>();
 
-  let mut final_buffer = partial_buffers.get(0).cloned()?;
+  let mut final_buffer = partial_buffers.get(0).cloned().ok_or(NoneError)?;
 
   // merge partial buffers
   partial_buffers
@@ -169,160 +201,6 @@ pub fn exec_img_parallel(
     );
 
   final_buffer.save(path)?;
-
-  Ok(())
-}
-
-pub fn sdf_test() -> Result<()> {
-  image::ImageBuffer::from_fn(512, 512, |x, y| {
-    let rect = Rect { center: Point { x: 256.0, y: 256.0 }, size: 64.0 };
-    let sample = Point { x: x as f32, y: y as f32 };
-
-    /*if c1.sdf(sample) > 0.0 {
-      image::Luma([0u8])
-    } else {
-      image::Luma([255u8])
-    }*/
-    image::Luma([
-      rect.sdf(sample).abs() as u8
-    ])
-  }).save("out.png")?;
-  open::that("out.png")?;
-  Ok(())
-}
-
-/// draw the quadree layout
-pub fn tree_display<'a, T: >(path: &'a str, tree: &Quadtree<T>, resolution: Point<u32>) -> Result<BitMapBackend<'a>> {
-  let mut img = BitMapBackend::new(
-    path,
-    (resolution.x + 1, resolution.y + 1)
-  );
-
-  let scale = tree.rect.size;
-
-  tree.traverse(&mut |tree| {
-    let rect: TLBR<f32> = tree.rect.into();
-    let color =
-      if tree.is_inside {
-        RGBColor(255, (255.0 / 1.5f32.powf((tree.max_depth - tree.depth) as f32)) as u8, 0)
-      } else {
-        RGBColor(32, 32, 255)
-      }
-        .mix(if tree.is_inside {
-          0.0282475249 / 0.7f64.powf(tree.depth as f64)
-          //4.0 / 1.5f64.powf(depth as f64)
-        } else {
-          1.0 / 1.6f64.powf(tree.depth as f64)
-        }
-    );
-    let rect = TLBR {
-      tl: rect.tl / scale * resolution.x as f32,
-      br: rect.br / scale * resolution.y as f32
-    };
-    img.draw_rect(
-      (rect.tl.x as i32, rect.tl.y as i32),
-      (rect.br.x as i32, rect.br.y as i32),
-      &color,
-      tree.is_inside
-      ).ok()?;
-    Ok(())
-  })?;
-
-  Ok(img)
-}
-
-/// draw the quadree argmax values
-pub fn tree_display_argmax<'a>(
-  path: &'a str,
-  root: &Quadtree<crate::argmax::ArgmaxResult<f32>>,
-  resolution: Point<u32>
-) -> Result<BitMapBackend<'a>> {
-  let mut img = BitMapBackend::new(
-    path,
-    (resolution.x + 1, resolution.y + 1)
-  );
-
-  let scale = root.rect.size;
-
-  root.traverse(&mut |tree| {
-    // is leaf
-    if tree.children.is_none() {
-      let (rect, _) : (TLBR<f32>, _) = (tree.rect.into(), tree.depth);
-
-      let distance_color = (tree.data.distance / root.data.distance * 255.0) as u8;
-
-      let rect = TLBR {
-        tl: rect.tl / scale * resolution.x as f32,
-        br: rect.br / scale * resolution.y as f32
-      };
-      img.draw_rect(
-        (rect.tl.x as i32, rect.tl.y as i32),
-        (rect.br.x as i32, rect.br.y as i32),
-        &RGBColor(distance_color, distance_color, distance_color),
-        true
-      ).ok()?;
-      img.draw_circle(
-        ((tree.data.point.x * resolution.x as f32) as i32, (tree.data.point.y * resolution.y as f32) as i32),
-        2, //?
-        &RGBColor(0xff, 0x00, 0x00).mix(distance_color as f64 / 128.0),
-        true
-      ).ok()?;
-      img.draw_line(
-        ((tree.rect.center.x * resolution.x as f32) as i32, (tree.rect.center.y * resolution.y as f32) as i32),
-        ((tree.data.point.x * resolution.x as f32) as i32, (tree.data.point.y * resolution.y as f32) as i32),
-        &RGBColor(0xff, 0x00, 0x00).mix(distance_color as f64 / 1.5 / 255.0)
-      ).ok()?;
-    }
-    Ok(())
-  })?;
-
-  Ok(img)
-}
-
-pub fn display_debug_convolution(output_file: &str, argmax: &Argmax, point: Option<Point<f32>>) -> Result<()> {
-  let img = BitMapBackend::new(output_file, argmax.dist_map.dimensions());
-  let img = img.into_drawing_area();
-
-  // dist map
-  argmax.dist_map
-    .enumerate_pixels()
-    .for_each(|(x, y, pixel)| {
-      let color = pixel[0] * 4.0 * 255.0;
-      let color = if color > 0.0 {
-        RGBColor(color.abs() as u8, color.abs() as u8, color.abs() as u8)
-      } else {
-        RGBColor(color.abs() as u8, 8, 8)
-      };
-      img.draw_pixel((x as i32, y as i32), &color).ok();
-    });
-
-  // argmax
-  if let Some(point) = point {
-    img.draw(&plotters::element::Circle::new(
-      ((point.x * argmax.dist_map.width() as f32) as i32, (point.y * argmax.dist_map.height() as f32) as i32),
-      8,
-      RGBColor(8, 8, 0xff).filled(),
-    )).ok()?;
-  }
-
-  // convolution vector
-  let argmax_ret = argmax.find_max_convolution();
-  argmax.convolution_vector.iter()
-    .for_each(|row_argmax| {
-      let (x, y) = (row_argmax.point.x as i32, row_argmax.point.y as i32);
-      img.draw_pixel(
-        (x, y),
-        &RED.mix(1.0)
-      ).ok();
-      img.draw(
-        &plotters::element::Polygon::new(
-          vec![(x, y), (img.dim_in_pixel().0 as i32 - 1, y)],
-          RGBColor(8, 8, 0xff)
-            .mix((row_argmax.distance as f64 / argmax_ret.distance as f64).powf(8.0) * 0.5)
-            .stroke_width(1)
-        )
-      ).ok();
-    });
 
   Ok(())
 }

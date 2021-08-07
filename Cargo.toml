@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 error-chain = "0.12.4"
 image = { version = "0.23.12", default_features = false, features = ["png", "jpeg"] }
+imageproc = "0.22.0"
 plotters = { version = "^0.3.0", default_features = false, features = ["bitmap_backend", "bitmap_encoder", "line_series"] }
 rand = "0.8.2"
 rand_pcg = "0.3.0"
@@ -25,9 +26,11 @@ walkdir = "2.3.1"
 lexical-sort = "0.3.1"
 exr = "1.0.0"
 ocl = "0.19.3"
+regex = "1.4.3"
+lazy_static = "1.4.0"
 
 [profile.release]
 lto = true
 opt-level = 3
 codegen-units = 1
-debug = true # full debug symbols
+debug = false # full debug symbols

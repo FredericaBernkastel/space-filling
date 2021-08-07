@@ -10,16 +10,16 @@ error_chain! {
   }
 
   errors {
-    NoneError(e: std::option::NoneError)
+    NoneError
     GPUError(e: ocl::error::Error)
   }
 }
 
-impl From<std::option::NoneError> for Error {
+/*impl From<std::option::NoneError> for Error {
   fn from(e: std::option::NoneError) -> Self {
     Error::from_kind(ErrorKind::NoneError(e))
   }
-}
+}*/
 
 impl From<ocl::error::Error> for Error {
   fn from(e: ocl::error::Error) -> Self {

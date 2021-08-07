@@ -5,7 +5,7 @@ use {
     sdf::SDF,
     geometry::{Point, Circle, TLBR},
     error::Result,
-    quadtree::Quadtree
+    legacy::quadtree::Quadtree
   }
 };
 

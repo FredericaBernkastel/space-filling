@@ -267,20 +267,33 @@ impl<T: Default + Debug> Quadtree<T> {
     result
   }
 
+  /// find a smallest node containing pt
+  pub fn pt_to_node(&self, pt: Point<f32>) -> Option<&Self> {
+    let mut node = self;
+    loop {
+      match node.children.as_deref() {
+        Some(children) =>
+          node = &children[Quadtrant::get(node.rect, pt)? as usize],
+        None => break
+      }
+    }
+    Some(node)
+  }
+
   /// find empty node, having max size. **too deterministic** for visualizations
-  pub fn find_empty_pt(&self, rng: &mut (impl rand::Rng + ?Sized)) -> Option<Point<f32>> {
-    let mut candidate: Option<(Point<f32>, u8)> = None;
+  pub fn find_empty_rect(&self, rng: &mut (impl rand::Rng + ?Sized)) -> Option<Rect<f32>> {
+    let mut candidate: Option<(Rect<f32>, u8)> = None;
     let mut count = 0;
     self.traverse_undeterministic(&mut |node| {
-      if count > 8192 && candidate.is_some() {
+      if count > 16 && candidate.is_some() {
         error_chain::bail!("");
       }
       if node.children.is_none() && !node.is_inside {
         match &mut candidate {
           Some((_, depth))
             if *depth > node.depth
-               => candidate = Some((node.rect.center, node.depth)),
-          None => candidate = Some((node.rect.center, node.depth)),
+               => candidate = Some((node.rect, node.depth)),
+          None => candidate = Some((node.rect, node.depth)),
           _ => ()
         }
         //result = Some(node.rect.center);
@@ -291,7 +304,7 @@ impl<T: Default + Debug> Quadtree<T> {
     }, rng).ok();
 
     candidate
-      .map(|(point, _)| point)
+      .map(|(rect, _)| rect)
   }
 
   pub fn find_max_empty_node(&self) -> Option<Point<f32>> {
@@ -303,7 +316,7 @@ impl<T: Default + Debug> Quadtree<T> {
         (true, false) => {
           match &mut candidate {
             Some((_, depth))
-              if *depth > node.depth
+              if node.depth < *depth
                  => candidate = Some((node.rect.center, node.depth)),
             None => candidate = Some((node.rect.center, node.depth)),
             _ => ()
