@@ -6,12 +6,10 @@ error_chain! {
     IoError(std::io::Error);
     FromUtf8Error(std::string::FromUtf8Error);
     ImageError(image::error::ImageError);
-    EXRError(exr::error::Error);
   }
 
   errors {
     NoneError
-    GPUError(e: ocl::error::Error)
   }
 }
 
@@ -19,13 +17,13 @@ error_chain! {
   fn from(e: std::option::NoneError) -> Self {
     Error::from_kind(ErrorKind::NoneError(e))
   }
-}*/
+}
 
 impl From<ocl::error::Error> for Error {
   fn from(e: ocl::error::Error) -> Self {
     Error::from_kind(ErrorKind::GPUError(e))
   }
-}
+}*/
 
 pub fn display(error: &Error) -> String {
   let mut msg = "Error:\n".to_string();

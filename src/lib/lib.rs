@@ -1,11 +1,12 @@
 #![feature(box_syntax)]
 #![feature(type_ascription)]
-#![feature(associated_type_defaults)]
 #![feature(total_cmp)]
+#![feature(option_result_unwrap_unchecked)]
+#![allow(dead_code)]
 
 pub mod error;
 pub mod sdf;
-pub mod legacy;
+pub mod argmax2d;
 pub mod drawing;
 pub mod geometry;
 

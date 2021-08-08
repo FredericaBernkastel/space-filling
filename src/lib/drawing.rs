@@ -3,14 +3,15 @@ use std::{
   thread
 };
 
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, Pixel};
 use image::imageops::FilterType;
 use plotters::prelude::*;
 
 use crate::{
   error::{ErrorKind::NoneError, Result},
   geometry::{Circle, Point, Rect, TLBR},
-  sdf::SDF
+  sdf::SDF,
+  argmax2d::{ArgmaxResult, Argmax2D}
 };
 
 /// draw a set of circles
@@ -94,7 +95,7 @@ pub fn draw_img(
   }
 
   // for sprite usecases
-  fn image_proc_cached(
+  fn _image_proc_cached(
     circle_r: f32,
     img_path: &str,
     cache: &mut HashMap::<String, DynamicImage>
@@ -203,4 +204,16 @@ pub fn draw_img_parallel(
   final_buffer.save(path)?;
 
   Ok(())
+}
+
+pub fn display_argmax_debug(argmax: &Argmax2D) -> image::RgbImage {
+  let mut image = image::ImageBuffer::<image::Rgb<u8>, _>::new(
+    argmax.resolution as u32,
+    argmax.resolution as u32
+  );
+  argmax.pixels().for_each(|ArgmaxResult { distance, point }| {
+    let color = image::Luma::from([(distance.min(1.0) * 255.0) as u8]);
+    *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
+  });
+  image
 }

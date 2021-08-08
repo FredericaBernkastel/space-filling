@@ -128,6 +128,24 @@ impl From<Point<f32>> for Point<u32> {
   }
 }
 
+impl From<Point<u64>> for Point<f64> {
+  fn from(pt: Point<u64>) -> Self {
+    Point {
+      x: pt.x as f64,
+      y: pt.y as f64
+    }
+  }
+}
+
+impl From<Point<f64>> for Point<u64> {
+  fn from(pt: Point<f64>) -> Self {
+    Point {
+      x: pt.x as u64,
+      y: pt.y as u64
+    }
+  }
+}
+
 impl<T> From<(T, T)> for Point<T> {
   fn from(tu: (T, T)) -> Self {
     Point { x: tu.0, y: tu.1 }
