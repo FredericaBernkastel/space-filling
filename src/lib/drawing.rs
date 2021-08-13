@@ -60,7 +60,8 @@ pub fn draw_circles_rng(
 
 /// draw image in each circle
 pub fn draw_img(
-  data: impl Iterator<Item = (Circle, std::path::PathBuf)>,
+  circle: Circle,
+  file: std::path::PathBuf,
   framebuffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>
 ) -> Result<()> {
   let resolution = Point::<u32> { x: framebuffer.width(), y: framebuffer.height() };
@@ -119,32 +120,20 @@ pub fn draw_img(
     img
   }
 
-  data.map(|(circle, file)| (
-      circle,
-      file.file_name()
-        .map(|x| x.to_string_lossy())
-        .unwrap_or("?".into())
-        .to_string(),
-      image_proc(
-        circle.r * resolution.x as f32, //?
-        file.to_string_lossy().to_string()
-      )
-    ))
-    .enumerate()
-    .for_each(|(i, (circle, filename, img))| {
-      let circle = Circle {
-        xy: Point { x: circle.xy.x * resolution.x as f32, y: circle.xy.y * resolution.y as f32 },
-        r: circle.r * resolution.x as f32 //?
-      };
-      let coord = { Rect {
-        center: Point { x: circle.xy.x, y: circle.xy.y },
-        size: circle.r * 2.0
-      }}.into(): TLBR<f32>;
+  let img = image_proc(
+    circle.r * resolution.x as f32, //?
+    file.to_string_lossy().to_string()
+  );
+  let circle = Circle {
+    xy: Point { x: circle.xy.x * resolution.x as f32, y: circle.xy.y * resolution.y as f32 },
+    r: circle.r * resolution.x as f32 //?
+  };
+  let coord = { Rect {
+    center: Point { x: circle.xy.x, y: circle.xy.y },
+    size: circle.r * 2.0
+  }}.into(): TLBR<f32>;
 
-      println!("#{}: {:?} -> \"{}\"", i, circle, filename);
-      image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32)
-    });
-
+  image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32);
   Ok(())
 }
 
@@ -162,6 +151,7 @@ pub fn draw_img_parallel(
 
   let mut draw_data = circles
     .zip(files)
+    .enumerate()
     .collect::<Vec<_>>();
   // will distribute the load between threads [statistically] evenly
   draw_data.shuffle(&mut rng);
@@ -178,11 +168,22 @@ pub fn draw_img_parallel(
   }
 
   let partial_buffers = draw_data_chunks.into_iter().map(|chunk| {
-    thread::spawn(move || {
+    thread::spawn( move || {
       let mut framebuffer: ImageBuffer<image::Rgba<u8>, _> =
         ImageBuffer::new(resolution.x, resolution.y);
 
-      draw_img(chunk.into_iter(), &mut framebuffer).ok();
+      chunk.into_iter()
+        .for_each(|(i, (circle, file))| {
+          println!("#{}: {:?} -> \"{}\"", i, Circle {
+              xy: circle.xy * resolution.x as f32,
+              r: circle.r * resolution.x as f32
+            },
+            file.file_name()
+              .map(|x| x.to_string_lossy())
+              .unwrap_or("?".into())
+          );
+          draw_img(circle, file, &mut framebuffer).ok();
+        });
 
       framebuffer
     })
@@ -206,13 +207,48 @@ pub fn draw_img_parallel(
   Ok(())
 }
 
+/// draw image in each circle, parallel. faster, will crash if two circles intersect.
+pub fn draw_img_parallel_unsafe(
+  path: &str,
+  circles: impl Iterator<Item = Circle>,
+  files: impl Iterator<Item = std::path::PathBuf>,
+  resolution: Point<u32>
+) -> Result<()> {
+  use rayon::prelude::*;
+
+  let framebuffer: ImageBuffer<image::Rgba<u8>, _> =
+    ImageBuffer::new(resolution.x, resolution.y);
+
+  let draw_data = circles.zip(files).enumerate().collect::<Vec<_>>();
+  draw_data.into_par_iter()
+    .for_each(|(i, (circle, file))| {
+      println!("#{}: {:?} -> \"{}\"", i, Circle {
+          xy: circle.xy * resolution.x as f32,
+          r: circle.r * resolution.x as f32
+        },
+        file.file_name()
+          .map(|x| x.to_string_lossy())
+          .unwrap_or("?".into())
+      );
+
+      draw_img(circle, file,
+        // safe as long as no circles intersect
+        unsafe { &mut *(&framebuffer as *const _ as *mut _) }
+      ).ok();
+  });
+
+  framebuffer.save(path)?;
+  Ok(())
+}
+
 pub fn display_argmax_debug(argmax: &Argmax2D) -> image::RgbImage {
   let mut image = image::ImageBuffer::<image::Rgb<u8>, _>::new(
     argmax.resolution as u32,
     argmax.resolution as u32
   );
+  let max_dist = argmax.find_max().distance;
   argmax.pixels().for_each(|ArgmaxResult { distance, point }| {
-    let color = image::Luma::from([(distance.min(1.0) * 255.0) as u8]);
+    let color = image::Luma::from([(distance / max_dist * 255.0) as u8]);
     *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
   });
   image

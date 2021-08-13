@@ -5,17 +5,19 @@
 use lib::{
   error::Result,
   drawing,
-  profile
+  argmax2d::Argmax2D,
 };
 mod tests;
 
 fn main() -> Result<()> {
-  let circles = profile!("argmax", tests::sdf_argmax2d_test()?);
-  profile!("draw", drawing::draw_circles(
-    "out.png",
-    circles.into_iter(),
+  let path = "out.png";
+  let mut argmax = Argmax2D::new(1024, 16)?;
+  let circles = tests::fractal_distribution(&mut argmax);
+  drawing::draw_circles(
+    path,
+    circles,
     (2048, 2048).into()
-  )?);
-  open::that("out.png")?;
+  )?;
+  open::that(path)?;
   Ok(())
 }

@@ -1,4 +1,3 @@
-#![feature(box_syntax)]
 #![feature(type_ascription)]
 #![feature(total_cmp)]
 #![feature(option_result_unwrap_unchecked)]

@@ -28,3 +28,8 @@ impl SDF for Rect<f32> {
   }
 }
 
+pub fn boundary_rect(pixel: Point<f32>) -> f32 {
+  -Rect { center: Point { x: 1.0 / 2.0, y: 1.0 / 2.0 }, size: 1.0 }
+    .sdf(pixel)
+}
+

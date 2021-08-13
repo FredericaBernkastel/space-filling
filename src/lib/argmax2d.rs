@@ -1,6 +1,6 @@
 use crate::{
   error::Result,
-  geometry::{Point, TLBR}
+  geometry::{Rect, Point, TLBR}
 };
 use error_chain::bail;
 
@@ -8,7 +8,7 @@ pub struct Argmax2D {
   dist_map: Vec<f32>,
   pub resolution: u64,
   pub chunk_size: u64,
-  pub chunk_argmax: Vec<ArgmaxResult<f32>>
+  chunk_argmax: Vec<ArgmaxResult<f32>>
 }
 
 pub struct Chunk<'a> {
@@ -61,6 +61,26 @@ impl<T: Default> Default for ArgmaxResult<T> {
       distance: f32::MAX / 2.0,
       point: Point { x: T::default(), y: T::default() }
     }
+  }
+}
+
+impl<T> Eq for ArgmaxResult<T> {}
+
+impl<T> PartialEq for ArgmaxResult<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.distance.eq(&other.distance)
+  }
+}
+
+impl<T> PartialOrd for ArgmaxResult<T> {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    self.distance.partial_cmp(&other.distance)
+  }
+}
+
+impl<T> std::cmp::Ord for ArgmaxResult<T> {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.distance.total_cmp(&other.distance)
   }
 }
 
@@ -118,21 +138,21 @@ impl Argmax2D {
 
   pub fn find_max(&self) -> ArgmaxResult<f32> {
     self.chunk_argmax.iter().cloned()
-      .max_by(|a, b| a.distance.total_cmp(&b.distance))
+      .max()
       .unwrap()
   }
 
-  pub fn insert_sdf(&mut self, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) -> Result<()> {
+  pub fn insert_sdf(&mut self, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) {
     self.insert_sdf_domain(
       TLBR {
         tl: Point { x: 0.0, y: 0.0 },
         br: Point { x: 1.0, y: 1.0 }
       },
       sdf
-    )
+    );
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: TLBR<f32>, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) -> Result<()> {
+  pub fn insert_sdf_domain(&mut self, domain: TLBR<f32>, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) {
     use rayon::prelude::*;
 
     let domain = TLBR {
@@ -164,12 +184,11 @@ impl Argmax2D {
             distance: *value,
             point: xy_normalized
           }
-        }).max_by(|a, b| a.distance.total_cmp(&b.distance))
+        }).max()
           .unwrap();
         // each thread is guaranteed to have distinct chunks
         *unsafe { chunk.argmax_ref_mut() } = max_dist;
       });
-    Ok(())
   }
 
   pub fn pixels(&self) -> impl Iterator<Item = ArgmaxResult<u64>> + '_ {
@@ -193,9 +212,52 @@ impl Argmax2D {
           distance: *value,
           point: xy_normalized
         }
-      }).max_by(|a, b| a.distance.total_cmp(&b.distance))
+      }).max()
         .unwrap();
       *unsafe { chunk.argmax_ref_mut() } = max_dist;
     });
+  }
+
+  pub fn domain_empirical(center: Point<f32>, max_dist: f32) -> Rect<f32> {
+    Rect {
+      center,
+      size: max_dist * 4.0 * std::f32::consts::SQRT_2
+    }
+  }
+
+  pub fn iter(&mut self) -> ArgmaxIter {
+    let min_dist = 0.5 * std::f32::consts::SQRT_2 / self.resolution as f32;
+    ArgmaxIter {
+      argmax: self,
+      min_dist
+    }
+  }
+}
+
+pub struct ArgmaxIter<'a> {
+  argmax: &'a mut Argmax2D,
+  min_dist: f32
+}
+
+impl<'a> ArgmaxIter<'a> {
+  pub fn min_dist(mut self, value: f32) -> Self {
+    self.min_dist = value;
+    self
+  }
+
+  pub fn min_dist_px(mut self, value: f32) -> Self {
+    self.min_dist = value / self.argmax.resolution as f32;
+    self
+  }
+
+  pub fn build(self) -> impl Iterator<Item = (ArgmaxResult<f32>, &'a mut Argmax2D)> {
+    let min_dist = self.min_dist;
+
+    (0..).map(move |_| {
+      // this is awkward...
+      let argmax = unsafe { &mut *(self.argmax as *const _ as *mut Argmax2D) };
+      (argmax.find_max(), argmax)
+    })
+      .take_while(move |(dist, _)| dist.distance >= min_dist)
   }
 }
