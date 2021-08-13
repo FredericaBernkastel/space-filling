@@ -8,7 +8,7 @@ use image::imageops::FilterType;
 use plotters::prelude::*;
 
 use crate::{
-  error::{ErrorKind::NoneError, Result},
+  error::{self, ErrorKind::NoneError, Result},
   geometry::{Circle, Point, Rect, TLBR},
   sdf::SDF,
   argmax2d::{ArgmaxResult, Argmax2D}
@@ -16,53 +16,33 @@ use crate::{
 
 /// draw a set of circles
 pub fn draw_circles(
-  path: &str,
   circles: impl Iterator<Item = Circle>,
   resolution: Point<u32>
-) -> Result<()> {
-  let img = BitMapBackend::new(
-    &path,
-    (resolution.x, resolution.y)
+) -> image::RgbImage {
+  let mut image = ImageBuffer::<image::Rgb<u8>, _>::new(
+    resolution.x as u32,
+    resolution.y as u32
+  );
+  let canvas = BitMapBackend::with_buffer(
+    image.as_mut(), (resolution.x, resolution.y)
   ).into_drawing_area();
 
   for circle in circles {
-    img.draw(&plotters::element::Circle::new(
+    canvas.draw(&plotters::element::Circle::new(
       ((circle.xy.x * resolution.x as f32) as i32, (circle.xy.y * resolution.y as f32) as i32),
       (circle.r * resolution.x as f32) as u32, //?
       Into::<ShapeStyle>::into(&RGBColor(0xff, 0xff, 0xff)).filled()
     )).ok();
   }
-  Ok(())
+  drop(canvas);
+  image
 }
 
-/// draw a set of circles, random colors
-pub fn draw_circles_rng(
-  path: String,
-  data: Vec<Circle>,
-  resolution: Point<u32>,
-  rng: &mut (impl rand::Rng + ?Sized)
-) -> Result<()> {
-  let img = BitMapBackend::new(
-    &path,
-    (resolution.x, resolution.y)
-  ).into_drawing_area();
-
-  for circle in data {
-    let color = rng.gen_range(0x90..=0xff);
-    img.draw(&plotters::element::Circle::new(
-      ((circle.xy.x * resolution.x as f32) as i32, (circle.xy.y * resolution.y as f32) as i32),
-      (circle.r * resolution.y as f32) as u32, //?
-      Into::<ShapeStyle>::into(&RGBColor(color, color, color)).filled()
-    )).ok();
-  }
-  Ok(())
-}
-
-/// draw image in each circle
+/// draw image in a circle
 pub fn draw_img(
   circle: Circle,
   file: std::path::PathBuf,
-  framebuffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>
+  framebuffer: &mut image::RgbaImage
 ) -> Result<()> {
   let resolution = Point::<u32> { x: framebuffer.width(), y: framebuffer.height() };
 
@@ -128,10 +108,10 @@ pub fn draw_img(
     xy: Point { x: circle.xy.x * resolution.x as f32, y: circle.xy.y * resolution.y as f32 },
     r: circle.r * resolution.x as f32 //?
   };
-  let coord = { Rect {
+  let coord: TLBR<f32> = Rect {
     center: Point { x: circle.xy.x, y: circle.xy.y },
     size: circle.r * 2.0
-  }}.into(): TLBR<f32>;
+  }.into();
 
   image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32);
   Ok(())
@@ -139,12 +119,11 @@ pub fn draw_img(
 
 /// draw image in each circle, parallel
 pub fn draw_img_parallel(
-  path: &str,
   circles: impl Iterator<Item = Circle>,
   files: impl Iterator<Item = std::path::PathBuf>,
   resolution: Point<u32>,
   num_threads: usize
-) -> Result<()> {
+) -> Result<image::RgbaImage> {
   use rand::prelude::*;
 
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -169,7 +148,7 @@ pub fn draw_img_parallel(
 
   let partial_buffers = draw_data_chunks.into_iter().map(|chunk| {
     thread::spawn( move || {
-      let mut framebuffer: ImageBuffer<image::Rgba<u8>, _> =
+      let mut framebuffer: ImageBuffer<Rgba<u8>, _> =
         ImageBuffer::new(resolution.x, resolution.y);
 
       chunk.into_iter()
@@ -182,7 +161,8 @@ pub fn draw_img_parallel(
               .map(|x| x.to_string_lossy())
               .unwrap_or("?".into())
           );
-          draw_img(circle, file, &mut framebuffer).ok();
+          draw_img(circle, file, &mut framebuffer)
+            .map_err(|e| error::display(&e)).ok();
         });
 
       framebuffer
@@ -202,21 +182,18 @@ pub fn draw_img_parallel(
       image::imageops::overlay(&mut final_buffer, &buffer, 0, 0)
     );
 
-  final_buffer.save(path)?;
-
-  Ok(())
+  Ok(final_buffer)
 }
 
 /// draw image in each circle, parallel. faster, will crash if two circles intersect.
 pub fn draw_img_parallel_unsafe(
-  path: &str,
   circles: impl Iterator<Item = Circle>,
   files: impl Iterator<Item = std::path::PathBuf>,
   resolution: Point<u32>
-) -> Result<()> {
+) -> Result<image::RgbaImage> {
   use rayon::prelude::*;
 
-  let framebuffer: ImageBuffer<image::Rgba<u8>, _> =
+  let framebuffer: ImageBuffer<Rgba<u8>, _> =
     ImageBuffer::new(resolution.x, resolution.y);
 
   let draw_data = circles.zip(files).enumerate().collect::<Vec<_>>();
@@ -234,15 +211,14 @@ pub fn draw_img_parallel_unsafe(
       draw_img(circle, file,
         // safe as long as no circles intersect
         unsafe { &mut *(&framebuffer as *const _ as *mut _) }
-      ).ok();
+      ).map_err(|e| error::display(&e)).ok();
   });
 
-  framebuffer.save(path)?;
-  Ok(())
+  Ok(framebuffer)
 }
 
 pub fn display_argmax_debug(argmax: &Argmax2D) -> image::RgbImage {
-  let mut image = image::ImageBuffer::<image::Rgb<u8>, _>::new(
+  let mut image = ImageBuffer::<image::Rgb<u8>, _>::new(
     argmax.resolution as u32,
     argmax.resolution as u32
   );

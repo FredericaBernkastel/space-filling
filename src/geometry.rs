@@ -237,8 +237,8 @@ impl Intersect<Circle> for Rect<f32> {
 
 impl Intersect<Self> for Rect<f32> {
   fn intersects(self, rhs: Self) -> bool {
-    let a = self.into(): TLBR<f32>;
-    let b = rhs.into(): TLBR<f32>;
+    let a: TLBR<f32> = self.into();
+    let b: TLBR<f32> = rhs.into();
 
     [a.tl, a.tr(), a.bl(), a.br]
       .iter()

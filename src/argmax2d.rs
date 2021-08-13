@@ -26,8 +26,7 @@ impl<'a> Chunk<'a> {
   }
 
   unsafe fn argmax_ref_mut(&self) -> &mut ArgmaxResult<f32> {
-    (self.argmax_ref as *const _ as *mut ArgmaxResult<f32>)
-      .as_mut().unwrap_unchecked()
+    &mut *(self.argmax_ref as *const _ as *mut ArgmaxResult<f32>)
   }
 
   fn offset_to_xy_normalized(&self, offset: u64) -> Point<f32> {
@@ -80,7 +79,16 @@ impl<T> PartialOrd for ArgmaxResult<T> {
 
 impl<T> std::cmp::Ord for ArgmaxResult<T> {
   fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-    self.distance.total_cmp(&other.distance)
+    // waiting for #![feature(total_cmp)]
+    fn total_cmp(left: f32, right: f32) -> std::cmp::Ordering {
+      let mut left = left.to_bits() as i32;
+      let mut right = right.to_bits() as i32;
+      left ^= (((left >> 31) as u32) >> 1) as i32;
+      right ^= (((right >> 31) as u32) >> 1) as i32;
+
+      left.cmp(&right)
+    }
+    total_cmp(self.distance, other.distance)
   }
 }
 
