@@ -12,13 +12,14 @@ pub struct Circle {
   pub r: f32,
 }
 
+/// Rectangle (center, size)
 #[derive(Copy, Clone, Debug)]
 pub struct Rect<T> {
   pub center: Point<T>,
   pub size: T,
 }
 
-/// top left bottom right
+/// Rectangle (top-left, bottom-right)
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TLBR<T> {
   pub tl: Point<T>,
