@@ -1,13 +1,14 @@
 use space_filling::{
-  geometry::{Circle, Point},
+  geometry::{Circle, WorldSpace},
   error::Result,
   sdf::{self, SDF},
   argmax2d::Argmax2D,
   drawing
 };
+use euclid::Point2D;
 
 // 104ms, 1000 circrles, Δ = 2^-10, chunk = 2^4
-pub fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle> + '_ {
+pub fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
   use rand::prelude::*;
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
@@ -26,14 +27,15 @@ pub fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle
         let r = (rng.gen_range::<f32, _>(min_dist..1.0).powf(1.0) * argmax_ret.distance)
           .min(1.0 / 6.0);
         let delta = argmax_ret.distance - r;
-        let offset = Point { x: angle.cos(), y: angle.sin() } * delta;
+        // polar to cartesian
+        let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
         Circle {
-          xy: argmax_ret.point.translate(offset), r
+          xy: (argmax_ret.point - offset).to_point(), r
         }
       };
       argmax.insert_sdf_domain(
-        Argmax2D::domain_empirical(circle.xy, argmax_ret.distance).into(),
+        Argmax2D::domain_empirical(circle.xy, argmax_ret.distance),
         |pixel| circle.sdf(pixel)
       );
 

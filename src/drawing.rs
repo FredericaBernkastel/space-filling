@@ -1,35 +1,36 @@
-use std::{
-  collections::HashMap,
-  thread
-};
+use {
+  std::{collections::HashMap, thread},
+  image::{
+    DynamicImage, GenericImageView, ImageBuffer, Rgba, Pixel,
+    imageops::FilterType
+  },
+  plotters::prelude::*,
+  euclid::{Point2D, Box2D},
 
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, Pixel};
-use image::imageops::FilterType;
-use plotters::prelude::*;
-
-use crate::{
-  error::{self, ErrorKind::NoneError, Result},
-  geometry::{Circle, Point, Rect, TLBR},
-  sdf::SDF,
-  argmax2d::{ArgmaxResult, Argmax2D}
+  crate::{
+    error::{self, ErrorKind::NoneError, Result},
+    geometry::{Circle, WorldSpace, PixelSpace},
+    sdf::SDF,
+    argmax2d::{ArgmaxResult, Argmax2D}
+  }
 };
 
 /// draw a set of circles
 pub fn draw_circles(
-  circles: impl Iterator<Item = Circle>,
-  resolution: Point<u32>
+  circles: impl Iterator<Item = Circle<f32, WorldSpace>>,
+  resolution: Point2D<u32, PixelSpace>
 ) -> image::RgbImage {
   let mut image = ImageBuffer::<image::Rgb<u8>, _>::new(
     resolution.x as u32,
     resolution.y as u32
   );
   let canvas = BitMapBackend::with_buffer(
-    image.as_mut(), (resolution.x, resolution.y)
+    image.as_mut(), resolution.to_tuple()
   ).into_drawing_area();
 
   for circle in circles {
     canvas.draw(&plotters::element::Circle::new(
-      ((circle.xy.x * resolution.x as f32) as i32, (circle.xy.y * resolution.y as f32) as i32),
+      (circle.xy * resolution.x as f32).to_i32().to_tuple(),
       (circle.r * resolution.x as f32) as u32, //?
       Into::<ShapeStyle>::into(&RGBColor(0xff, 0xff, 0xff)).filled()
     )).ok();
@@ -40,11 +41,11 @@ pub fn draw_circles(
 
 /// draw image in a circle
 pub fn draw_img(
-  circle: Circle,
+  circle: Circle<f32, WorldSpace>,
   file: std::path::PathBuf,
   framebuffer: &mut image::RgbaImage
 ) -> Result<()> {
-  let resolution = Point::<u32> { x: framebuffer.width(), y: framebuffer.height() };
+  let resolution: Point2D<_, PixelSpace> = framebuffer.dimensions().into();
 
   fn image_proc(circle_r: f32, img_path: String) -> DynamicImage {
     let mut img =
@@ -66,9 +67,9 @@ pub fn draw_img(
       .as_mut_rgba8().unwrap()
       .enumerate_pixels_mut()
       .for_each( |(x, y, pixel)| {
-        let sdf = Circle {
-          xy: Point {x: circle_r, y: circle_r }, r: circle_r
-        }.sdf( Point {x: x as f32, y: y as f32}) / circle_r;
+        let sdf = Circle::<f32, WorldSpace> {
+          xy: [circle_r, circle_r].into(), r: circle_r
+        }.sdf( Point2D::from([x, y]).to_f32()) / circle_r;
         let alpha = (1.0 - (1.0 - sdf.abs()).powf(circle_r / 2.0)) * ((sdf < 0.0) as u8 as f32);
         pixel.0[3] = (alpha * 255.0) as u8;
       });
@@ -104,24 +105,21 @@ pub fn draw_img(
     circle.r * resolution.x as f32, //?
     file.to_string_lossy().to_string()
   );
-  let circle = Circle {
-    xy: Point { x: circle.xy.x * resolution.x as f32, y: circle.xy.y * resolution.y as f32 },
-    r: circle.r * resolution.x as f32 //?
-  };
-  let coord: TLBR<f32> = Rect {
-    center: Point { x: circle.xy.x, y: circle.xy.y },
-    size: circle.r * 2.0
-  }.into();
+  let circle = circle * resolution.x as f32;
+  let coord = Box2D {
+    min: (circle.xy.to_vector() - [circle.r, circle.r].into()).to_point(),
+    max: Point2D::from([circle.r, circle.r]) * 2.0
+  }.to_u32();
 
-  image::imageops::overlay(framebuffer, &img, coord.tl.x as u32, coord.tl.y as u32);
+  image::imageops::overlay(framebuffer, &img, coord.min.x, coord.min.y);
   Ok(())
 }
 
 /// draw image in each circle, parallel
 pub fn draw_img_parallel(
-  circles: impl Iterator<Item = Circle>,
+  circles: impl Iterator<Item = Circle<f32, WorldSpace>>,
   files: impl Iterator<Item = std::path::PathBuf>,
-  resolution: Point<u32>,
+  resolution: Point2D<u32, PixelSpace>,
   num_threads: usize
 ) -> Result<image::RgbaImage> {
   use rand::prelude::*;
@@ -187,9 +185,9 @@ pub fn draw_img_parallel(
 
 /// draw image in each circle, parallel. faster, will crash if two circles intersect.
 pub fn draw_img_parallel_unsafe(
-  circles: impl Iterator<Item = Circle>,
+  circles: impl Iterator<Item = Circle<f32, WorldSpace>>,
   files: impl Iterator<Item = std::path::PathBuf>,
-  resolution: Point<u32>
+  resolution: Point2D<u32, PixelSpace>
 ) -> Result<image::RgbaImage> {
   use rayon::prelude::*;
 
@@ -199,10 +197,7 @@ pub fn draw_img_parallel_unsafe(
   let draw_data = circles.zip(files).enumerate().collect::<Vec<_>>();
   draw_data.into_par_iter()
     .for_each(|(i, (circle, file))| {
-      println!("#{}: {:?} -> \"{}\"", i, Circle {
-          xy: circle.xy * resolution.x as f32,
-          r: circle.r * resolution.x as f32
-        },
+      println!("#{}: {:?} -> \"{}\"", i, circle * resolution.x as f32,
         file.file_name()
           .map(|x| x.to_string_lossy())
           .unwrap_or("?".into())

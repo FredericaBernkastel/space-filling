@@ -1,20 +1,21 @@
 use crate::{
   error::Result,
-  geometry::{Rect, Point, TLBR}
+  geometry::{WorldSpace, PixelSpace}
 };
+use euclid::{Rect, Box2D, Point2D, Vector2D};
 use error_chain::bail;
 
 pub struct Argmax2D {
   dist_map: Vec<f32>,
   pub resolution: u64,
   pub chunk_size: u64,
-  chunk_argmax: Vec<ArgmaxResult<f32>>
+  chunk_argmax: Vec<ArgmaxResult<f32, WorldSpace>>
 }
 
 pub struct Chunk<'a> {
   pub slice: &'a [f32],
-  pub argmax_ref: &'a ArgmaxResult<f32>,
-  pub top_left: Point<u64>,
+  pub argmax_ref: &'a ArgmaxResult<f32, WorldSpace>,
+  pub top_left: Point2D<u64, PixelSpace>,
   pub id: u64,
   size: u64,
   global_size: u64
@@ -25,19 +26,16 @@ impl<'a> Chunk<'a> {
     std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut f32, self.slice.len())
   }
 
-  unsafe fn argmax_ref_mut(&self) -> &mut ArgmaxResult<f32> {
-    &mut *(self.argmax_ref as *const _ as *mut ArgmaxResult<f32>)
+  unsafe fn argmax_ref_mut(&self) -> &mut ArgmaxResult<f32, WorldSpace> {
+    &mut *(self.argmax_ref as *const _ as *mut ArgmaxResult<f32, WorldSpace>)
   }
 
-  fn offset_to_xy_normalized(&self, offset: u64) -> Point<f32> {
-    let xy = offset_to_xy(offset, self.size) + self.top_left;
-    Point {
-      x: xy.x as f32 / self.global_size as f32,
-      y: xy.y as f32 / self.global_size as f32,
-    }
+  fn offset_to_xy_normalized(&self, offset: u64) -> Point2D<f32, WorldSpace> {
+    let xy = offset_to_xy(offset, self.size) + self.top_left.to_vector();
+    (xy.to_f32() / self.global_size as f32).cast_unit()
   }
 
-  fn pixels_mut(&self) -> impl Iterator<Item = (Point<f32>, &mut f32)> {
+  fn pixels_mut(&self) -> impl Iterator<Item = (Point2D<f32, WorldSpace>, &mut f32)> {
     unsafe { self.slice_mut() }
       .iter_mut()
       .enumerate()
@@ -49,35 +47,35 @@ impl<'a> Chunk<'a> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct ArgmaxResult<T> {
+pub struct ArgmaxResult<T, Space> {
   pub distance: f32,
-  pub point: Point<T>
+  pub point: Point2D<T, Space>
 }
 
-impl<T: Default> Default for ArgmaxResult<T> {
+impl<T: Default, S> Default for ArgmaxResult<T, S> {
   fn default() -> Self {
     ArgmaxResult {
       distance: f32::MAX / 2.0,
-      point: Point { x: T::default(), y: T::default() }
+      point: Point2D::default()
     }
   }
 }
 
-impl<T> Eq for ArgmaxResult<T> {}
+impl<T, S> Eq for ArgmaxResult<T, S> {}
 
-impl<T> PartialEq for ArgmaxResult<T> {
+impl<T, S> PartialEq for ArgmaxResult<T, S> {
   fn eq(&self, other: &Self) -> bool {
     self.distance.eq(&other.distance)
   }
 }
 
-impl<T> PartialOrd for ArgmaxResult<T> {
+impl<T, S> PartialOrd for ArgmaxResult<T, S> {
   fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
     self.distance.partial_cmp(&other.distance)
   }
 }
 
-impl<T> std::cmp::Ord for ArgmaxResult<T> {
+impl<T, S> std::cmp::Ord for ArgmaxResult<T, S> {
   fn cmp(&self, other: &Self) -> std::cmp::Ordering {
     // waiting for #![feature(total_cmp)]
     fn total_cmp(left: f32, right: f32) -> std::cmp::Ordering {
@@ -92,15 +90,14 @@ impl<T> std::cmp::Ord for ArgmaxResult<T> {
   }
 }
 
-fn offset_to_xy(offset: u64, width: u64) -> Point<u64> {
-  Point {
-    x: offset % width,
-    y: offset / width,
-  }
+fn offset_to_xy(offset: u64, width: u64) -> Point2D<u64, PixelSpace> {
+  [ offset % width,
+    offset / width,
+  ].into()
 }
 
-fn xy_to_offset(xy: Point<u64>, width: u64) -> u64 {
-  xy.y * width + xy.x
+fn xy_to_offset(xy: Point2D<i64, PixelSpace>, width: u64) -> u64 {
+  xy.y as u64 * width + xy.x as u64
 }
 
 impl Argmax2D {
@@ -144,45 +141,40 @@ impl Argmax2D {
       .map(move |id| self.get_chunk(id))
   }
 
-  pub fn find_max(&self) -> ArgmaxResult<f32> {
+  pub fn find_max(&self) -> ArgmaxResult<f32, WorldSpace> {
     self.chunk_argmax.iter().cloned()
       .max()
       .unwrap()
   }
 
-  pub fn insert_sdf(&mut self, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) {
+  pub fn insert_sdf(&mut self, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
     self.insert_sdf_domain(
-      TLBR {
-        tl: Point { x: 0.0, y: 0.0 },
-        br: Point { x: 1.0, y: 1.0 }
-      },
+      Rect::new(
+        [0.0, 0.0].into(),
+        [1.0, 1.0].into(),
+      ),
       sdf
     );
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: TLBR<f32>, sdf: impl Fn(Point<f32>) -> f32 + Sync + Send) {
+  pub fn insert_sdf_domain(&mut self, domain: Rect<f32, WorldSpace>, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
     use rayon::prelude::*;
 
-    let domain = TLBR {
-      tl: Point { x: domain.tl.x.max(0.0), y: domain.tl.y.max(0.0) } * self.resolution as f32,
-      br: Point { x: domain.br.x.min(1.0), y: domain.br.y.min(1.0) } * self.resolution as f32
-    };
-    let chunk_span = TLBR {
-      tl: Point {
-        x: (domain.tl.x / self.chunk_size as f32).floor() as u64,
-        y: (domain.tl.y / self.chunk_size as f32).floor() as u64
-      },
-      br: Point {
-        x: (domain.br.x / self.chunk_size as f32).ceil() as u64,
-        y: (domain.br.y / self.chunk_size as f32).ceil() as u64
-      },
-    };
+    let domain = domain.to_box2d().intersection_unchecked(
+      &Box2D::new(
+        [0.0, 0.0].into(),
+        [1.0, 1.0].into()
+      )
+    ) * self.resolution as f32;
+    let chunk_span = (domain / self.chunk_size as f32)
+      .round_out()
+      .to_i64();
 
-    (chunk_span.tl.y .. chunk_span.br.y)
+    (chunk_span.min.y .. chunk_span.max.y)
       .into_par_iter()
       .flat_map(move |chunk_y|
-        (chunk_span.tl.x .. chunk_span.br.x)
-          .into_par_iter().map(move |chunk_x| Point { x: chunk_x, y: chunk_y })
+        (chunk_span.min.x .. chunk_span.max.x)
+          .into_par_iter().map(move |chunk_x| [chunk_x, chunk_y].into())
       )
       .for_each(move |chunk_xy| {
         let chunk = self.get_chunk(xy_to_offset(chunk_xy, self.resolution / self.chunk_size));
@@ -199,12 +191,12 @@ impl Argmax2D {
       });
   }
 
-  pub fn pixels(&self) -> impl Iterator<Item = ArgmaxResult<u64>> + '_ {
+  pub fn pixels(&self) -> impl Iterator<Item = ArgmaxResult<u64, PixelSpace>> + '_ {
     self.chunks().flat_map(move |chunk| {
       chunk.slice.iter().enumerate().map(move |(i, pixel)|
         ArgmaxResult {
           distance: *pixel,
-          point: offset_to_xy(i as u64, chunk.size) + chunk.top_left
+          point: offset_to_xy(i as u64, chunk.size) + chunk.top_left.to_vector()
         }
       )
     })
@@ -226,10 +218,11 @@ impl Argmax2D {
     });
   }
 
-  pub fn domain_empirical(center: Point<f32>, max_dist: f32) -> Rect<f32> {
+  pub fn domain_empirical(center: Point2D<f32, WorldSpace>, max_dist: f32) -> Rect<f32, WorldSpace> {
+    let size = max_dist * 4.0 * std::f32::consts::SQRT_2;
     Rect {
-      center,
-      size: max_dist * 4.0 * std::f32::consts::SQRT_2
+      origin: (center.to_vector() - Vector2D::from([size, size]) / 2.0).to_point(),
+      size: [size, size].into()
     }
   }
 
@@ -258,7 +251,7 @@ impl<'a> ArgmaxIter<'a> {
     self
   }
 
-  pub fn build(self) -> impl Iterator<Item = (ArgmaxResult<f32>, &'a mut Argmax2D)> {
+  pub fn build(self) -> impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)> {
     let min_dist = self.min_dist;
 
     (0..).map(move |_| {

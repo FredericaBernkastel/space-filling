@@ -17,6 +17,8 @@ plotters = { version = "0.3", default_features = false, features = ["bitmap_back
 rand = { version = "0.8", optional = true }
 rand_pcg = { version = "0.3", optional = true }
 rayon = "1.5"
+euclid = "0.22"
+num-traits = "0.2"
 
 [dev-dependencies]
 regex = "1.4"

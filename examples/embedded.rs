@@ -1,13 +1,14 @@
 use space_filling::{
-  geometry::{Circle, Point},
+  geometry::{Circle, WorldSpace},
   error::Result,
   sdf::{self, SDF},
   argmax2d::{Argmax2D, ArgmaxResult},
   drawing
 };
+use euclid::Point2D;
 
-pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult<f32>, &'a mut Argmax2D)>, nth: usize)
-  -> impl Iterator<Item = (ArgmaxResult<f32>, &'a mut Argmax2D)> {
+pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)>, nth: usize)
+  -> impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)> {
   iter.enumerate()
     .map(move |(i, (argmax_ret, argmax))| {
       if i % nth == 0 {
@@ -19,7 +20,7 @@ pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult<f32>, &'a mu
 
 /// A regular distribution embedded in a random one
 /// 88.4s, 100'000 circrles, Δ = 2^-14, chunk = 2^6
-pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle> + '_ {
+pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
   use rand::prelude::*;
   let mut rng = rand_pcg::Pcg64::seed_from_u64(1);
 
@@ -40,15 +41,15 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle> + '_ {
       let r = (rng.gen_range::<f32, _>(min_dist..1.0).powf(1.0) * argmax_ret.distance)
         .min(1.0 / 4.0);
       let delta = argmax_ret.distance - r;
-      let offset = Point { x: delta * angle.cos(), y: delta * angle.sin() };
+      let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
       Circle {
-        xy: argmax_ret.point.translate(offset), r
+        xy: (argmax_ret.point - offset).to_point(), r
       }
     };
 
     argmax.insert_sdf_domain(
-      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance).into(),
+      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance),
       |pixel| circle.sdf(pixel)
     );
   });
@@ -67,7 +68,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle> + '_ {
     };
 
     argmax.insert_sdf_domain(
-      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance).into(),
+      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance),
       |pixel| circle.sdf(pixel)
     );
 
