@@ -6,17 +6,17 @@ use {
 };
 
 pub trait SDF<T> {
-  fn sdf(self, pixel: Point2D<T, WorldSpace>) -> T;
+  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T;
 }
 
 impl<T: Float + Add<Output = T>> SDF<T> for Circle<T, WorldSpace> {
-  fn sdf(self, pixel: Point2D<T, WorldSpace>) -> T {
+  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
     (self.xy.to_vector() - pixel.to_vector()).length() - self.r
   }
 }
 
 impl SDF<f32> for Rect<f32, WorldSpace> {
-  fn sdf(self, pixel: Point2D<f32, WorldSpace>) -> f32 {
+  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
     let pixel = self.center().to_vector() - pixel.to_vector();
     let dist = pixel.abs() - (self.size.to_vector() / 2.0);
     let outside_dist = dist

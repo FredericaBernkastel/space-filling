@@ -19,6 +19,7 @@ rand_pcg = { version = "0.3", optional = true }
 rayon = "1.5"
 euclid = "0.22"
 num-traits = "0.2"
+itertools = "0.10"
 
 [dev-dependencies]
 regex = "1.4"
@@ -33,7 +34,6 @@ drawing = ["image", "plotters", "rand", "rand_pcg"]
 [profile.release]
 lto = true
 opt-level = 3
-codegen-units = 1
 
 [[example]]
 name = "fractal_distribution"

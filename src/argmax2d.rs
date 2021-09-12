@@ -2,7 +2,7 @@ use crate::{
   error::Result,
   geometry::{WorldSpace, PixelSpace}
 };
-use euclid::{Rect, Box2D, Point2D, Vector2D};
+use euclid::{Rect, Box2D, Point2D, Vector2D as V2, Size2D};
 use error_chain::bail;
 
 pub struct Argmax2D {
@@ -150,8 +150,8 @@ impl Argmax2D {
   pub fn insert_sdf(&mut self, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
     self.insert_sdf_domain(
       Rect::new(
-        [0.0, 0.0].into(),
-        [1.0, 1.0].into(),
+        Point2D::splat(0.0),
+        Size2D::splat(1.0),
       ),
       sdf
     );
@@ -162,8 +162,8 @@ impl Argmax2D {
 
     let domain = domain.to_box2d().intersection_unchecked(
       &Box2D::new(
-        [0.0, 0.0].into(),
-        [1.0, 1.0].into()
+        Point2D::splat(0.0),
+        Point2D::splat(1.0)
       )
     ) * self.resolution as f32;
     let chunk_span = (domain / self.chunk_size as f32)
@@ -221,8 +221,8 @@ impl Argmax2D {
   pub fn domain_empirical(center: Point2D<f32, WorldSpace>, max_dist: f32) -> Rect<f32, WorldSpace> {
     let size = max_dist * 4.0 * std::f32::consts::SQRT_2;
     Rect {
-      origin: (center.to_vector() - Vector2D::from([size, size]) / 2.0).to_point(),
-      size: [size, size].into()
+      origin: (center.to_vector() - V2::splat(size) / 2.0).to_point(),
+      size: Size2D::splat(size)
     }
   }
 
