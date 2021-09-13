@@ -47,5 +47,9 @@ name = "embedded"
 required-features = ["drawing"]
 
 [[example]]
+name = "polymorphic"
+required-features = ["drawing"]
+
+[[example]]
 name = "image_dataset"
 required-features = ["drawing"]

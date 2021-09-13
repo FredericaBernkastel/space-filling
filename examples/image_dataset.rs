@@ -7,6 +7,7 @@ use {
     geometry::BoundingBox
   },
   embedded::embedded,
+  image::RgbaImage
 };
 mod embedded;
 
