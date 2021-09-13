@@ -35,7 +35,7 @@ fn main() -> Result<()> {
   let mut image = image::RgbaImage::new(2048, 2048);
   fractal_distribution(&mut argmax)
     .for_each(|shape| shape
-      .texture(Luma([255]).to_rgba())
+      .texture(Luma([255u8]).to_rgba())
       .draw(&mut image));
   image.save(path)?;
   open::that(path)?;

@@ -55,10 +55,8 @@ fn main() -> Result<()> {
     })
     .par_bridge();
 
-  drawing::draw_parallel_unsafe(
-    shapes,
-    [16384, 16384].into(),
-  )?.save("out.png")?;
+  drawing::draw_parallel_unsafe(&mut RgbaImage::new(16384, 16384), shapes)
+    .save("out.png")?;
   open::that("out.png")?;
   Ok(())
 }
