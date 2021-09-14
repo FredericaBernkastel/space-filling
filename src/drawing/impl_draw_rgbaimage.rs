@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use {
   std::{thread, sync::Arc},
   euclid::{Point2D, Rect, Size2D},
@@ -23,16 +24,17 @@ impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
       Some(x) => x,
       None => return // bounding box has no intersection with screen at all
     };
+    let Δp = 1.0 / min_side;
 
     itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
       .map(|(y, x)| Point2D::<_, PixelSpace>::from([x, y]))
       .for_each(|pixel| {
-        let pixel_world = ((pixel.to_f32() - offset).to_vector() / min_side)
+         let pixel_world = ((pixel.to_f32() - offset).to_vector() * Δp)
           .cast_unit().to_point();
-        if self.sdf(pixel_world) <= 0.0 {
-          let pixel = image.get_pixel_mut(pixel.x, pixel.y);
-          *pixel = pixel.map2(&self.texture, |p1, p2| p1.max(p2));
-        }
+
+        let sdf = self.sdf(pixel_world);
+        let pixel = image.get_pixel_mut(pixel.x, pixel.y);
+        *pixel = sdf_overlay_aa(sdf, Δp, *pixel, self.texture);
       });
   }
 }
@@ -47,6 +49,7 @@ impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
       Some(x) => x,
       None => return
     };
+    let Δp = 1.0 / min_side;
     let tex = rescale_texture(self.texture, bounding_box.size());
 
     itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
@@ -54,12 +57,12 @@ impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
       .for_each(|pixel| {
         let pixel_world = ((pixel.to_f32() - offset).to_vector() / min_side)
           .cast_unit().to_point();
-        let pixel_tex = pixel - bounding_box.min.to_vector();
+        let tex_px = pixel - bounding_box.min.to_vector();
+        let tex_px = tex.get_pixel(tex_px.x, tex_px.y);
 
-        if self.shape.sdf(pixel_world) <= 0.0 {
-          let pixel = image.get_pixel_mut(pixel.x, pixel.y);
-          *pixel = pixel.map2(&tex.get_pixel(pixel_tex.x, pixel_tex.y), |p1, p2| p1.max(p2));
-        }
+        let sdf = self.sdf(pixel_world);
+        let pixel = image.get_pixel_mut(pixel.x, pixel.y);
+        *pixel = sdf_overlay_aa(sdf, Δp, *pixel, tex_px);
       });
   }
 }
@@ -102,6 +105,15 @@ fn rescale_texture(texture: &DynamicImage, size: Size2D<u32, PixelSpace>) -> Dyn
     bound_inner.size.width,
     bound_inner.size.height
   ).resize_exact(size.width, size.height, FilterType::Triangle)
+}
+
+fn sdf_overlay_aa(sdf: f32, Δp: f32, col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
+  let Δf = (0.5 * Δp - sdf) // antialias
+    .clamp(0.0, Δp);
+  let alpha = Δf / Δp;
+  // overlay blending with premultiplied alpha
+  col2.0[3] = ((col2.0[3] as f32) * alpha) as u8;
+  col1.map2(&col2, |p1, p2| p1.max( p2))
 }
 
 /// Draw shapes, parallel.
