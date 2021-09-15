@@ -7,15 +7,15 @@ use {
     imageops::FilterType
   },
   crate::{
-    drawing::{Draw, DrawSync, Texture, rescale_bounding_box},
-    error::{Result, ErrorKind::NoneError},
-    geometry::{BoundingBox, PixelSpace, WorldSpace},
+    drawing::{Draw, DrawSync, Shape, Texture, rescale_bounding_box},
+    error::Result,
+    geometry::{BoundingBox, PixelSpace},
     sdf::SDF
   }
 };
 
 impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
-  where Cutie: SDF<f32> + BoundingBox<f32, WorldSpace>
+  where Cutie: Shape
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
@@ -40,7 +40,7 @@ impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
 }
 
 impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
-  where Cutie: SDF<f32> + BoundingBox<f32, WorldSpace>
+  where Cutie: Shape
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
@@ -68,7 +68,7 @@ impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
 }
 
 impl <Cutie> Draw<RgbaImage> for Texture<Cutie, DynamicImage>
-  where Cutie: SDF<f32> + BoundingBox<f32, WorldSpace> + Clone {
+  where Cutie: Shape + Clone {
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
       shape: self.shape.clone(),
@@ -78,7 +78,7 @@ impl <Cutie> Draw<RgbaImage> for Texture<Cutie, DynamicImage>
 }
 
 impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Arc<DynamicImage>>
-  where Cutie: SDF<f32> + BoundingBox<f32, WorldSpace> + Clone {
+  where Cutie: Shape + Clone {
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
       shape: self.shape.clone(),
@@ -113,11 +113,13 @@ fn sdf_overlay_aa(sdf: f32, Δp: f32, col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgb
   let alpha = Δf / Δp;
   // overlay blending with premultiplied alpha
   col2.0[3] = ((col2.0[3] as f32) * alpha) as u8;
-  col1.map2(&col2, |p1, p2| p1.max( p2))
+  col2.blend(&col1);
+  col2
+  //col1.map2(&col2, |p1, p2| p1.max( p2))
 }
 
 /// Draw shapes, parallel.
-/// Will use resolution.x * resolution.y * num_threads * 4 bytes of memory
+/// Will use `resolution.x * resolution.y * num_threads * 4` bytes of memory.
 pub fn draw_parallel(
   shapes: impl Iterator<Item = Arc<dyn DrawSync<RgbaImage>>>,
   resolution: Point2D<u32, PixelSpace>,
@@ -159,7 +161,7 @@ pub fn draw_parallel(
     .map(|thread| thread.join().unwrap())
     .collect::<Vec<_>>();
 
-  let mut final_buffer = partial_buffers.get(0).cloned().ok_or(NoneError)?;
+  let mut final_buffer = partial_buffers[0].clone();
 
   // merge partial buffers
   partial_buffers

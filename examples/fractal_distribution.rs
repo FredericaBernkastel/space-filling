@@ -14,7 +14,6 @@ fn fractal_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f3
   argmax.insert_sdf(sdf::boundary_rect);
 
   argmax.iter().build()
-    .take(1000)
     .map(|(argmax_ret, argmax)| {
       let circle = Circle {
         xy: argmax_ret.point,
@@ -34,6 +33,7 @@ fn main() -> Result<()> {
   let mut argmax = Argmax2D::new(1024, 16)?;
   let mut image = image::RgbaImage::new(2048, 2048);
   fractal_distribution(&mut argmax)
+    .take(1000)
     .for_each(|shape| shape
       .texture(Luma([255u8]).to_rgba())
       .draw(&mut image));

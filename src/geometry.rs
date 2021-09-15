@@ -2,8 +2,10 @@ use std::ops::{Add, Mul, Div};
 use euclid::{Point2D, Box2D, Vector2D as V2, Size2D};
 use num_traits::NumCast;
 
+/// Pixel coordinate
 #[derive(Debug, Copy, Clone)]
 pub struct PixelSpace;
+/// Normalized coordinate
 #[derive(Debug, Copy, Clone)]
 pub struct WorldSpace;
 

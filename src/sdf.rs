@@ -5,6 +5,7 @@ use {
   crate::geometry::{Circle, WorldSpace}
 };
 
+/// Signed distance function
 pub trait SDF<T> {
   fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T;
 }
@@ -29,6 +30,7 @@ impl SDF<f32> for Rect<f32, WorldSpace> {
   }
 }
 
+/// Distance to the edges of image.
 pub fn boundary_rect(pixel: Point2D<f32, WorldSpace>) -> f32 {
   -Rect { origin: [0.0, 0.0].into(), size: [1.0, 1.0].into() }
     .sdf(pixel)

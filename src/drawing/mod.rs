@@ -1,44 +1,43 @@
 use {
   crate::{
     argmax2d::{Argmax2D, ArgmaxResult},
-    geometry::{BoundingBox, Circle, PixelSpace, WorldSpace},
+    geometry::{BoundingBox, PixelSpace, WorldSpace, Circle},
     sdf::SDF
   },
-  euclid::{Box2D, Point2D, Rect, Size2D, Vector2D},
+  euclid::{Box2D, Point2D, Size2D, Vector2D, Rect, Angle},
   image::{
-    ImageBuffer, Luma, Pixel, Rgba
+    ImageBuffer, Luma, Pixel
   },
   std::{
-    ops::Deref, sync::Arc
+    ops::Deref
   }
 };
 
 mod impl_draw_rgbaimage;
 pub use impl_draw_rgbaimage::draw_parallel;
 
-pub trait Draw<Backend> {
+pub trait Draw<Backend>: Shape {
   fn draw(&self, image: &mut Backend);
 }
 
-pub trait DrawSync<Backend>: Draw<Backend> + Shape + Send + Sync {}
-impl <T, Backend> DrawSync<Backend> for T where T: Draw<Backend> + Shape + Send + Sync {}
+pub trait DrawSync<Backend>: Draw<Backend> + Send + Sync {}
+impl <T, Backend> DrawSync<Backend> for T where T: Draw<Backend> + Send + Sync {}
 
+/// Something inside a rectangular area.
 pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
   fn texture<T>(self, texture: T) -> Texture<Self, T> where Self: Sized {
     Texture { shape: self, texture }
   }
-  fn rotate<T>(self, angle: euclid::Angle<T>) -> Rotation<Self, T> where Self: Sized {
+  fn rotate<T>(self, angle: Angle<T>) -> Rotation<Self, T> where Self: Sized {
     Rotation { shape: self, angle }
   }
 }
 impl <T> Shape for T where T: SDF<f32> + BoundingBox<f32, WorldSpace> {}
 
-impl<B> SDF<f32> for Arc<dyn DrawSync<B>> {
+impl<B> SDF<f32> for Box<dyn Draw<B>> {
   fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.deref().sdf(pixel) } }
-impl<B> BoundingBox<f32, WorldSpace> for Arc<dyn DrawSync<B>> {
+impl<B> BoundingBox<f32, WorldSpace> for Box<dyn Draw<B>> {
   fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.deref().bounding_box() } }
-/*impl<B> Draw<B> for Arc<dyn DrawSync<B>> {
-  fn draw(&self, image: &mut B) { self.deref().draw(image) } }*/
 
 impl<B> Draw<B> for Circle<f32, WorldSpace> { fn draw(&self, _: &mut B) { unreachable!(); } }
 impl<B> Draw<B> for Rect<f32, WorldSpace> { fn draw(&self, _: &mut B) { unreachable!(); } }
@@ -53,24 +52,13 @@ impl <S, T> SDF<f32> for Texture<S, T> where S: SDF<f32> {
 impl <S, T> BoundingBox<f32, WorldSpace> for Texture<S, T> where S: BoundingBox<f32, WorldSpace> {
   fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.shape.bounding_box() } }
 
-impl <Cutie, B> Draw<B> for Texture<Cutie, Arc<Rgba<u8>>>
-  where Cutie: SDF<f32> + BoundingBox<f32, WorldSpace> + Clone,
-        Texture<Cutie, Rgba<u8>>: Draw<B> {
-  fn draw(&self, image: &mut B) {
-    Texture {
-      shape: self.shape.clone(),
-      texture: *self.texture
-    }.draw(image)
-  }
-}
-
 #[derive(Clone)]
 pub struct Rotation<S, T> {
   pub shape: S,
-  pub angle: euclid::Angle<T>
+  pub angle: Angle<T>
 }
 impl <S> SDF<f32> for Rotation<S, f32>
-  where S: SDF<f32> + BoundingBox<f32, WorldSpace> {
+  where S: Shape {
   fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
     let pivot = self.shape.bounding_box().center();
     let pixel = euclid::Rotation2D::new(self.angle)
@@ -147,43 +135,51 @@ impl Argmax2D {
   }
 }
 
-#[test] fn texture() -> crate::error::Result<()> {
-  let mut image = image::RgbaImage::new(128, 128);
-  Circle {
-    xy: [0.5, 0.5].into(),
-    r: 0.25
-  } .texture(&image::open("doc/embedded.jpg")?)
-    .draw(&mut image);
-  //image.save("test_texture.png")?;
-  Ok(())
-}
+#[cfg(test)] mod test {
+  use {
+    super::*,
+    crate::{geometry::Circle, error::Result},
+    euclid::Rect, image::RgbaImage
+  };
 
-#[test] fn polymorphic_a() -> crate::error::Result<()> {
-  let mut image = image::RgbaImage::new(128, 128);
-  let shapes: Vec<Arc<dyn DrawSync<image::RgbaImage>>> = vec![
-    Arc::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }),
-    Arc::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() })
-  ];
-  shapes.into_iter()
-    .map(|shape| Box::new(shape
-      .rotate(euclid::Angle::degrees(45.0))
-      .texture(Luma([255u8]).to_rgba())
-    ) as Box<dyn DrawSync<_>>)
-    .for_each(|shape| shape.draw(&mut image));
-  //image.save("test_polymorphic_a.png")?;
-  Ok(())
-}
+  #[test] fn texture() -> Result<()> {
+    let mut image = RgbaImage::new(128, 128);
+    Circle {
+      xy: [0.5, 0.5].into(),
+      r: 0.25
+    } .texture(&image::open("doc/embedded.jpg")?)
+      .draw(&mut image);
+    //image.save("test_texture.png")?;
+    Ok(())
+  }
 
-#[test] fn polymorphic_b() -> crate::error::Result<()> {
-  let mut image = image::RgbaImage::new(128, 128);
-  let shapes: Vec<Box<dyn Draw<image::RgbaImage>>> = vec![
-    Box::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }
-      .texture(Luma([255u8]).to_rgba())),
-    Box::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() }
-      .texture(Luma([127u8]).to_rgba()))
-  ];
-  shapes.into_iter()
-    .for_each(|shape| shape.draw(&mut image));
-  //image.save("test_polymorphic_b.png")?;
-  Ok(())
+  #[test] fn polymorphic_a() -> Result<()> {
+    let mut image = RgbaImage::new(128, 128);
+    let shapes: Vec<Box<dyn Draw<RgbaImage>>> = vec![
+      Box::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }),
+      Box::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() })
+    ];
+    shapes.into_iter()
+      .map(|shape| Box::new(shape
+        .rotate(Angle::degrees(45.0))
+        .texture(Luma([255u8]).to_rgba())
+      ) as Box<dyn Draw<RgbaImage>>)
+      .for_each(|shape| shape.draw(&mut image));
+    //image.save("test_polymorphic_a.png")?;
+    Ok(())
+  }
+
+  #[test] fn polymorphic_b() -> Result<()> {
+    let mut image = RgbaImage::new(128, 128);
+    let shapes: Vec<Box<dyn Draw<_>>> = vec![
+      Box::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }
+        .texture(Luma([255u8]).to_rgba())),
+      Box::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() }
+        .texture(Luma([127u8]).to_rgba()))
+    ];
+    shapes.into_iter()
+      .for_each(|shape| shape.draw(&mut image));
+    //image.save("test_polymorphic_b.png")?;
+    Ok(())
+  }
 }

@@ -24,7 +24,6 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
     .min_dist(min_dist)
     .build()
     .enumerate()
-    .take(1000)
     .map(move |(i, (argmax_ret, argmax))| {
       let shape: Box<dyn DrawSync<_>> = match i % 2 {
 
@@ -43,8 +42,8 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
           }.texture(texture.clone())),
 
         1 | _ => Box::new(Rect {
-            origin: argmax_ret.point - Vector2D::splat(argmax_ret.distance / 4.0),
-            size: Size2D::splat(argmax_ret.distance / 2.0)
+            origin: argmax_ret.point - Vector2D::splat(argmax_ret.distance / 2.0),
+            size: Size2D::splat(argmax_ret.distance / 1.0)
           }.rotate(Angle::degrees(rng.gen_range::<f32, _>(0.0..45.0)))
            .texture(Rgba([(argmax_ret.distance.sqrt() * 255.0) as u8, 32, 128, 255])))
 
@@ -63,7 +62,8 @@ fn main() -> Result<()> {
   let path = "out.png";
   let mut argmax = Argmax2D::new(1024, 16)?;
   let texture = Arc::new(image::open("doc/embedded.jpg")?);
-  let shapes = polymorphic(&mut argmax, texture).par_bridge();
+  let shapes = polymorphic(&mut argmax, texture)
+    .take(1000).par_bridge();
   drawing::draw_parallel_unsafe(&mut RgbaImage::new(1024, 1024), shapes)
     .save(path)?;
   open::that(path)?;

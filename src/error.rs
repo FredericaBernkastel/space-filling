@@ -1,18 +1,20 @@
+//! .
+//!
+//! Following the macro expansion of [`error_chain`] to comply with cfg features and generic errors.
+//! ```ignore
+//! error_chain! {
+//!   foreign_links {
+//!     IoError(std::io::Error);
+//!     FromUtf8Error(std::string::FromUtf8Error);
+//!     ImageError(image::ImageError);
+//!   }
+//!
+//!   errors {
+//!     NoneError
+//!   }
+//! }
+//! ```
 use std::fmt::Debug;
-
-/*error_chain::error_chain! {
-  foreign_links {
-    IoError(std::io::Error);
-    FromUtf8Error(std::string::FromUtf8Error);
-    ImageError(image::ImageError);
-  }
-
-  errors {
-    NoneError
-  }
-}*/
-
-// following the macro expansion of error-chain to comply with cfg features and generic errors
 
 #[derive(Debug)]
 pub struct Error(

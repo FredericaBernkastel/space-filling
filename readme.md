@@ -33,6 +33,15 @@ A regular distribution embedded in a random one.
 1. Invert the distance field;
 1. Insert a fractal distribution.
 
+[`examples/polymorphic`](examples/polymorphic.rs)  
+Showcasing:
+- Dynamic dispatch interface;
+- Random distribution of mixed shapes;
+- Random color and texture fill style;
+- Parallel generation and drawing.
+
+![](doc/polymorphic.png)
+
 [`examples/image_dataset`](examples/image_dataset.rs)  
 Display over 100'000 images.  
 Run with `cargo run --release --features "drawing" --example image_dataset -- "<image folder>" -C target-cpu=native`  

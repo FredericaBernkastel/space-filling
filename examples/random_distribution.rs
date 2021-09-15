@@ -21,7 +21,6 @@ fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32
   argmax.iter()
     .min_dist(min_dist)
     .build()
-    .take(1000)
     .map(move |(argmax_ret, argmax)| {
       let circle = {
         use std::f32::consts::PI;
@@ -51,6 +50,7 @@ fn main() -> Result<()> {
   let mut argmax = Argmax2D::new(1024, 16)?;
   let mut image = image::RgbaImage::new(2048, 2048);
   random_distribution(&mut argmax)
+    .take(1000)
     .for_each(|shape| shape
       .texture(Luma([255u8]).to_rgba())
       .draw(&mut image));

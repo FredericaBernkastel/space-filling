@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     }
   );
 
-  let shapes = shapes.into_iter().zip(files)
+  let shapes = shapes.zip(files)
     .filter_map(|(shape, file)| {
       image::open(&file).map(|tex| {
         println!("{:?} -> {:?}", shape.bounding_box(), file);
