@@ -1,6 +1,149 @@
+//! This is a library for generalized space filling in ℝ².
+//!
+//! It is split into two main modules: [`argmax2d`] for generating a distribution of shapes,
+//! and [`drawing`] for displaying it (requires `draw` feature).
+//! Here, "shape" denotes one or multiple regions of 2D space, that can be represented by a
+//! signed distance function.
+//!
+//! # Basic usage
+//! ```no_run
+//! # use {
+//! #   space_filling::{
+//! #     error::Result,
+//! #     argmax2d::Argmax2D,
+//! #     geometry::{Circle, WorldSpace},
+//! #     drawing::{Draw, Shape}
+//! #   },
+//! #   image::{Luma, Pixel}
+//! # };
+//! # fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+//! #   [].iter().cloned()
+//! # }
+//! # fn main() -> Result<()> {
+    //! let path = "out.png";
+    //!
+    //! /**
+    //!   * Initialize instance of `Argmax2D`, which will store the discrete distance field in
+    //!   * a 1024x1024 bitmap, and 16x16 chunk size.
+    //!   * Resolution must be divisible by chunk size.
+    //!   * Resolution affects the precision of solver, and is not related to final picture size.
+    //!   * Chunk size is only important for optimization. Best values depend on the actual
+    //!   * system configuration, but typically (resolution -> chunk):
+    //!   * - 1024 -> 16
+    //!   * - 4096 -> 32
+    //!   * - 16384 -> 64
+    //!   **/
+    //! let mut argmax = Argmax2D::new(1024, 16)?;
+    //!
+    //! // Initialize image buffer, which will hold final image.
+    //! let mut image = image::RgbaImage::new(2048, 2048);
+    //! // Generate the distribution of shapes:
+    //! distribution(&mut argmax)
+    //!   .take(1000)
+    //!   .for_each(|shape| shape
+    //!     .texture(Luma([255u8]).to_rgba()) // fill with white color
+    //!     .draw(&mut image)); // draw the shape on image
+    //! image.save(path)?; // save image
+//! #   Ok(())
+//! # }
+//! ```
+//! The distribution function can be defined as follows:
+//! ```
+//! # use space_filling::{
+//! #   geometry::{Circle, WorldSpace},
+//! #   error::Result,
+//! #   sdf::{self, SDF},
+//! #   argmax2d::Argmax2D,
+//! # };
+//! fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+//!   argmax.insert_sdf(sdf::boundary_rect); // all shapes must be *inside* the image
+//!
+//!   argmax.iter() // Returns an iterator builder. See `argmax2d::ArgmaxIter` for more options.
+//!      // Finish build. By default, this is an infinite iterator, which will break
+//!      // only after reaching a certain distance threshold (i.e. no more space).
+//!     .build()
+//!     .map(|(argmax_ret, argmax)| {
+//!       /* Here, on each iteration, `argmax_ret` contains largest value of the
+//!        * distance field, and its location;
+//!        * `&mut Argmax2D` is passed here too. Using the one from outer scope is impossible,
+//!        * because only one mutable reference must be active at any given time. */
+//!
+//!       // Make a new circle at the location with highest distance to all other circles.
+//!       let circle = Circle {
+//!         xy: argmax_ret.point,
+//!         r: argmax_ret.distance / 4.0
+//!       };
+//!
+//!       /** Update the field.
+//!         * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
+//!         * only a certain part of the field is being changed every time, depending on the
+//!         * current maximum distance. To be exact - a square region with a side of
+//!         * max_dist * 4.0 * sqrt(2.0), which made possible achieving
+//!         * greater speed of computation. **/
+//!       argmax.insert_sdf_domain(
+//!         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
+//!         |pixel| circle.sdf(pixel)
+//!       );
+//!
+//!       // Return the generated circle
+//!       circle
+//!     })
+//! }
+//! ```
+//! <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/fractal_distribution.png">
+//!
+//! # On dynamic dispatch and parallelism
+//! There are three main traits related to drawing:
+//! - `trait `[`Shape`](`drawing::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
+//! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`drawing::Shape`)`
+//! - `trait `[`DrawSync`](`drawing::DrawSync`)`: `[`Draw`](`drawing::Draw`)` + Send + Sync`
+//!
+//! At first, you could think writing:
+//! ```ignore
+//! let shapes: Vec<Box<dyn Shape>> = vec![
+//!   Box::new(Circle { ... }),
+//!   Box::new(Rect { ... })
+//! ];
+//! for shape in shapes {
+//!   shape.texture(...)
+//!     .draw(...);
+//! }
+//! ```
+//! But this won't work, because `Shape::texture` requires `Sized`.
+//! Correct way is:
+//! ```ignore
+//! let shapes: Vec<Box<dyn Draw<RgbaImage>>> = ...
+//! ```
+//! But now there is a different problem: a direct implementation, such as:
+//! ```ignore
+//! impl <T, B> Draw <B> for T where T: Shape
+//! ```
+//! is impossible due to conflicts. Therefore, it is only implemented for a few specific types.
+//! In order to make a custom type work in a dynamic interface,
+//! you will have to write a marker impl:
+//! ```ignore
+//! impl <B> Draw <B> for Type { fn draw(&self, _: &mut B) { unreachable!(); } }
+//! ```
+//!
+//! Lastly, there are two functions: [`draw_parallel`](drawing::draw_parallel),
+//! [`draw_parallel_unsafe`](drawing::draw_parallel_unsafe) that accept an iterator on
+//! `dyn DrawSync<RgbaImage>`. It is constructed via trait object casting, exactly as above.
+//! See `examples/polymorphic.rs` and `drawing::test::polymorphic_*` for more examples.
+//!
+//! This way, both distribution generation and drawing are guaranteed to evenly load all available
+//! cores, as long as enough memory bandwidth is available.
+//!
+//! Have a good day, `nyaa~ =^_^=`
+//!
+//! <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/neko.gif">
+
+#![cfg_attr(doc, feature(doc_cfg))]
+#![allow(rustdoc::private_intra_doc_links)]
+
 pub mod error;
 pub mod sdf;
 pub mod argmax2d;
 pub mod geometry;
 #[cfg(feature = "drawing")]
+#[cfg_attr(doc, doc(cfg(feature = "drawing")))]
 pub mod drawing;

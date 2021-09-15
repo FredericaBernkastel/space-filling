@@ -1,12 +1,14 @@
-use space_filling::{
-  geometry::{Circle, WorldSpace},
-  error::Result,
-  sdf::{self, SDF},
-  argmax2d::{Argmax2D, ArgmaxResult},
-  drawing
+use {
+  space_filling::{
+    geometry::{Circle, WorldSpace},
+    error::Result,
+    sdf::{self, SDF},
+    argmax2d::{Argmax2D, ArgmaxResult},
+    drawing::{Draw, Shape}
+  },
+  euclid::Point2D,
+  image::{Luma, Pixel}
 };
-use euclid::Point2D;
-
 pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)>, nth: usize)
   -> impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)> {
   iter.enumerate()
@@ -49,7 +51,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, World
     };
 
     argmax.insert_sdf_domain(
-      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance),
+      Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
       |pixel| circle.sdf(pixel)
     );
   });
@@ -68,7 +70,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, World
     };
 
     argmax.insert_sdf_domain(
-      Argmax2D::domain_empirical(circle.xy, argmax_ret.distance),
+      Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
       |pixel| circle.sdf(pixel)
     );
 
@@ -79,11 +81,10 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, World
 fn main() -> Result<()> {
   let path = "out.png";
   let mut argmax = Argmax2D::new(16384, 64)?;
-  let circles = embedded(&mut argmax);
-  drawing::draw_circles(
-    circles,
-    (16384, 16384).into()
-  ).save(path)?;
+  let mut image = image::RgbaImage::new(16384, 16384);
+  embedded(&mut argmax)
+    .for_each(|c| c.texture(Luma([255]).to_rgba()).draw(&mut image));
+  image.save(path)?;
   open::that(path)?;
   Ok(())
 }

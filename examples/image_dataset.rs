@@ -1,14 +1,17 @@
 #![allow(dead_code)]
-use space_filling::{
-  error::Result,
-  argmax2d::Argmax2D,
-  drawing
+use {
+  space_filling::{
+    error::Result,
+    argmax2d::Argmax2D,
+    drawing::{self, DrawSync, Shape},
+    geometry::BoundingBox
+  },
+  embedded::embedded,
+  image::RgbaImage
 };
-
-use embedded::embedded;
 mod embedded;
 
-pub fn find_files(
+fn find_files(
   path: &str,
   filter: impl Fn(&str) -> bool
 ) -> impl Iterator<Item = std::path::PathBuf> {
@@ -27,13 +30,15 @@ pub fn find_files(
 
 /// Generate a distribution, and use it to display an image dataset, up to 100'000 images.
 fn main() -> Result<()> {
+  use rayon::prelude::*;
+
   let image_folder = std::env::args().nth(1)
     .map(|path| std::path::Path::new(&path).is_dir().then(|| path))
     .flatten()
     .expect("please provide a valid path in arguments");
 
   let mut argmax = Argmax2D::new(16384, 64)?;
-  let circles = embedded(&mut argmax);
+  let shapes = embedded(&mut argmax);
 
   let files = find_files(
     &image_folder, {
@@ -42,12 +47,17 @@ fn main() -> Result<()> {
     }
   );
 
-  drawing::draw_img_parallel(
-    circles,
-    files,
-    (16384, 16384).into(),
-    4
-  )?.save("out.png")?;
+  let shapes = shapes.zip(files)
+    .filter_map(|(shape, file)| {
+      image::open(&file).map(|tex| {
+        println!("{:?} -> {:?}", shape.bounding_box(), file);
+        Box::new(shape.texture(tex)) as Box<dyn DrawSync<_>>
+      }).map_err(|_| println!("unable to open {:?}", file)).ok()
+    })
+    .par_bridge();
+
+  drawing::draw_parallel_unsafe(&mut RgbaImage::new(16384, 16384), shapes)
+    .save("out.png")?;
   open::that("out.png")?;
   Ok(())
 }

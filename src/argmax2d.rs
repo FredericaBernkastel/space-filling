@@ -2,7 +2,7 @@ use crate::{
   error::Result,
   geometry::{WorldSpace, PixelSpace}
 };
-use euclid::{Rect, Box2D, Point2D, Vector2D};
+use euclid::{Rect, Box2D, Point2D, Vector2D as V2, Size2D};
 use error_chain::bail;
 
 pub struct Argmax2D {
@@ -12,11 +12,11 @@ pub struct Argmax2D {
   chunk_argmax: Vec<ArgmaxResult<f32, WorldSpace>>
 }
 
-pub struct Chunk<'a> {
+struct Chunk<'a> {
   pub slice: &'a [f32],
   pub argmax_ref: &'a ArgmaxResult<f32, WorldSpace>,
   pub top_left: Point2D<u64, PixelSpace>,
-  pub id: u64,
+  //pub id: u64,
   size: u64,
   global_size: u64
 }
@@ -121,7 +121,7 @@ impl Argmax2D {
       slice: &self.dist_map[(chunk_area * id) as usize .. (chunk_area * (id + 1)) as usize],
       argmax_ref: &self.chunk_argmax[id as usize],
       top_left: offset_to_xy(id, self.resolution / self.chunk_size) * self.chunk_size,
-      id,
+      //id,
       size: self.chunk_size,
       global_size: self.resolution
     }
@@ -150,8 +150,8 @@ impl Argmax2D {
   pub fn insert_sdf(&mut self, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
     self.insert_sdf_domain(
       Rect::new(
-        [0.0, 0.0].into(),
-        [1.0, 1.0].into(),
+        Point2D::splat(0.0),
+        Size2D::splat(1.0),
       ),
       sdf
     );
@@ -162,8 +162,8 @@ impl Argmax2D {
 
     let domain = domain.to_box2d().intersection_unchecked(
       &Box2D::new(
-        [0.0, 0.0].into(),
-        [1.0, 1.0].into()
+        Point2D::splat(0.0),
+        Point2D::splat(1.0)
       )
     ) * self.resolution as f32;
     let chunk_span = (domain / self.chunk_size as f32)
@@ -191,6 +191,8 @@ impl Argmax2D {
       });
   }
 
+  /// [`Argmax2D::dist_map`] bitmap is represtented in the address space as 2nd order Z-order curve.
+  /// Therefore, this is the only method to access the raw data directly. Also check  [`Self::display_debug`]
   pub fn pixels(&self) -> impl Iterator<Item = ArgmaxResult<u64, PixelSpace>> + '_ {
     self.chunks().flat_map(move |chunk| {
       chunk.slice.iter().enumerate().map(move |(i, pixel)|
@@ -202,6 +204,7 @@ impl Argmax2D {
     })
   }
 
+  /// Invert distance field.
   pub fn invert(&mut self) {
     use rayon::prelude::*;
 
@@ -221,8 +224,8 @@ impl Argmax2D {
   pub fn domain_empirical(center: Point2D<f32, WorldSpace>, max_dist: f32) -> Rect<f32, WorldSpace> {
     let size = max_dist * 4.0 * std::f32::consts::SQRT_2;
     Rect {
-      origin: (center.to_vector() - Vector2D::from([size, size]) / 2.0).to_point(),
-      size: [size, size].into()
+      origin: (center.to_vector() - V2::splat(size) / 2.0).to_point(),
+      size: Size2D::splat(size)
     }
   }
 
