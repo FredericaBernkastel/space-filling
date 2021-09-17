@@ -2,7 +2,7 @@
 //!
 //! It is split into two main modules: [`argmax2d`] for generating a distribution of shapes,
 //! and [`drawing`] for displaying it (requires `draw` feature).
-//! Here, "shape" denotes one or multiple regions of 2D space, that can be represented by a
+//! Here, "shape" denotes one or multiple regions of ℝ² space, that can be represented by a
 //! signed distance function.
 //!
 //! # Basic usage
@@ -11,12 +11,13 @@
 //! #   space_filling::{
 //! #     error::Result,
 //! #     argmax2d::Argmax2D,
-//! #     geometry::{Circle, WorldSpace},
-//! #     drawing::{Draw, Shape}
+//! #     geometry::{Shape, Circle, Scale, Translation},
+//! #     drawing::Draw
 //! #   },
 //! #   image::{Luma, Pixel}
 //! # };
-//! # fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+//! # type AffineT<T> = Scale<Translation<T, f32>, f32>;
+//! # fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
 //! #   [].iter().cloned()
 //! # }
 //! # fn main() -> Result<()> {
@@ -50,12 +51,16 @@
 //! The distribution function can be defined as follows:
 //! ```
 //! # use space_filling::{
-//! #   geometry::{Circle, WorldSpace},
+//! #   geometry::{Circle, Shape, Translation, Scale},
 //! #   error::Result,
 //! #   sdf::{self, SDF},
 //! #   argmax2d::Argmax2D,
 //! # };
-//! fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+//! # use euclid::Vector2D;
+//! // A set with an affine morphism on it
+//! type AffineT<T> = Scale<Translation<T, f32>, f32>;
+//!
+//! fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
 //!   argmax.insert_sdf(sdf::boundary_rect); // all shapes must be *inside* the image
 //!
 //!   argmax.iter() // Returns an iterator builder. See `argmax2d::ArgmaxIter` for more options.
@@ -63,16 +68,15 @@
 //!      // only after reaching a certain distance threshold (i.e. no more space).
 //!     .build()
 //!     .map(|(argmax_ret, argmax)| {
-//!       /* Here, on each iteration, `argmax_ret` contains largest value of the
+//!      /** Here, on each iteration, `argmax_ret` contains largest value of the
 //!        * distance field, and its location;
 //!        * `&mut Argmax2D` is passed here too. Using the one from outer scope is impossible,
-//!        * because only one mutable reference must be active at any given time. */
+//!        * because only one mutable reference must be active at any given time. **/
 //!
 //!       // Make a new circle at the location with highest distance to all other circles.
-//!       let circle = Circle {
-//!         xy: argmax_ret.point,
-//!         r: argmax_ret.distance / 4.0
-//!       };
+//!       let circle = Circle
+//!         .translate(argmax_ret.point.to_vector())
+//!         .scale(Vector2D::splat(argmax_ret.distance / 2.0));
 //!
 //!       /** Update the field.
 //!         * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
@@ -94,8 +98,8 @@
 //!
 //! # On dynamic dispatch and parallelism
 //! There are three main traits related to drawing:
-//! - `trait `[`Shape`](`drawing::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
-//! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`drawing::Shape`)`
+//! - `trait `[`Shape`](`geometry::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
+//! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`geometry::Shape`)`
 //! - `trait `[`DrawSync`](`drawing::DrawSync`)`: `[`Draw`](`drawing::Draw`)` + Send + Sync`
 //!
 //! At first, you could think writing:

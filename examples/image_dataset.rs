@@ -3,8 +3,8 @@ use {
   space_filling::{
     error::Result,
     argmax2d::Argmax2D,
-    drawing::{self, DrawSync, Shape},
-    geometry::BoundingBox
+    drawing::{self, DrawSync},
+    geometry::{Shape, BoundingBox}
   },
   embedded::embedded,
   image::RgbaImage

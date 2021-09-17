@@ -1,14 +1,14 @@
 use {
   std::sync::Arc,
   space_filling::{
-    geometry::Circle,
+    geometry::{Shape, Circle, Square},
     error::Result,
     sdf,
     argmax2d::Argmax2D,
-    drawing::{self, Shape, DrawSync}
+    drawing::{self, DrawSync}
   },
   image::{RgbaImage, Rgba, DynamicImage},
-  euclid::{Rect, Vector2D, Size2D, Point2D, Angle}
+  euclid::{Vector2D as V2, Point2D, Angle}
 };
 
 // 174ms, 1000 circles, Δ = 2^-10, chunk = 2^4
@@ -36,16 +36,17 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
             let delta = argmax_ret.distance - r;
             let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
-            Circle {
-              xy: (argmax_ret.point - offset).to_point(), r
-            }
-          }.texture(texture.clone())),
+          Circle
+            .translate(argmax_ret.point - offset)
+            .scale(V2::splat(2.0 * r))
+            .texture(texture.clone())
+          }),
 
-        1 | _ => Box::new(Rect {
-            origin: argmax_ret.point - Vector2D::splat(argmax_ret.distance / 2.0),
-            size: Size2D::splat(argmax_ret.distance / 1.0)
-          }.rotate(Angle::degrees(rng.gen_range::<f32, _>(0.0..45.0)))
-           .texture(Rgba([(argmax_ret.distance.sqrt() * 255.0) as u8, 32, 128, 255])))
+        1 | _ => Box::new(Square
+          .translate(argmax_ret.point.to_vector())
+          .scale(V2::splat(argmax_ret.distance))
+          .rotate(Angle::degrees(rng.gen_range::<f32, _>(0.0..45.0)))
+          .texture(Rgba([(argmax_ret.distance.sqrt() * 255.0) as u8, 32, 128, 255])))
 
       };
       argmax.insert_sdf_domain(
