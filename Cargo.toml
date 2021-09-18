@@ -1,6 +1,6 @@
 [package]
 name = "space-filling"
-version = "0.2.0"
+version = "0.3.0"
 description = "Generalized 2D space filling"
 readme = "readme.md"
 authors = ["Frederica Bernkastel <bernkastel.frederica@protonmail.com>"]
@@ -10,7 +10,7 @@ categories = ["science"]
 keywords = ["generative-art"]
 license = "GPL-3.0-only"
 edition = "2018"
-exclude = ["doc/*"]
+exclude = ["LICENCE", "doc/*", "src/legacy/*"]
 
 [lib]
 name = "space_filling"

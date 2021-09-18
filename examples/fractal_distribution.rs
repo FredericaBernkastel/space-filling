@@ -1,24 +1,26 @@
 use {
   space_filling::{
-    geometry::{Circle, WorldSpace},
+    geometry::{Shape, Circle, Translation, Scale},
     error::Result,
     sdf::{self, SDF},
     argmax2d::Argmax2D,
-    drawing::{Draw, Shape}
+    drawing::Draw
   },
-  image::{Luma, Pixel}
+  image::{Luma, Pixel},
+  euclid::{Vector2D as V2}
 };
 
+type AffineT<T> = Scale<Translation<T, f32>, f32>;
+
 // 158ms, 1000 circles, Δ = 2^-10, chunk = 2^4
-fn fractal_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+fn fractal_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
   argmax.insert_sdf(sdf::boundary_rect);
 
   argmax.iter().build()
     .map(|(argmax_ret, argmax)| {
-      let circle = Circle {
-        xy: argmax_ret.point,
-        r: argmax_ret.distance / 4.0
-      };
+      let circle = Circle
+        .translate(argmax_ret.point.to_vector())
+        .scale(V2::splat(argmax_ret.distance / 4.0));
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
         |pixel| circle.sdf(pixel)

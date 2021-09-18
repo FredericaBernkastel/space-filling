@@ -1,17 +1,19 @@
 use {
   space_filling::{
-    geometry::{Circle, WorldSpace},
+    geometry::{Shape, Circle, Translation, Scale},
     error::Result,
     sdf::{self, SDF},
     argmax2d::Argmax2D,
-    drawing::{Draw, Shape}
+    drawing::Draw
   },
   image::{Luma, Pixel},
-  euclid::Point2D
+  euclid::{Point2D, Vector2D as V2}
 };
 
+type AffineT<T> = Scale<Translation<T, f32>, f32>;
+
 // 104ms, 1000 circrles, Δ = 2^-10, chunk = 2^4
-fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32, WorldSpace>> + '_ {
+fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
   use rand::prelude::*;
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
@@ -32,9 +34,8 @@ fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = Circle<f32
         // polar to cartesian
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
-        Circle {
-          xy: (argmax_ret.point - offset).to_point(), r
-        }
+        Circle.translate(argmax_ret.point - offset)
+          .scale(V2::splat(r))
       };
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),

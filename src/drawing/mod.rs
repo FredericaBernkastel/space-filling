@@ -1,10 +1,14 @@
 use {
   crate::{
     argmax2d::{Argmax2D, ArgmaxResult},
-    geometry::{BoundingBox, PixelSpace, WorldSpace, Circle},
+    geometry::{
+      BoundingBox, Shape,
+      PixelSpace, WorldSpace,
+      Translation, Rotation, Scale
+    },
     sdf::SDF
   },
-  euclid::{Box2D, Point2D, Size2D, Vector2D, Rect, Angle},
+  euclid::{Box2D, Point2D, Size2D, Vector2D as V2},
   image::{
     ImageBuffer, Luma, Pixel
   },
@@ -14,6 +18,7 @@ use {
 };
 
 mod impl_draw_rgbaimage;
+#[cfg(test)] mod tests;
 pub use impl_draw_rgbaimage::draw_parallel;
 
 pub trait Draw<Backend>: Shape {
@@ -23,26 +28,17 @@ pub trait Draw<Backend>: Shape {
 pub trait DrawSync<Backend>: Draw<Backend> + Send + Sync {}
 impl <T, Backend> DrawSync<Backend> for T where T: Draw<Backend> + Send + Sync {}
 
-/// Something inside a rectangular area.
-pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
-  fn texture<T>(self, texture: T) -> Texture<Self, T> where Self: Sized {
-    Texture { shape: self, texture }
-  }
-  fn rotate<T>(self, angle: Angle<T>) -> Rotation<Self, T> where Self: Sized {
-    Rotation { shape: self, angle }
-  }
-}
-impl <T> Shape for T where T: SDF<f32> + BoundingBox<f32, WorldSpace> {}
+impl<B> SDF<f32> for Box<dyn Draw<B>> { fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.deref().sdf(pixel) } }
+impl<B> BoundingBox<f32, WorldSpace> for Box<dyn Draw<B>> { fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.deref().bounding_box() } }
 
-impl<B> SDF<f32> for Box<dyn Draw<B>> {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.deref().sdf(pixel) } }
-impl<B> BoundingBox<f32, WorldSpace> for Box<dyn Draw<B>> {
-  fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.deref().bounding_box() } }
+//impl<B> Draw<B> for Circle { fn draw(&self, _: &mut B) { unreachable!(); } }
+//impl<B> Draw<B> for Square { fn draw(&self, _: &mut B) { unreachable!(); } }
 
-impl<B> Draw<B> for Circle<f32, WorldSpace> { fn draw(&self, _: &mut B) { unreachable!(); } }
-impl<B> Draw<B> for Rect<f32, WorldSpace> { fn draw(&self, _: &mut B) { unreachable!(); } }
+impl <B, S, T> Draw<B> for Translation<S, T> where Translation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+impl <B, S, T> Draw<B> for Rotation<S, T> where Rotation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+impl <B, S, T> Draw<B> for Scale<S, T> where Scale<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
 
-#[derive(Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Texture<S, T> {
   pub shape: S,
   pub texture: T
@@ -52,52 +48,17 @@ impl <S, T> SDF<f32> for Texture<S, T> where S: SDF<f32> {
 impl <S, T> BoundingBox<f32, WorldSpace> for Texture<S, T> where S: BoundingBox<f32, WorldSpace> {
   fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.shape.bounding_box() } }
 
-#[derive(Clone)]
-pub struct Rotation<S, T> {
-  pub shape: S,
-  pub angle: Angle<T>
-}
-impl <S> SDF<f32> for Rotation<S, f32>
-  where S: Shape {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
-    let pivot = self.shape.bounding_box().center();
-    let pixel = euclid::Rotation2D::new(self.angle)
-      .transform_point( (pixel - pivot).to_point())
-      + pivot.to_vector();
-
-    self.shape.sdf(pixel)
-  }
-}
-impl <S> BoundingBox<f32, WorldSpace> for Rotation<S, f32> where S: BoundingBox<f32, WorldSpace> {
-  fn bounding_box(&self) -> Box2D<f32, WorldSpace> {
-    let bounding = self.shape.bounding_box();
-    let pivot = bounding.center();
-    let pts = [
-      [bounding.min.x, bounding.min.y],
-      [bounding.max.x, bounding.min.y],
-      [bounding.max.x, bounding.max.y],
-      [bounding.min.x, bounding.max.y],
-    ];
-    let rot = |point: Point2D<_, _>| euclid::Rotation2D::new(self.angle)
-      .transform_point( (point - pivot).to_point())
-      + pivot.to_vector();
-    let pts = pts.iter().cloned()
-      .map(|p| rot(p.into()));
-    Box2D::from_points(pts)
-  }
-}
-
 // try to fit world in the center of image, preserving aspect ratio
 fn rescale_bounding_box(
   bounding_box: Box2D<f32, WorldSpace>,
   resolution: Size2D<u32, PixelSpace>
 ) -> (
   Option<Box2D<u32, PixelSpace>>, // bounding_box,
-  Vector2D<f32, PixelSpace>, // offset
+  V2<f32, PixelSpace>, // offset
   f32 // min_side
 ) {
   let min_side = resolution.width.min(resolution.height) as f32;
-  let offset = (resolution.to_vector().to_f32() - Vector2D::splat(min_side)) / 2.0;
+  let offset = (resolution.to_vector().to_f32() - V2::splat(min_side)) / 2.0;
   let bounding_box = bounding_box
     .scale(min_side, min_side).cast_unit()
     .round_out()
@@ -132,54 +93,5 @@ impl Argmax2D {
       *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
     });
     image
-  }
-}
-
-#[cfg(test)] mod test {
-  use {
-    super::*,
-    crate::{geometry::Circle, error::Result},
-    euclid::Rect, image::RgbaImage
-  };
-
-  #[test] fn texture() -> Result<()> {
-    let mut image = RgbaImage::new(128, 128);
-    Circle {
-      xy: [0.5, 0.5].into(),
-      r: 0.25
-    } .texture(&image::open("doc/embedded.jpg")?)
-      .draw(&mut image);
-    //image.save("test_texture.png")?;
-    Ok(())
-  }
-
-  #[test] fn polymorphic_a() -> Result<()> {
-    let mut image = RgbaImage::new(128, 128);
-    let shapes: Vec<Box<dyn Draw<RgbaImage>>> = vec![
-      Box::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }),
-      Box::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() })
-    ];
-    shapes.into_iter()
-      .map(|shape| Box::new(shape
-        .rotate(Angle::degrees(45.0))
-        .texture(Luma([255u8]).to_rgba())
-      ) as Box<dyn Draw<RgbaImage>>)
-      .for_each(|shape| shape.draw(&mut image));
-    //image.save("test_polymorphic_a.png")?;
-    Ok(())
-  }
-
-  #[test] fn polymorphic_b() -> Result<()> {
-    let mut image = RgbaImage::new(128, 128);
-    let shapes: Vec<Box<dyn Draw<_>>> = vec![
-      Box::new(Circle { xy: [0.25, 0.25].into(), r: 0.25 }
-        .texture(Luma([255u8]).to_rgba())),
-      Box::new(Rect { origin: [0.5, 0.5].into(), size: [0.5, 0.5].into() }
-        .texture(Luma([127u8]).to_rgba()))
-    ];
-    shapes.into_iter()
-      .for_each(|shape| shape.draw(&mut image));
-    //image.save("test_polymorphic_b.png")?;
-    Ok(())
   }
 }

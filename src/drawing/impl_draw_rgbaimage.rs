@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 use {
-  std::{thread, sync::Arc},
+  std::{thread, sync::Arc, ops::Fn},
   euclid::{Point2D, Rect, Size2D},
   image::{
     DynamicImage, GenericImageView, Pixel, Rgba, RgbaImage,
@@ -9,33 +9,18 @@ use {
   crate::{
     drawing::{Draw, DrawSync, Shape, Texture, rescale_bounding_box},
     error::Result,
-    geometry::{BoundingBox, PixelSpace},
+    geometry::{BoundingBox, PixelSpace, WorldSpace},
     sdf::SDF
   }
 };
 
 impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
-  where Cutie: Shape
+  where Cutie: Shape + Clone
 {
   fn draw(&self, image: &mut RgbaImage) {
-    let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
-    let (bounding_box, offset, min_side) = rescale_bounding_box(self.bounding_box(), resolution);
-    let bounding_box = match bounding_box {
-      Some(x) => x,
-      None => return // bounding box has no intersection with screen at all
-    };
-    let Δp = 1.0 / min_side;
-
-    itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
-      .map(|(y, x)| Point2D::<_, PixelSpace>::from([x, y]))
-      .for_each(|pixel| {
-         let pixel_world = ((pixel.to_f32() - offset).to_vector() * Δp)
-          .cast_unit().to_point();
-
-        let sdf = self.sdf(pixel_world);
-        let pixel = image.get_pixel_mut(pixel.x, pixel.y);
-        *pixel = sdf_overlay_aa(sdf, Δp, *pixel, self.texture);
-      });
+    self.shape.clone()
+      .texture(|_| self.texture)
+      .draw(image);
   }
 }
 
@@ -61,6 +46,39 @@ impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
         let tex_px = tex.get_pixel(tex_px.x, tex_px.y);
 
         let sdf = self.sdf(pixel_world);
+        let pixel = image.get_pixel_mut(pixel.x, pixel.y);
+        *pixel = sdf_overlay_aa(sdf, Δp, *pixel, tex_px);
+      });
+  }
+}
+
+/// F: Fn(pixel: Point2D) -> Rgba<u8>
+/// where pixel is in normalized texture coordinates.
+impl <Cutie, F> Draw<RgbaImage> for Texture<Cutie, F>
+  where Cutie: Shape,
+        F: Fn(Point2D<f32, WorldSpace>) -> Rgba<u8>
+{
+  fn draw(&self, image: &mut RgbaImage) {
+    let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
+    let (bounding_box, offset, min_side) = rescale_bounding_box(self.bounding_box(), resolution);
+    let bounding_box = match bounding_box {
+      Some(x) => x,
+      None => return // bounding box has no intersection with screen at all
+    };
+    let Δp = 1.0 / min_side;
+    let tex_scale = bounding_box.size().width.min(bounding_box.size().height) as f32;
+
+    itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
+      .map(|(y, x)| Point2D::<_, PixelSpace>::from([x, y]))
+      .for_each(|pixel| {
+        let pixel_world = ((pixel.to_f32() - offset).to_vector() / min_side)
+          .cast_unit().to_point();
+        let sdf = self.sdf(pixel_world);
+
+        let tex_px = ((pixel - bounding_box.min.to_vector())
+          .to_f32() / tex_scale).cast_unit();
+        let tex_px = (self.texture)(tex_px);
+
         let pixel = image.get_pixel_mut(pixel.x, pixel.y);
         *pixel = sdf_overlay_aa(sdf, Δp, *pixel, tex_px);
       });
@@ -115,7 +133,6 @@ fn sdf_overlay_aa(sdf: f32, Δp: f32, col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgb
   col2.0[3] = ((col2.0[3] as f32) * alpha) as u8;
   col2.blend(&col1);
   col2
-  //col1.map2(&col2, |p1, p2| p1.max( p2))
 }
 
 /// Draw shapes, parallel.
