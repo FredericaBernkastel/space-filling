@@ -1,3 +1,6 @@
+//! The origin of coordinate system is in top-left corner. All shapes are represented in the
+//! interval [-1, 1], and center in the origin.
+
 use {
   std::ops::Mul,
   euclid::{Point2D, Box2D, Vector2D as V2, Size2D, Rotation2D, Angle},
@@ -5,12 +8,19 @@ use {
   crate::sdf::SDF
 };
 
+pub mod shapes;
+pub use shapes::*;
+
 /// Pixel coordinate system
 #[derive(Debug, Copy, Clone)]
 pub struct PixelSpace;
 /// Normalized coordinate system
 #[derive(Debug, Copy, Clone)]
 pub struct WorldSpace;
+
+pub trait BoundingBox<T, S> {
+  fn bounding_box(&self) -> Box2D<T, S>;
+}
 
 /// Something inside a rectangular area.
 pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
@@ -111,26 +121,3 @@ fn update_bounding_box(
   Box2D::from_points(pts)
 }
 
-pub trait BoundingBox<T, S> {
-  fn bounding_box(&self) -> Box2D<T, S>;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Circle;
-
-#[derive(Debug, Copy, Clone)]
-pub struct Square;
-
-impl<S> BoundingBox<f32, S> for Circle {
-  fn bounding_box(&self) -> Box2D<f32, S> {
-    Box2D::new(
-      Point2D::splat(-1.0),
-      Point2D::splat(1.0)
-    )}}
-
-impl<S> BoundingBox<f32, S> for Square {
-  fn bounding_box(&self) -> Box2D<f32, S> {
-    Box2D::new(
-      Point2D::splat(-1.0),
-      Point2D::splat(1.0)
-    )}}

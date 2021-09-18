@@ -129,7 +129,7 @@
 //! Lastly, there are two functions: [`draw_parallel`](drawing::draw_parallel),
 //! [`draw_parallel_unsafe`](drawing::draw_parallel_unsafe) that accept an iterator on
 //! `dyn DrawSync<RgbaImage>`. It is constructed via trait object casting, exactly as above.
-//! See `examples/polymorphic.rs` and `drawing::test::polymorphic_*` for more examples.
+//! See `examples/polymorphic.rs` and `drawing/tests::polymorphic_*` for more examples.
 //!
 //! This way, both distribution generation and drawing are guaranteed to evenly load all available
 //! cores, as long as enough memory bandwidth is available.

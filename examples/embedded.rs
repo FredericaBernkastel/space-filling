@@ -63,8 +63,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> 
   report_progress(
     argmax.iter()
       .min_dist_px(1.0 * std::f32::consts::SQRT_2)
-      .build()
-      .take(100000),
+      .build(),
     1000
   ).map(|(argmax_ret, argmax)| {
     let circle = Circle
@@ -85,6 +84,7 @@ fn main() -> Result<()> {
   let mut argmax = Argmax2D::new(16384, 64)?;
   let mut image = image::RgbaImage::new(16384, 16384);
   embedded(&mut argmax)
+    .take(100000)
     .for_each(|c| c.texture(Luma([255]).to_rgba()).draw(&mut image));
   image.save(path)?;
   open::that(path)?;
