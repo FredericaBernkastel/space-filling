@@ -8,8 +8,9 @@ repository = "https://github.com/FredericaBernkastel/space-filling"
 documentation = "https://docs.rs/space-filling/"
 categories = ["science"]
 keywords = ["generative-art"]
-license = "gpl-3.0"
+license = "GPL-3.0-only"
 edition = "2018"
+exclude = ["LICENCE", "doc/*", "src/legacy/*"]
 
 [lib]
 name = "space_filling"

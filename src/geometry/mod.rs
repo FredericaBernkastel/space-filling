@@ -1,3 +1,5 @@
+//! .
+//!
 //! The origin of coordinate system is in top-left corner. All shapes are represented in the
 //! interval [-1, 1], and center in the origin.
 
