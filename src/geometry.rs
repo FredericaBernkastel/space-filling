@@ -24,6 +24,7 @@ pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
     Scale { shape: self, scale }
   }
   #[cfg(feature = "drawing")]
+  #[cfg_attr(doc, doc(cfg(feature = "drawing")))]
   fn texture<T>(self, texture: T) -> crate::drawing::Texture<Self, T> where Self: Sized {
     crate::drawing::Texture { shape: self, texture }
   }
@@ -123,13 +124,13 @@ pub struct Square;
 impl<S> BoundingBox<f32, S> for Circle {
   fn bounding_box(&self) -> Box2D<f32, S> {
     Box2D::new(
-      Point2D::splat(-0.5),
-      Point2D::splat(0.5)
+      Point2D::splat(-1.0),
+      Point2D::splat(1.0)
     )}}
 
 impl<S> BoundingBox<f32, S> for Square {
   fn bounding_box(&self) -> Box2D<f32, S> {
     Box2D::new(
-      Point2D::splat(-0.5),
-      Point2D::splat(0.5)
+      Point2D::splat(-1.0),
+      Point2D::splat(1.0)
     )}}

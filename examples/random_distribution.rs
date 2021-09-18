@@ -35,7 +35,7 @@ fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Ci
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
         Circle.translate(argmax_ret.point - offset)
-          .scale(V2::splat(2.0 * r))
+          .scale(V2::splat(r))
       };
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),

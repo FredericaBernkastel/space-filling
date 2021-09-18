@@ -76,7 +76,7 @@
 //!       // Make a new circle at the location with highest distance to all other circles.
 //!       let circle = Circle
 //!         .translate(argmax_ret.point.to_vector())
-//!         .scale(Vector2D::splat(argmax_ret.distance / 2.0));
+//!         .scale(Vector2D::splat(argmax_ret.distance / 4.0));
 //!
 //!       /** Update the field.
 //!         * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
@@ -102,31 +102,28 @@
 //! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`geometry::Shape`)`
 //! - `trait `[`DrawSync`](`drawing::DrawSync`)`: `[`Draw`](`drawing::Draw`)` + Send + Sync`
 //!
+//! Draw is primarily implemented on [`Texture`](`drawing::Texture`):
+//! ```text
+//! .texture(Rgba(...)) -> Texture<T, Rgba<u8>>
+//! .texture(image) -> Texture<T, image::DynamicImage>
+//! .texture(|pixel| { ... }) -> Texture<T, Fn(Point2D) -> Rgba<u8>>
+//! ```
+//!
 //! At first, you could think writing:
 //! ```ignore
 //! let shapes: Vec<Box<dyn Shape>> = vec![
-//!   Box::new(Circle { ... }),
-//!   Box::new(Rect { ... })
+//!   Box::new(Circle.translate(...).scale(...)),
+//!   Box::new(Rect.translate(...).scale(...))
 //! ];
 //! for shape in shapes {
 //!   shape.texture(...)
 //!     .draw(...);
 //! }
 //! ```
-//! But this won't work, because `Shape::texture` requires `Sized`.
+//! But this won't work, because all of `Shape` methods require `Sized`.
 //! Correct way is:
 //! ```ignore
 //! let shapes: Vec<Box<dyn Draw<RgbaImage>>> = ...
-//! ```
-//! But now there is a different problem: a direct implementation, such as:
-//! ```ignore
-//! impl <T, B> Draw <B> for T where T: Shape
-//! ```
-//! is impossible due to conflicts. Therefore, it is only implemented for a few specific types.
-//! In order to make a custom type work in a dynamic interface,
-//! you will have to write a marker impl:
-//! ```ignore
-//! impl <B> Draw <B> for Type { fn draw(&self, _: &mut B) { unreachable!(); } }
 //! ```
 //!
 //! Lastly, there are two functions: [`draw_parallel`](drawing::draw_parallel),

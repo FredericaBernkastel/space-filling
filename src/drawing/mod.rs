@@ -110,6 +110,7 @@ impl Argmax2D {
     let mut image = RgbaImage::new(128, 128);
     Circle
       .translate(V2::splat(0.5))
+      .scale(V2::splat(0.5))
       .texture(&image::open("doc/embedded.jpg")?)
       .draw(&mut image);
     //image.save("test_texture.png")?;
@@ -119,8 +120,8 @@ impl Argmax2D {
   #[test] fn polymorphic_a() -> Result<()> {
     let mut image = RgbaImage::new(128, 128);
     let shapes: Vec<Box<dyn Draw<RgbaImage>>> = vec![
-      Box::new(Circle.translate(V2::splat(0.25)).scale(V2::splat(0.5))),
-      Box::new(Square.translate(V2::splat(0.75)).scale(V2::splat(0.5)))
+      Box::new(Circle.translate(V2::splat(0.25)).scale(V2::splat(0.25))),
+      Box::new(Square.translate(V2::splat(0.75)).scale(V2::splat(0.25)))
     ];
     shapes.into_iter()
       .for_each(|shape| shape
@@ -137,11 +138,11 @@ impl Argmax2D {
     let shapes: Vec<Box<dyn Draw<_>>> = vec![
       Box::new(Circle
         .translate(V2::splat(0.25))
-        .scale(V2::splat(0.5))
+        .scale(V2::splat(0.25))
         .texture(Luma([255u8]).to_rgba())),
       Box::new(Square
         .translate(V2::splat(0.75))
-        .scale(V2::splat(0.5))
+        .scale(V2::splat(0.25))
         .texture(Luma([127u8]).to_rgba()))
     ];
     shapes.into_iter()
@@ -154,6 +155,7 @@ impl Argmax2D {
     let mut image = RgbaImage::new(128, 128);
     Circle
       .translate(V2::splat(0.5))
+      .scale(V2::splat(0.5))
       .texture(|pixel: Point2D<_, _>| {
         let c = 1.0 - pixel.distance_to(Point2D::splat(0.5)) * 2.0;
         Rgba([(c * 255.0) as u8, 32, 128, 255])

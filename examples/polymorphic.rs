@@ -38,13 +38,13 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
 
           Circle
             .translate(argmax_ret.point - offset)
-            .scale(V2::splat(2.0 * r))
+            .scale(V2::splat(r))
             .texture(texture.clone())
           }),
 
         1 | _ => Box::new(Square
           .translate(argmax_ret.point.to_vector())
-          .scale(V2::splat(argmax_ret.distance))
+          .scale(V2::splat(argmax_ret.distance / 2.0))
           .rotate(Angle::degrees(rng.gen_range::<f32, _>(0.0..45.0)))
           .texture(Rgba([(argmax_ret.distance.sqrt() * 255.0) as u8, 32, 128, 255])))
 

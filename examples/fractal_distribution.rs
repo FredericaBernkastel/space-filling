@@ -20,7 +20,7 @@ fn fractal_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
     .map(|(argmax_ret, argmax)| {
       let circle = Circle
         .translate(argmax_ret.point.to_vector())
-        .scale(V2::splat(argmax_ret.distance / 2.0));
+        .scale(V2::splat(argmax_ret.distance / 4.0));
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
         |pixel| circle.sdf(pixel)
