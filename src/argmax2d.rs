@@ -96,8 +96,8 @@ fn offset_to_xy(offset: u64, width: u64) -> Point2D<u64, PixelSpace> {
   ].into()
 }
 
-fn xy_to_offset(xy: Point2D<i64, PixelSpace>, width: u64) -> u64 {
-  xy.y as u64 * width + xy.x as u64
+fn xy_to_offset(xy: Point2D<u64, PixelSpace>, width: u64) -> u64 {
+  xy.y * width + xy.x
 }
 
 impl Argmax2D {
@@ -168,7 +168,7 @@ impl Argmax2D {
     ) * self.resolution as f32;
     let chunk_span = (domain / self.chunk_size as f32)
       .round_out()
-      .to_i64();
+      .cast::<u64>();
 
     (chunk_span.min.y .. chunk_span.max.y)
       .into_par_iter()
