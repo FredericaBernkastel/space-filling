@@ -125,14 +125,14 @@ fn rescale_texture(texture: &DynamicImage, size: Size2D<u32, PixelSpace>) -> Dyn
   ).resize_exact(size.width, size.height, FilterType::Triangle)
 }
 
-fn sdf_overlay_aa(sdf: f32, Δp: f32, col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
+fn sdf_overlay_aa(sdf: f32, Δp: f32, mut col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
   let Δf = (0.5 * Δp - sdf) // antialias
     .clamp(0.0, Δp);
   let alpha = Δf / Δp;
   // overlay blending with premultiplied alpha
   col2.0[3] = ((col2.0[3] as f32) * alpha) as u8;
-  col2.blend(&col1);
-  col2
+  col1.blend(&col2);
+  col1
 }
 
 /// Draw shapes, parallel.

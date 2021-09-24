@@ -113,7 +113,7 @@
 //! ```ignore
 //! let shapes: Vec<Box<dyn Shape>> = vec![
 //!   Box::new(Circle.translate(...).scale(...)),
-//!   Box::new(Rect.translate(...).scale(...))
+//!   Box::new(Square.translate(...).scale(...))
 //! ];
 //! for shape in shapes {
 //!   shape.texture(...)

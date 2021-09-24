@@ -1,22 +1,22 @@
 //! .
 //!
-//! The origin of coordinate system is in top-left corner. All shapes are represented in the
-//! interval [-1, 1], and center in the origin.
+//! The origin of coordinate system is in top-left corner. Most of shapes are represented in the
+//! interval `[-1, 1]`, and center in the origin.
 
 use {
   std::ops::Mul,
   euclid::{Point2D, Box2D, Vector2D as V2, Size2D, Rotation2D, Angle},
   num_traits::NumCast,
-  crate::sdf::SDF
+  crate::sdf::{SDF, Union, Subtraction, Intersection, SmoothMin}
 };
 
 pub mod shapes;
 pub use shapes::*;
 
-/// Pixel coordinate system
+/// Pixel coordinate basis
 #[derive(Debug, Copy, Clone)]
 pub struct PixelSpace;
-/// Normalized coordinate system
+/// Normalized coordinate basis
 #[derive(Debug, Copy, Clone)]
 pub struct WorldSpace;
 
@@ -29,11 +29,32 @@ pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
   fn translate<T>(self, offset: V2<T, WorldSpace>) -> Translation<Self, T> where Self: Sized {
     Translation { shape: self, offset }
   }
+  /// Rotate around the center of shape's bounding box
   fn rotate<T>(self, angle: Angle<T>) -> Rotation<Self, T> where Self: Sized {
     Rotation { shape: self, angle }
   }
+  /// Scale around the center of shape's bounding box
   fn scale<T>(self, scale: V2<T, WorldSpace>) -> Scale<Self, T> where Self: Sized {
     Scale { shape: self, scale }
+  }
+  /// Union of two SDFs.
+  fn union<U>(self, other: U) -> Union<Self, U> where Self: Sized {
+    Union { s1: self, s2: other }
+  }
+  /// Subtracion of two SDFs. Note that this operation is *not* commutative,
+  /// i.e. `Subtraction {a, b} =/= Subtraction {b, a}`.
+  fn subtraction<U>(self, other: U) -> Subtraction<Self, U> where Self: Sized {
+    Subtraction { s1: self, s2: other }
+  }
+  /// Intersection of two SDFs.
+  fn intersection<U>(self, other: U) -> Intersection<Self, U> where Self: Sized {
+    Intersection { s1: self, s2: other }
+  }
+  /// Takes the minimum of two SDFs, smoothing between them when they are close.
+  ///
+  /// `k` controls the radius/distance of the smoothing. 32 is a good default value.
+  fn smooth_min<T, U>(self, other: U, k: T) -> SmoothMin<T, Self, U> where Self: Sized {
+    SmoothMin { s1: self, s2: other, k }
   }
   #[cfg(feature = "drawing")]
   #[cfg_attr(doc, doc(cfg(feature = "drawing")))]
@@ -55,6 +76,7 @@ impl <S> BoundingBox<f32, WorldSpace> for Translation<S, f32>
   }
 }
 
+/// Rotate around the center of shape's bounding box
 #[derive(Debug, Copy, Clone)]
 pub struct Rotation<S, T> {
   pub shape: S,
@@ -72,6 +94,7 @@ impl <S> BoundingBox<f32, WorldSpace> for Rotation<S, f32>
   }
 }
 
+/// Scale around the center of shape's bounding box
 #[derive(Debug, Copy, Clone)]
 pub struct Scale<S, T> {
   pub shape: S,
