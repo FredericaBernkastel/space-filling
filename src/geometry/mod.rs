@@ -34,7 +34,7 @@ pub trait Shape: SDF<f32> + BoundingBox<f32, WorldSpace> {
     Rotation { shape: self, angle }
   }
   /// Scale around the center of shape's bounding box
-  fn scale<T>(self, scale: V2<T, WorldSpace>) -> Scale<Self, T> where Self: Sized {
+  fn scale<T>(self, scale: T) -> Scale<Self, T> where Self: Sized {
     Scale { shape: self, scale }
   }
   /// Union of two SDFs.
@@ -98,7 +98,7 @@ impl <S> BoundingBox<f32, WorldSpace> for Rotation<S, f32>
 #[derive(Debug, Copy, Clone)]
 pub struct Scale<S, T> {
   pub shape: S,
-  pub scale: V2<T, WorldSpace>
+  pub scale: T
 }
 impl <S> BoundingBox<f32, WorldSpace> for Scale<S, f32>
   where S: BoundingBox<f32, WorldSpace> {
@@ -106,7 +106,7 @@ impl <S> BoundingBox<f32, WorldSpace> for Scale<S, f32>
     let c = self.shape.bounding_box().center().to_vector();
     self.shape.bounding_box()
       .translate(-c)
-      .scale(self.scale.x, self.scale.y)
+      .scale(self.scale, self.scale)
       .translate(c)
   }
 }

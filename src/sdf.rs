@@ -32,10 +32,9 @@ impl <S> SDF<f32> for Scale<S, f32>
   where S: Shape {
   fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
     let c = self.shape.bounding_box().center();
-    let pixel = ((pixel - c)
-      .component_div(self.scale) + c.to_vector())
+    let pixel = ((pixel - c) / self.scale + c.to_vector())
       .to_point();
-    self.shape.sdf(pixel) * self.scale.x.min(self.scale.y)
+    self.shape.sdf(pixel) * self.scale
   }
 }
 
@@ -43,7 +42,7 @@ impl <S> SDF<f32> for Scale<S, f32>
 pub fn boundary_rect(pixel: Point2D<f32, WorldSpace>) -> f32 {
   -geometry::Square
     .translate(V2::splat(0.5))
-    .scale(V2::splat(0.5))
+    .scale(0.5)
     .sdf(pixel)
 }
 

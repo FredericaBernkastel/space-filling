@@ -3,11 +3,10 @@ use {
     geometry::{Shape, Circle, Translation, Scale},
     error::Result,
     sdf::{self, SDF},
-    argmax2d::Argmax2D,
+    solver::argmax2d::Argmax2D,
     drawing::Draw
   },
-  image::{Luma, Pixel},
-  euclid::{Vector2D as V2}
+  image::{Luma, Pixel}
 };
 
 type AffineT<T> = Scale<Translation<T, f32>, f32>;
@@ -20,7 +19,7 @@ fn fractal_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
     .map(|(argmax_ret, argmax)| {
       let circle = Circle
         .translate(argmax_ret.point.to_vector())
-        .scale(V2::splat(argmax_ret.distance / 4.0));
+        .scale(argmax_ret.distance / 4.0);
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
         |pixel| circle.sdf(pixel)

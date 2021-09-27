@@ -4,11 +4,11 @@ use {
     geometry::{Shape, Circle, Square},
     error::Result,
     sdf,
-    argmax2d::Argmax2D,
+    solver::argmax2d::Argmax2D,
     drawing::{self, DrawSync}
   },
   image::{RgbaImage, Rgba, DynamicImage},
-  euclid::{Vector2D as V2, Point2D, Angle}
+  euclid::{Point2D, Angle}
 };
 
 // 174ms, 1000 circles, Δ = 2^-10, chunk = 2^4
@@ -19,7 +19,7 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
 
   argmax.insert_sdf(sdf::boundary_rect);
 
-  let min_dist = 0.5 * std::f32::consts::SQRT_2 / argmax.resolution as f32;
+  let min_dist = 0.5 * std::f32::consts::SQRT_2 / argmax.resolution() as f32;
   argmax.iter()
     .min_dist(min_dist)
     .build()
@@ -38,13 +38,13 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
 
           Circle
             .translate(argmax_ret.point - offset)
-            .scale(V2::splat(r))
+            .scale(r)
             .texture(texture.clone())
           }),
 
         1 | _ => Box::new(Square
           .translate(argmax_ret.point.to_vector())
-          .scale(V2::splat(argmax_ret.distance / 2.0))
+          .scale(argmax_ret.distance / 2.0)
           .rotate(Angle::degrees(rng.gen_range::<f32, _>(0.0..45.0)))
           .texture(Rgba([(argmax_ret.distance.sqrt() * 255.0) as u8, 32, 128, 255])))
 

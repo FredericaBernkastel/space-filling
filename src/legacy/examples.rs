@@ -7,7 +7,7 @@ use crate::{
   profile
 };
 
-/// generate a distribution of circles, then display it
+/// generate a solver of circles, then display it
 pub fn simple() -> Result<()> {
   let circles = profile!("argmax", {
     legacy::tests::sdf_convolution_domain_test()?
@@ -19,7 +19,7 @@ pub fn simple() -> Result<()> {
   Ok(())
 }
 
-/// A regular distribution embedded in a random one
+/// A regular solver embedded in a random one
 /// 174s, 100'000 circrles, Δ = 2^-14
 pub fn embedded() -> Result<Vec<Circle>> {
   use rand::prelude::*;
@@ -112,7 +112,7 @@ pub fn embedded() -> Result<Vec<Circle>> {
   Ok(circles)
 }
 
-/// generate a distribution, and use it to display a dataset, up to 100'000 images
+/// generate a solver, and use it to display a dataset, up to 100'000 images
 pub fn image_dataset() -> Result<()> {
   use regex::Regex;
 

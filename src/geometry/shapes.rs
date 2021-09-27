@@ -239,7 +239,7 @@ impl<S> BoundingBox<f32, S> for Ring<f32> {
 
 impl SDF<f32> for Ring<f32>  {
   fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
-    Circle.subtraction(Circle.scale(V2::splat(self.inner_r))).sdf(pixel)
+    Circle.subtraction(Circle.scale(self.inner_r)).sdf(pixel)
   }
 }
 

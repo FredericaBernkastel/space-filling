@@ -3,11 +3,11 @@ use {
     geometry::{Shape, Circle, Translation, Scale},
     error::Result,
     sdf::{self, SDF},
-    argmax2d::Argmax2D,
+    solver::argmax2d::Argmax2D,
     drawing::Draw
   },
   image::{Luma, Pixel},
-  euclid::{Point2D, Vector2D as V2}
+  euclid::Point2D
 };
 
 type AffineT<T> = Scale<Translation<T, f32>, f32>;
@@ -19,7 +19,7 @@ fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Ci
 
   argmax.insert_sdf(sdf::boundary_rect);
 
-  let min_dist = 0.5 * std::f32::consts::SQRT_2 / argmax.resolution as f32;
+  let min_dist = 0.5 * std::f32::consts::SQRT_2 / argmax.resolution() as f32;
   argmax.iter()
     .min_dist(min_dist)
     .build()
@@ -35,7 +35,7 @@ fn random_distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Ci
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
         Circle.translate(argmax_ret.point - offset)
-          .scale(V2::splat(r))
+          .scale(r)
       };
       argmax.insert_sdf_domain(
         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),

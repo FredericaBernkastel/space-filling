@@ -1,6 +1,6 @@
 //! This is a library for generalized space filling in ℝ².
 //!
-//! It is split into two main modules: [`argmax2d`] for generating a distribution of shapes,
+//! It is split into two main modules: [`solver`] for generating a solver of shapes,
 //! and [`drawing`] for displaying it (requires `draw` feature).
 //! Here, "shape" denotes one or multiple regions of ℝ² space, that can be represented by a
 //! signed distance function.
@@ -10,14 +10,14 @@
 //! # use {
 //! #   space_filling::{
 //! #     error::Result,
-//! #     argmax2d::Argmax2D,
+//! #     solver::argmax2d::Argmax2D,
 //! #     geometry::{Shape, Circle, Scale, Translation},
 //! #     drawing::Draw
 //! #   },
 //! #   image::{Luma, Pixel}
 //! # };
 //! # type AffineT<T> = Scale<Translation<T, f32>, f32>;
-//! # fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
+//! # fn solver(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
 //! #   [].iter().cloned()
 //! # }
 //! # fn main() -> Result<()> {
@@ -38,8 +38,8 @@
     //!
     //! // Initialize image buffer, which will hold final image.
     //! let mut image = image::RgbaImage::new(2048, 2048);
-    //! // Generate the distribution of shapes:
-    //! distribution(&mut argmax)
+    //! // Generate the solver of shapes:
+    //! solver(&mut argmax)
     //!   .take(1000)
     //!   .for_each(|shape| shape
     //!     .texture(Luma([255u8]).to_rgba()) // fill with white color
@@ -48,19 +48,19 @@
 //! #   Ok(())
 //! # }
 //! ```
-//! The distribution function can be defined as follows:
+//! The solver function can be defined as follows:
 //! ```
 //! # use space_filling::{
 //! #   geometry::{Circle, Shape, Translation, Scale},
 //! #   error::Result,
 //! #   sdf::{self, SDF},
-//! #   argmax2d::Argmax2D,
+//! #   solver::argmax2d::Argmax2D,
 //! # };
 //! # use euclid::Vector2D;
 //! // A set with an affine morphism on it
 //! type AffineT<T> = Scale<Translation<T, f32>, f32>;
 //!
-//! fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
+//! fn solver(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
 //!   argmax.insert_sdf(sdf::boundary_rect); // all shapes must be *inside* the image
 //!
 //!   argmax.iter() // Returns an iterator builder. See `argmax2d::ArgmaxIter` for more options.
@@ -76,7 +76,7 @@
 //!       // Make a new circle at the location with highest distance to all other circles.
 //!       let circle = Circle
 //!         .translate(argmax_ret.point.to_vector())
-//!         .scale(Vector2D::splat(argmax_ret.distance / 4.0));
+//!         .scale(argmax_ret.distance / 4.0);
 //!
 //!       /** Update the field.
 //!         * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
@@ -131,7 +131,7 @@
 //! `dyn DrawSync<RgbaImage>`. It is constructed via trait object casting, exactly as above.
 //! See `examples/polymorphic.rs` and `drawing/tests::polymorphic_*` for more examples.
 //!
-//! This way, both distribution generation and drawing are guaranteed to evenly load all available
+//! This way, both solver generation and drawing are guaranteed to evenly load all available
 //! cores, as long as enough memory bandwidth is available.
 //!
 //! Have a good day, `nyaa~ =^_^=`
@@ -143,7 +143,7 @@
 
 pub mod error;
 pub mod sdf;
-pub mod argmax2d;
+pub mod solver;
 pub mod geometry;
 #[cfg(feature = "drawing")]
 #[cfg_attr(doc, doc(cfg(feature = "drawing")))]

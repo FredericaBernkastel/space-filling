@@ -1,6 +1,6 @@
 use {
   crate::{
-    argmax2d::{Argmax2D, ArgmaxResult},
+    solver::{argmax2d::Argmax2D, DistPoint},
     geometry::{
       BoundingBox, Shape,
       PixelSpace, WorldSpace,
@@ -30,9 +30,6 @@ impl <T, Backend> DrawSync<Backend> for T where T: Draw<Backend> + Send + Sync {
 
 impl<B> SDF<f32> for Box<dyn Draw<B>> { fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.deref().sdf(pixel) } }
 impl<B> BoundingBox<f32, WorldSpace> for Box<dyn Draw<B>> { fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.deref().bounding_box() } }
-
-//impl<B> Draw<B> for Circle { fn draw(&self, _: &mut B) { unreachable!(); } }
-//impl<B> Draw<B> for Square { fn draw(&self, _: &mut B) { unreachable!(); } }
 
 impl <B, S, T> Draw<B> for Translation<S, T> where Translation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
 impl <B, S, T> Draw<B> for Rotation<S, T> where Rotation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
@@ -84,11 +81,11 @@ pub fn draw_parallel_unsafe<B>(
 impl Argmax2D {
   pub fn display_debug(&self) -> image::RgbImage {
     let mut image = ImageBuffer::<image::Rgb<u8>, _>::new(
-      self.resolution as u32,
-      self.resolution as u32
+      self.dist_map.resolution as u32,
+      self.dist_map.resolution as u32
     );
     let max_dist = self.find_max().distance;
-    self.pixels().for_each(|ArgmaxResult { distance, point }| {
+    self.dist_map.pixels().for_each(|DistPoint { distance, point }| {
       let color = Luma::from([(distance / max_dist * 255.0) as u8]);
       *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
     });

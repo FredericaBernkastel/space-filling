@@ -1,29 +1,29 @@
 use {
   space_filling::{
-    geometry::{Shape, Circle, WorldSpace, Scale, Translation},
+    geometry::{Shape, Circle, Scale, Translation},
     error::Result,
     sdf::{self, SDF},
-    argmax2d::{Argmax2D, ArgmaxResult},
+    solver::argmax2d::{Argmax2D, ArgmaxResult},
     drawing::Draw
   },
-  euclid::{Point2D, Vector2D as V2},
+  euclid::Point2D,
   image::{Luma, Pixel}
 };
 
 type AffineT<T> = Scale<Translation<T, f32>, f32>;
 
-pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)>, nth: usize)
-  -> impl Iterator<Item = (ArgmaxResult<f32, WorldSpace>, &'a mut Argmax2D)> {
+pub fn report_progress<'a>(iter: impl Iterator<Item = (ArgmaxResult, &'a mut Argmax2D)>, nth: usize)
+  -> impl Iterator<Item = (ArgmaxResult, &'a mut Argmax2D)> {
   iter.enumerate()
     .map(move |(i, (argmax_ret, argmax))| {
       if i % nth == 0 {
-        println!("#{} argmax ∇ {}", i, argmax_ret.distance * argmax.resolution as f32);
+        println!("#{} argmax ∇ {}", i, argmax_ret.distance * argmax.resolution() as f32);
       };
       (argmax_ret, argmax)
     })
 }
 
-/// A regular distribution embedded in a random one
+/// A regular solver embedded in a random one
 /// 88.4s, 100'000 circrles, Δ = 2^-14, chunk = 2^6
 pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
   use rand::prelude::*;
@@ -31,7 +31,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> 
 
   argmax.insert_sdf(sdf::boundary_rect);
 
-  let min_dist = 3.0 * std::f32::consts::SQRT_2 / argmax.resolution as f32;
+  let min_dist = 3.0 * std::f32::consts::SQRT_2 / argmax.resolution() as f32;
   report_progress(
     argmax.iter()
       .min_dist(min_dist)
@@ -49,7 +49,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> 
       let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
       Circle.translate(argmax_ret.point - offset)
-        .scale(V2::splat(r))
+        .scale(r)
     };
 
     argmax.insert_sdf_domain(
@@ -68,7 +68,7 @@ pub fn embedded(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> 
   ).map(|(argmax_ret, argmax)| {
     let circle = Circle
       .translate(argmax_ret.point.to_vector())
-      .scale(V2::splat(argmax_ret.distance / 3.0));
+      .scale(argmax_ret.distance / 3.0);
 
     argmax.insert_sdf_domain(
       Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
