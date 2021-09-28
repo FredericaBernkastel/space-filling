@@ -1,7 +1,8 @@
 use {
   euclid::{Point2D, Vector2D as V2, Rotation2D, Box2D},
   crate::geometry::{self, WorldSpace, Shape, Rotation, Scale, Translation, BoundingBox},
-  num_traits::Float
+  num_traits::{Float, Signed},
+  std::ops::{Neg, Sub}
 };
 
 /// Signed distance function
@@ -9,18 +10,20 @@ pub trait SDF<T> {
   fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T;
 }
 
-impl <S> SDF<f32> for Translation<S, f32>
-  where S: Shape {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
-    self.shape.sdf(pixel - self.offset)
+impl <S, P> SDF<P> for Translation<S, P>
+  where S: Shape<P>,
+        P: Clone + Sub<Output = P>  {
+  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
+    self.shape.sdf(pixel - self.offset.clone())
   }
 }
 
-impl <S> SDF<f32> for Rotation<S, f32>
-  where S: Shape {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
+impl <S, P> SDF<P> for Rotation<S, P>
+  where S: Shape<P>,
+        P: Float {
+  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
     let pivot = self.shape.bounding_box().center();
-    let pixel = Rotation2D::new(self.angle)
+    let pixel = Rotation2D::new(self.angle.clone())
       .transform_point( (pixel - pivot).to_point())
       + pivot.to_vector();
 
@@ -28,21 +31,22 @@ impl <S> SDF<f32> for Rotation<S, f32>
   }
 }
 
-impl <S> SDF<f32> for Scale<S, f32>
-  where S: Shape {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 {
+impl <S, P> SDF<P> for Scale<S, P>
+  where S: Shape<P>,
+        P: Float {
+  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
     let c = self.shape.bounding_box().center();
-    let pixel = ((pixel - c) / self.scale + c.to_vector())
+    let pixel = ((pixel - c) / self.scale.clone() + c.to_vector())
       .to_point();
-    self.shape.sdf(pixel) * self.scale
+    self.shape.sdf(pixel) * self.scale.clone()
   }
 }
 
 /// Distance to the edges of image.
-pub fn boundary_rect(pixel: Point2D<f32, WorldSpace>) -> f32 {
-  -geometry::Square
-    .translate(V2::splat(0.5))
-    .scale(0.5)
+pub fn boundary_rect<T: Float + Signed>(pixel: Point2D<T, WorldSpace>) -> T {
+  let p5 = T::one() / (T::one() + T::one());
+  -geometry::Rect { size: Point2D::splat(T::one()) }
+    .translate(V2::splat(p5))
     .sdf(pixel)
 }
 
@@ -61,10 +65,10 @@ impl<T, S1, S2> SDF<T> for Union<S1, S2>
     self.s1.sdf(pixel).min(self.s2.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T, WorldSpace> for Union<S1, S2>
+impl<T, S1, S2> BoundingBox<T> for Union<S1, S2>
   where T: Copy + PartialOrd,
-        S1: BoundingBox<T, WorldSpace>,
-        S2: BoundingBox<T, WorldSpace> {
+        S1: BoundingBox<T>,
+        S2: BoundingBox<T> {
   fn bounding_box(&self) -> Box2D<T, WorldSpace> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
@@ -85,10 +89,10 @@ impl<T, S1, S2> SDF<T> for Subtraction<S1, S2>
     (-self.s2.sdf(pixel)).max(self.s1.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T, WorldSpace> for Subtraction<S1, S2>
+impl<T, S1, S2> BoundingBox<T> for Subtraction<S1, S2>
   where T: Copy + PartialOrd,
-    S1: BoundingBox<T, WorldSpace>,
-    S2: BoundingBox<T, WorldSpace> {
+    S1: BoundingBox<T>,
+    S2: BoundingBox<T> {
   fn bounding_box(&self) -> Box2D<T, WorldSpace> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
@@ -108,14 +112,17 @@ impl<T, S1, S2> SDF<T> for Intersection<S1, S2>
     self.s1.sdf(pixel).max(self.s2.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T, WorldSpace> for Intersection<S1, S2>
-  where T: Copy + PartialOrd + num_traits::Zero,
-        S1: BoundingBox<T, WorldSpace>,
-        S2: BoundingBox<T, WorldSpace> {
+impl<T, S1, S2> BoundingBox<T> for Intersection<S1, S2>
+  where T: Copy + PartialOrd + num_traits::One + Neg<Output = T>,
+        S1: BoundingBox<T>,
+        S2: BoundingBox<T> {
   fn bounding_box(&self) -> Box2D<T, WorldSpace> {
     self.s1.bounding_box()
       .intersection(&self.s2.bounding_box())
-      .unwrap_or(Box2D::from_size([T::zero(), T::zero()].into()))
+      .unwrap_or(Box2D {
+        min: Point2D::splat(-T::one()),
+        max: Point2D::splat(-T::one())
+      })
   }}
 
 /// Takes the minimum of two SDFs, smoothing between them when they are close.
@@ -138,10 +145,10 @@ impl<T, S1, S2> SDF<T> for SmoothMin<T, S1, S2>
     -res.log2() / self.k
   }}
 
-impl<T, S1, S2> BoundingBox<T, WorldSpace> for SmoothMin<T, S1, S2>
+impl<T, S1, S2> BoundingBox<T> for SmoothMin<T, S1, S2>
   where T: Copy + PartialOrd,
-        S1: BoundingBox<T, WorldSpace>,
-        S2: BoundingBox<T, WorldSpace> {
+        S1: BoundingBox<T>,
+        S2: BoundingBox<T> {
   fn bounding_box(&self) -> Box2D<T, WorldSpace> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}

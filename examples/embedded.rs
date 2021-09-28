@@ -3,7 +3,7 @@ use {
     geometry::{Shape, Circle, Scale, Translation},
     error::Result,
     sdf::{self, SDF},
-    solver::argmax2d::{Argmax2D, ArgmaxResult},
+    solver::{Argmax2D, argmax2d::ArgmaxResult},
     drawing::Draw
   },
   euclid::Point2D,

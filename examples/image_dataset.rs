@@ -2,7 +2,7 @@
 use {
   space_filling::{
     error::Result,
-    solver::argmax2d::Argmax2D,
+    solver::Argmax2D,
     drawing::{self, DrawSync},
     geometry::{Shape, BoundingBox}
   },
@@ -28,7 +28,7 @@ fn find_files(
     .filter(move |file| filter(file.file_name().unwrap().to_string_lossy().as_ref()))
 }
 
-/// Generate a solver, and use it to display an image dataset, up to 100'000 images.
+/// Generate a distribution, and use it to display an image dataset, up to 100'000 images.
 fn main() -> Result<()> {
   use rayon::prelude::*;
 
@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     .filter_map(|(shape, file)| {
       image::open(&file).map(|tex| {
         println!("{:?} -> {:?}", shape.bounding_box(), file);
-        Box::new(shape.texture(tex)) as Box<dyn DrawSync<_>>
+        Box::new(shape.texture(tex)) as Box<dyn DrawSync<_, _>>
       }).map_err(|_| println!("unable to open {:?}", file)).ok()
     })
     .par_bridge();

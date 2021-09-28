@@ -4,7 +4,7 @@ use {
     geometry::{Shape, Circle, Square},
     error::Result,
     sdf,
-    solver::argmax2d::Argmax2D,
+    solver::Argmax2D,
     drawing::{self, DrawSync}
   },
   image::{RgbaImage, Rgba, DynamicImage},
@@ -12,7 +12,7 @@ use {
 };
 
 // 174ms, 1000 circles, Δ = 2^-10, chunk = 2^4
-fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterator<Item = Box<dyn DrawSync<RgbaImage>>> + '_
+fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterator<Item = Box<dyn DrawSync<f32, RgbaImage>>> + '_
 {
   use rand::prelude::*;
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -25,7 +25,7 @@ fn polymorphic(argmax: &mut Argmax2D, texture: Arc<DynamicImage>) -> impl Iterat
     .build()
     .enumerate()
     .map(move |(i, (argmax_ret, argmax))| {
-      let shape: Box<dyn DrawSync<_>> = match i % 2 {
+      let shape: Box<dyn DrawSync<_, _>> = match i % 2 {
 
         0 => Box::new({
             use std::f32::consts::PI;

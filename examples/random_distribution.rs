@@ -3,7 +3,7 @@ use {
     geometry::{Shape, Circle, Translation, Scale},
     error::Result,
     sdf::{self, SDF},
-    solver::argmax2d::Argmax2D,
+    solver::Argmax2D,
     drawing::Draw
   },
   image::{Luma, Pixel},

@@ -1,7 +1,13 @@
 pub mod argmax2d;
+pub use argmax2d::Argmax2D;
+
+pub mod gradient_ascent;
 pub (crate) mod z_order_storage;
 
-use euclid::Point2D;
+use {
+  euclid::Point2D,
+  num_traits::Float
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct DistPoint<D, P, Space> {
@@ -9,10 +15,10 @@ pub struct DistPoint<D, P, Space> {
   pub point: Point2D<P, Space>
 }
 
-impl<P: Default, S> Default for DistPoint<f32, P, S> {
+impl<F: Float, P: Default, S> Default for DistPoint<F, P, S> {
   fn default() -> Self {
     Self {
-      distance: f32::MAX / 2.0,
+      distance: F::max_value() / (F::one() + F::one()),
       point: Point2D::default()
     }
   }

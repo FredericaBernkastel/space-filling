@@ -1,6 +1,6 @@
 use {
   crate::{
-    solver::{argmax2d::Argmax2D, DistPoint},
+    solver::{Argmax2D, DistPoint},
     geometry::{
       BoundingBox, Shape,
       PixelSpace, WorldSpace,
@@ -21,56 +21,59 @@ mod impl_draw_rgbaimage;
 #[cfg(test)] mod tests;
 pub use impl_draw_rgbaimage::draw_parallel;
 
-pub trait Draw<Backend>: Shape {
+pub trait Draw<Prec, Backend>: Shape<Prec> {
   fn draw(&self, image: &mut Backend);
 }
 
-pub trait DrawSync<Backend>: Draw<Backend> + Send + Sync {}
-impl <T, Backend> DrawSync<Backend> for T where T: Draw<Backend> + Send + Sync {}
+pub trait DrawSync<Prec, Backend>: Draw<Prec, Backend> + Send + Sync {}
+impl <T, P, Backend> DrawSync<P, Backend> for T where T: Draw<P, Backend> + Send + Sync {}
 
-impl<B> SDF<f32> for Box<dyn Draw<B>> { fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.deref().sdf(pixel) } }
-impl<B> BoundingBox<f32, WorldSpace> for Box<dyn Draw<B>> { fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.deref().bounding_box() } }
+impl<P, B> SDF<P> for Box<dyn Draw<P, B>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.deref().sdf(pixel) } }
+impl<P, B> BoundingBox<P> for Box<dyn Draw<P, B>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.deref().bounding_box() } }
 
-impl <B, S, T> Draw<B> for Translation<S, T> where Translation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
-impl <B, S, T> Draw<B> for Rotation<S, T> where Rotation<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
-impl <B, S, T> Draw<B> for Scale<S, T> where Scale<S, T>: Shape { fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+impl <B, S, P> Draw<P, B> for Translation<S, P> where Translation<S, P>: Shape<P> {
+  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+impl <B, S, P> Draw<P, B> for Rotation<S, P> where Rotation<S, P>: Shape<P> {
+  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+impl <B, S, P> Draw<P, B> for Scale<S, P> where Scale<S, P>: Shape<P> {
+  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Texture<S, T> {
   pub shape: S,
   pub texture: T
 }
-impl <S, T> SDF<f32> for Texture<S, T> where S: SDF<f32> {
-  fn sdf(&self, pixel: Point2D<f32, WorldSpace>) -> f32 { self.shape.sdf(pixel) } }
-impl <S, T> BoundingBox<f32, WorldSpace> for Texture<S, T> where S: BoundingBox<f32, WorldSpace> {
-  fn bounding_box(&self) -> Box2D<f32, WorldSpace> { self.shape.bounding_box() } }
+impl <P, S, T> SDF<P> for Texture<S, T> where S: SDF<P> {
+  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.shape.sdf(pixel) } }
+impl <P, S, T> BoundingBox<P> for Texture<S, T> where S: BoundingBox<P> {
+  fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.shape.bounding_box() } }
 
 // try to fit world in the center of image, preserving aspect ratio
 fn rescale_bounding_box(
-  bounding_box: Box2D<f32, WorldSpace>,
+  bounding_box: Box2D<f64, WorldSpace>,
   resolution: Size2D<u32, PixelSpace>
 ) -> (
   Option<Box2D<u32, PixelSpace>>, // bounding_box,
-  V2<f32, PixelSpace>, // offset
-  f32 // min_side
+  V2<f64, PixelSpace>, // offset
+  f64 // min_side
 ) {
-  let min_side = resolution.width.min(resolution.height) as f32;
-  let offset = (resolution.to_vector().to_f32() - V2::splat(min_side)) / 2.0;
+  let min_side = resolution.width.min(resolution.height) as f64;
+  let offset = (resolution.to_vector().to_f64() - V2::splat(min_side)) / 2.0;
   let bounding_box = bounding_box
     .scale(min_side, min_side).cast_unit()
     .round_out()
     .translate(offset)
-    .intersection(&Box2D::from_size(resolution.to_f32()))
-    .map(|x| x.to_u32());
+    .intersection(&Box2D::from_size(resolution.to_f64()))
+    .map(|x| x.cast::<u32>());
   (bounding_box, offset, min_side)
 }
 
 /// Draw shapes, parallel.
 /// Faster compared to [`draw_parallel`], low memory usage.
 /// Will cause undefined behaviour if two shapes intersect.
-pub fn draw_parallel_unsafe<B>(
+pub fn draw_parallel_unsafe<P, B>(
   framebuffer: &mut B,
-  shapes: impl rayon::iter::ParallelIterator<Item = Box<dyn DrawSync<B>>>
+  shapes: impl rayon::iter::ParallelIterator<Item = Box<dyn DrawSync<P, B>>>
 ) -> &mut B where B: Sync + Send {
   shapes.for_each(|shape|
     shape.draw(unsafe { &mut *(framebuffer as *const _ as *mut B) })

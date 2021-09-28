@@ -21,7 +21,7 @@ use {
 
 #[test] fn polymorphic_a() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
-  let shapes: Vec<Box<dyn Draw<RgbaImage>>> = vec![
+  let shapes: Vec<Box<dyn Draw<_, RgbaImage>>> = vec![
     Box::new(Circle.translate(V2::splat(0.25)).scale(0.25)),
     Box::new(Square.translate(V2::splat(0.75)).scale(0.25))
   ];
@@ -37,7 +37,7 @@ use {
 
 #[test] fn polymorphic_b() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
-  let shapes: Vec<Box<dyn Draw<_>>> = vec![
+  let shapes: Vec<Box<dyn Draw<_, _>>> = vec![
     Box::new(Circle
       .translate(V2::splat(0.25))
       .scale(0.25)
