@@ -1,10 +1,12 @@
+#![allow(non_snake_case)]
 use {
   crate::{
-    solver::{Argmax2D, DistPoint},
+    solver::{Argmax2D, GradientAscent, DistPoint},
     geometry::{
-      BoundingBox, Shape,
+      self, BoundingBox, Shape,
       PixelSpace, WorldSpace,
-      Translation, Rotation, Scale
+      Translation, Rotation, Scale,
+      Circle
     },
     sdf::SDF
   },
@@ -28,15 +30,25 @@ pub trait Draw<Prec, Backend>: Shape<Prec> {
 pub trait DrawSync<Prec, Backend>: Draw<Prec, Backend> + Send + Sync {}
 impl <T, P, Backend> DrawSync<P, Backend> for T where T: Draw<P, Backend> + Send + Sync {}
 
+// rust doesn't support trait upcast yet
 impl<P, B> SDF<P> for Box<dyn Draw<P, B>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.deref().sdf(pixel) } }
 impl<P, B> BoundingBox<P> for Box<dyn Draw<P, B>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.deref().bounding_box() } }
+impl<P, B> SDF<P> for Box<dyn DrawSync<P, B>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.deref().sdf(pixel) } }
+impl<P, B> BoundingBox<P> for Box<dyn DrawSync<P, B>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.deref().bounding_box() } }
+
+static MSG: &str = "Draw is only implemented for Texture";
 
 impl <B, S, P> Draw<P, B> for Translation<S, P> where Translation<S, P>: Shape<P> {
-  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+  fn draw(&self, _: &mut B) { unreachable!(MSG) } }
 impl <B, S, P> Draw<P, B> for Rotation<S, P> where Rotation<S, P>: Shape<P> {
-  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+  fn draw(&self, _: &mut B) { unreachable!(MSG) } }
 impl <B, S, P> Draw<P, B> for Scale<S, P> where Scale<S, P>: Shape<P> {
-  fn draw(&self, _: &mut B) { unreachable!("Draw is only implemented for Texture") } }
+  fn draw(&self, _: &mut B) { unreachable!(MSG) } }
+
+impl <B, P> Draw<P, B> for geometry::Line<P> where geometry::Line<P>: Shape<P> {
+  fn draw(&self, _: &mut B) { unreachable!(MSG) } }
+impl <B, P, U> Draw<P, B> for geometry::Polygon<U> where P: num_traits::Float, U: AsRef<[Point2D<P, WorldSpace>]> {
+  fn draw(&self, _: &mut B) { unreachable!(MSG) } }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Texture<S, T> {
@@ -93,5 +105,94 @@ impl Argmax2D {
       *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
     });
     image
+  }
+}
+
+impl <T> GradientAscent<Vec<T>>
+  where T: SDF<f64> {
+  pub fn display_debug(&self, brightness: f64, f: impl Fn(usize, image::RgbaImage)) {
+    let resolution = 512;
+    let Δp = 1.0 / resolution as f64;
+    let mut image = ImageBuffer::<image::Rgba<u8>, _>::new(resolution, resolution);
+
+    // distance scalar field
+    image.enumerate_pixels_mut()
+      .for_each(|(x, y, pixel)| {
+        let pixel_world = Point2D::new(x, y).to_f64() / resolution as f64;
+        let sdf = self.sample_sdf(pixel_world);
+        let mut alpha = (Δp  - sdf.abs()).clamp(0.0, Δp) / Δp;
+        alpha *= (x > 0 && y > 0) as u8 as f64;
+        let mut color = image::Rgba([
+          ((sdf * brightness).powf(3.0) * 64.0) as u8,
+          ((sdf * brightness).powf(3.0) * 256.0) as u8,
+          (sdf * brightness * 255.0) as u8,
+          255
+        ]);
+        color.blend(&image::Rgba([255, 255, 0, (alpha * 128.0) as u8]));
+        *pixel = color;
+      });
+
+    let display_vec = move |p1, p2, alpha, img: &mut _| {
+      let shapes: Vec<Box<dyn Draw<_, image::RgbaImage>>> = vec![
+        Box::new(geometry::Line {
+          a: p1,
+          b: p2,
+          thickness: Δp
+        }),
+        Box::new(Circle
+          .scale(Δp * 3.0)
+          .translate(p2.to_vector())
+        )
+      ];
+      shapes.into_iter().for_each(|s| s
+        .texture(|_| image::Rgba([255, 0, 0, (alpha * 255.0) as u8]))
+        .draw(img)
+      );
+    };
+
+    let trajectory_trail = move |p1, p2, p3, img: &mut _| {
+      if let (Some(p1), Some(p2)) = (p1, p2) {
+        display_vec(p1, p2, 0.25, img);
+      }
+      if let (Some(p2), Some(p3)) = (p2, p3) {
+        display_vec(p2, p3, 0.5, img);
+      }
+      if let Some(p3) = p3 {
+        display_vec(p3, p3, 1.0, img);
+      }
+    };
+
+    let grid_count = 9;
+    let trajectories = itertools::iproduct!(0..grid_count, 0..grid_count)
+      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
+        / grid_count as f64)
+      .map(|p| self.trajectory(p))
+      .collect::<Vec<_>>();
+
+    let max_len = trajectories.iter().map(|x| x.len()).max().unwrap_or(0);
+    (0isize..max_len as isize).for_each(|i| {
+      let mut img = image.clone();
+      trajectories.iter()
+        .for_each(|trajectory| {
+          trajectory_trail(
+            trajectory.get((i - 2).max(0) as usize).cloned(),
+            trajectory.get((i - 1).max(0) as usize).cloned(),
+            trajectory.get(i as usize).cloned(),
+            &mut img
+          );
+        });
+      f(i as usize, img);
+    });
+
+    // gradiend vector field
+    /*let grid_count = 18;
+    itertools::iproduct!(0..grid_count, 0..grid_count)
+      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
+        / grid_count as f64)
+      .for_each(|p| {
+        let grad = self.Δf(p) * Δp * 20.0;
+        display_vec(p, p + grad, 1.0, &mut image);
+      });
+    f(0, image);*/
   }
 }

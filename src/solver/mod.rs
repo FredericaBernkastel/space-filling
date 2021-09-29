@@ -2,6 +2,8 @@ pub mod argmax2d;
 pub use argmax2d::Argmax2D;
 
 pub mod gradient_ascent;
+pub use gradient_ascent::GradientAscent;
+
 pub (crate) mod z_order_storage;
 
 use {

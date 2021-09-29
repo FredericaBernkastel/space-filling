@@ -1,4 +1,4 @@
-//! This is a library for generalized space filling in ℝ².
+//! This is a library for generalized space filling in ℝ² (do not mix with _packing_).
 //!
 //! It is split into two main modules: [`solver`] for generating a distribution of shapes,
 //! and [`drawing`] for displaying it (requires `draw` feature).
