@@ -8,6 +8,7 @@ use {
   rayon::iter::ParallelIterator,
   error_chain::bail
 };
+use num_traits::{NumCast, Float};
 
 pub struct ZOrderStorage<T> {
   data: T,
@@ -20,17 +21,18 @@ impl <T> ZOrderStorage<T> {
     (self.resolution / self.chunk_size).pow(2)
   }
 
-  pub fn chunks_domain_par_iter(&self, domain: Rect<f32, WorldSpace>)
-    -> impl ParallelIterator<Item = Point2D<u64, PixelSpace>> {
+  pub fn chunks_domain_par_iter<P>(&self, domain: Rect<P, WorldSpace>)
+    -> impl ParallelIterator<Item = Point2D<u64, PixelSpace>>
+    where P: NumCast + Copy {
     use rayon::prelude::*;
 
-    let domain = domain.to_box2d().intersection_unchecked(
+    let domain = domain.cast::<f64>().to_box2d().intersection_unchecked(
       &Box2D::new(
         Point2D::splat(0.0),
         Point2D::splat(1.0)
       )
-    ) * self.resolution as f32;
-    let chunk_span = (domain / self.chunk_size as f32)
+    ) * self.resolution as f64;
+    let chunk_span = (domain / self.chunk_size as f64)
       .round_out()
       .cast::<u64>();
 
@@ -55,9 +57,7 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
       chunk_size
     })
   }
-}
 
-impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
   pub fn get_chunk(&self, id: u64) -> Chunk<T> {
     let chunk_area = self.chunk_size.pow(2);
     Chunk {
@@ -79,12 +79,11 @@ impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
       .map(move |id| self.get_chunk(id))
   }
 
-  pub fn chunks_par_iter(&self) -> impl ParallelIterator<Item = Chunk<T>> {
-    use rayon::prelude::*;
-
-    let chunk_count = (self.resolution / self.chunk_size).pow(2);
-    (0..chunk_count).into_par_iter()
-      .map(move |id| self.get_chunk(id))
+  pub fn pixel(&self, xy: Point2D<u64, PixelSpace>) -> T {
+    let chunk = self.get_chunk_xy(xy / self.chunk_size);
+    let offset = (xy - chunk.top_left).to_point();
+    let offset = xy_to_offset(offset, self.chunk_size) as usize;
+    chunk.slice[offset].clone()
   }
 
   pub fn pixels(&self) -> impl Iterator<Item = DistPoint<T, u64, PixelSpace>> + '_ {
@@ -99,6 +98,16 @@ impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
   }
 }
 
+impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
+  pub fn chunks_par_iter(&self) -> impl ParallelIterator<Item = Chunk<T>> {
+    use rayon::prelude::*;
+
+    let chunk_count = (self.resolution / self.chunk_size).pow(2);
+    (0..chunk_count).into_par_iter()
+      .map(move |id| self.get_chunk(id))
+  }
+}
+
 pub struct Chunk<'a, T> {
   pub slice: &'a [T],
   pub top_left: Point2D<u64, PixelSpace>,
@@ -108,16 +117,16 @@ pub struct Chunk<'a, T> {
 }
 
 impl<'a, T> Chunk<'a, T> {
-  unsafe fn slice_mut(&self) -> &mut [f32] {
-    std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut f32, self.slice.len())
+  unsafe fn slice_mut(&self) -> &mut [T] {
+    std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut T, self.slice.len())
   }
 
-  fn offset_to_xy_normalized(&self, offset: u64) -> Point2D<f32, WorldSpace> {
+  fn offset_to_xy_normalized<P: Float>(&self, offset: u64) -> Point2D<P, WorldSpace> {
     let xy = offset_to_xy(offset, self.size) + self.top_left.to_vector();
-    (xy.to_f32() / self.global_size as f32).cast_unit()
+    (xy.cast::<P>() / P::from(self.global_size).unwrap()).cast_unit()
   }
 
-  pub(crate) fn pixels_mut(&self) -> impl Iterator<Item = (Point2D<f32, WorldSpace>, &mut f32)> {
+  pub(crate) fn pixels_mut<P: Float>(&self) -> impl Iterator<Item = (Point2D<P, WorldSpace>, &mut T)> {
     unsafe { self.slice_mut() }
       .iter_mut()
       .enumerate()

@@ -1,10 +1,10 @@
 pub mod argmax2d;
 pub use argmax2d::Argmax2D;
 
-pub mod gradient_ascent;
-pub use gradient_ascent::GradientAscent;
+pub mod gradient_descent;
+pub use gradient_descent::GradientDescent;
 
-pub (crate) mod z_order_storage;
+pub mod z_order_storage;
 
 use {
   euclid::Point2D,

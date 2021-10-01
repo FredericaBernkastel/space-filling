@@ -7,7 +7,8 @@ use {
     DistPoint,
     z_order_storage::ZOrderStorage
   },
-  euclid::{Rect, Point2D, Vector2D as V2, Size2D}
+  euclid::{Rect, Point2D, Vector2D as V2, Size2D},
+  num_traits::{Float, FloatConst}
 };
 
 pub type ArgmaxResult = DistPoint<f32, f32, WorldSpace>;
@@ -87,10 +88,10 @@ impl Argmax2D {
     });
   }
 
-  pub fn domain_empirical(center: Point2D<f32, WorldSpace>, max_dist: f32) -> Rect<f32, WorldSpace> {
-    let size = max_dist * 4.0 * std::f32::consts::SQRT_2;
+  pub fn domain_empirical<P: Float + FloatConst>(center: Point2D<P, WorldSpace>, max_dist: P) -> Rect<P, WorldSpace> {
+    let size = max_dist * P::from(4.0).unwrap() * P::SQRT_2();
     Rect {
-      origin: (center.to_vector() - V2::splat(size) / 2.0).to_point(),
+      origin: (center.to_vector() - V2::splat(size) / (P::one() + P::one())).to_point(),
       size: Size2D::splat(size)
     }
   }

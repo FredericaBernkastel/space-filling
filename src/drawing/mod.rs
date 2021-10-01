@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use {
   crate::{
-    solver::{Argmax2D, GradientAscent, DistPoint},
+    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch},
     geometry::{
       self, BoundingBox, Shape,
       PixelSpace, WorldSpace,
@@ -108,9 +108,32 @@ impl Argmax2D {
   }
 }
 
-impl <T> GradientAscent<Vec<T>>
-  where T: SDF<f64> {
-  pub fn display_debug(&self, brightness: f64, f: impl Fn(usize, image::RgbaImage)) {
+impl <T> GradientDescent<T, f64>
+  where GradientDescent<T, f64>: LineSearch<f64> {
+
+  fn display_vec (
+    p1: Point2D<f64, WorldSpace>,
+    p2: Point2D<f64, WorldSpace>,
+    alpha: f64,
+    Δp: f64,
+    img: &mut image::RgbaImage
+  ) {
+    let shapes: Vec<Box<dyn Draw<_, image::RgbaImage>>> = vec![
+      Box::new(geometry::Line {
+        a: p1,
+        b: p2,
+        thickness: Δp
+      }),
+      Box::new(Circle
+        .scale(Δp * 3.0)
+        .translate(p2.to_vector()))
+    ];
+    shapes.into_iter().for_each(|s| s
+      .texture(|_| image::Rgba([255, 0, 0, (alpha * 255.0) as u8]))
+      .draw(img));
+  }
+
+  pub fn display_sdf(&self, brightness: f64, gradient_marks: Option<u64>) -> image::RgbaImage {
     let resolution = 512;
     let Δp = 1.0 / resolution as f64;
     let mut image = ImageBuffer::<image::Rgba<u8>, _>::new(resolution, resolution);
@@ -132,33 +155,33 @@ impl <T> GradientAscent<Vec<T>>
         *pixel = color;
       });
 
-    let display_vec = move |p1, p2, alpha, img: &mut _| {
-      let shapes: Vec<Box<dyn Draw<_, image::RgbaImage>>> = vec![
-        Box::new(geometry::Line {
-          a: p1,
-          b: p2,
-          thickness: Δp
-        }),
-        Box::new(Circle
-          .scale(Δp * 3.0)
-          .translate(p2.to_vector())
-        )
-      ];
-      shapes.into_iter().for_each(|s| s
-        .texture(|_| image::Rgba([255, 0, 0, (alpha * 255.0) as u8]))
-        .draw(img)
-      );
-    };
+    // gradiend vector field
+    let grid_count = gradient_marks.unwrap_or(0);
+    itertools::iproduct!(0..grid_count, 0..grid_count)
+      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
+        / grid_count as f64)
+      .for_each(|p| {
+        let grad = self.Δf(p) * Δp * 20.0;
+        Self::display_vec(p, p + grad, 1.0, Δp, &mut image);
+      });
+
+    image
+  }
+
+  pub fn trajectory_animation(&self, brightness: f64, f: impl Fn(usize, image::RgbaImage)) {
+    let image = self.display_sdf(brightness, None);
+    let resolution = image.width();
+    let Δp = 1.0 / resolution as f64;
 
     let trajectory_trail = move |p1, p2, p3, img: &mut _| {
       if let (Some(p1), Some(p2)) = (p1, p2) {
-        display_vec(p1, p2, 0.25, img);
+        Self::display_vec(p1, p2, 0.25, Δp, img);
       }
       if let (Some(p2), Some(p3)) = (p2, p3) {
-        display_vec(p2, p3, 0.5, img);
+        Self::display_vec(p2, p3, 0.5, Δp, img);
       }
       if let Some(p3) = p3 {
-        display_vec(p3, p3, 1.0, img);
+        Self::display_vec(p3, p3, 1.0, Δp, img);
       }
     };
 
@@ -183,16 +206,5 @@ impl <T> GradientAscent<Vec<T>>
         });
       f(i as usize, img);
     });
-
-    // gradiend vector field
-    /*let grid_count = 18;
-    itertools::iproduct!(0..grid_count, 0..grid_count)
-      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
-        / grid_count as f64)
-      .for_each(|p| {
-        let grad = self.Δf(p) * Δp * 20.0;
-        display_vec(p, p + grad, 1.0, &mut image);
-      });
-    f(0, image);*/
   }
 }
