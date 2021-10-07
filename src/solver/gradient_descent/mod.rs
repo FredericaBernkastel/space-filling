@@ -32,7 +32,7 @@ pub struct LineSearchConfig<P> {
 impl <P: Float> Default for LineSearchConfig<P> {
   fn default() -> Self {
     LineSearchConfig {
-      Δ: P::from(1.0 / 2048.0).unwrap(),
+      Δ: P::from(1.0 / 1024.0).unwrap(),
       initial_step_size: P::one(),
       decay_factor: P::from(0.85).unwrap(),
       step_limit: Some(40),
@@ -47,9 +47,9 @@ pub trait LineSearch<P: Float> {
   fn Δf(&self, p: Point2D<P, WorldSpace>) -> V2<P, WorldSpace> {
     let Δp = self.config().Δ;
     V2::new(
-      self.sample_sdf(p + V2::new(Δp, P::zero())) - self.sample_sdf(p - V2::new(Δp, P::zero())),
-      self.sample_sdf(p + V2::new(P::zero(), Δp)) - self.sample_sdf(p - V2::new(P::zero(), Δp)),
-    ) / (Δp * (P::one() + P::one()))
+      self.sample_sdf(p + V2::new(Δp, P::zero())) - self.sample_sdf(p),
+      self.sample_sdf(p + V2::new(P::zero(), Δp)) - self.sample_sdf(p),
+    ) / Δp
   }
   fn ascend(&self, mut p: Point2D<P, WorldSpace>) -> Point2D<P, WorldSpace> {
     let config = self.config();
