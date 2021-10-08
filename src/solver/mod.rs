@@ -4,6 +4,9 @@ pub use argmax2d::Argmax2D;
 pub mod gradient_descent;
 pub use gradient_descent::GradientDescent;
 
+pub mod quadtree;
+pub mod adf;
+
 pub mod z_order_storage;
 
 use {

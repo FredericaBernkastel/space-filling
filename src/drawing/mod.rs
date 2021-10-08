@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use {
   crate::{
-    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch},
+    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch, quadtree::Quadtree},
     geometry::{
       self, BoundingBox, Shape,
       PixelSpace, WorldSpace,
@@ -12,7 +12,7 @@ use {
   },
   euclid::{Box2D, Point2D, Size2D, Vector2D as V2},
   image::{
-    ImageBuffer, Luma, Pixel
+    ImageBuffer, Luma, Rgba, Pixel, RgbaImage
   },
   std::{
     ops::Deref
@@ -93,6 +93,25 @@ pub fn draw_parallel_unsafe<P, B>(
   framebuffer
 }
 
+pub fn display_sdf(sdf: impl Fn(Point2D<f64, WorldSpace>) -> f64, image: &mut RgbaImage, brightness: f64) {
+  let resolution = image.width();
+  let Δp = 1.0 / resolution as f64;
+
+  // distance scalar field
+  image.enumerate_pixels_mut()
+    .for_each(|(x, y, pixel)| {
+      let pixel_world = Point2D::new(x, y).to_f64() / resolution as f64;
+      let sdf = sdf(pixel_world);
+      let mut alpha = (Δp  - sdf.abs()).clamp(0.0, Δp) / Δp;
+      alpha *= (x > 0 && y > 0) as u8 as f64;
+      let mut color = Luma([
+        ((sdf * brightness).powf(1.0) * 255.0) as u8
+      ]).to_rgba();
+      color.blend(&Rgba([255, 0, 0, (alpha * 128.0) as u8]));
+      *pixel = color;
+    });
+}
+
 impl Argmax2D {
   pub fn display_debug(&self) -> image::RgbImage {
     let mut image = ImageBuffer::<image::Rgb<u8>, _>::new(
@@ -116,9 +135,9 @@ impl <T> GradientDescent<T, f64>
     p2: Point2D<f64, WorldSpace>,
     alpha: f64,
     Δp: f64,
-    img: &mut image::RgbaImage
+    img: &mut RgbaImage
   ) {
-    let shapes: Vec<Box<dyn Draw<_, image::RgbaImage>>> = vec![
+    let shapes: Vec<Box<dyn Draw<_, RgbaImage>>> = vec![
       Box::new(geometry::Line {
         a: p1,
         b: p2,
@@ -129,31 +148,14 @@ impl <T> GradientDescent<T, f64>
         .translate(p2.to_vector()))
     ];
     shapes.into_iter().for_each(|s| s
-      .texture(|_| image::Rgba([255, 0, 0, (alpha * 255.0) as u8]))
+      .texture(|_| Rgba([255, 0, 0, (alpha * 255.0) as u8]))
       .draw(img));
   }
 
-  pub fn display_sdf(&self, brightness: f64, gradient_marks: Option<u64>) -> image::RgbaImage {
-    let resolution = 512;
-    let Δp = 1.0 / resolution as f64;
-    let mut image = ImageBuffer::<image::Rgba<u8>, _>::new(resolution, resolution);
+  pub fn display_sdf<'a>(&self, image: &'a mut RgbaImage, brightness: f64, gradient_marks: Option<u64>) -> &'a mut RgbaImage {
+    let Δp = 1.0 / image.width() as f64;
 
-    // distance scalar field
-    image.enumerate_pixels_mut()
-      .for_each(|(x, y, pixel)| {
-        let pixel_world = Point2D::new(x, y).to_f64() / resolution as f64;
-        let sdf = self.sample_sdf(pixel_world);
-        let mut alpha = (Δp  - sdf.abs()).clamp(0.0, Δp) / Δp;
-        alpha *= (x > 0 && y > 0) as u8 as f64;
-        let mut color = image::Rgba([
-          ((sdf * brightness).powf(3.0) * 64.0) as u8,
-          ((sdf * brightness).powf(3.0) * 256.0) as u8,
-          (sdf * brightness * 255.0) as u8,
-          255
-        ]);
-        color.blend(&image::Rgba([255, 255, 0, (alpha * 128.0) as u8]));
-        *pixel = color;
-      });
+    display_sdf(|p| self.sample_sdf(p), image, brightness);
 
     // gradiend vector field
     let grid_count = gradient_marks.unwrap_or(0);
@@ -162,14 +164,14 @@ impl <T> GradientDescent<T, f64>
         / grid_count as f64)
       .for_each(|p| {
         let grad = self.Δf(p) * Δp * 20.0;
-        Self::display_vec(p, p + grad, 1.0, Δp, &mut image);
+        Self::display_vec(p, p + grad, 1.0, Δp, image);
       });
 
     image
   }
 
-  pub fn trajectory_animation(&self, brightness: f64, f: impl Fn(usize, image::RgbaImage)) {
-    let image = self.display_sdf(brightness, None);
+  pub fn trajectory_animation<'a>(&self, image: &'a mut RgbaImage, brightness: f64, f: impl Fn(usize, RgbaImage)) -> &'a mut RgbaImage {
+    let image = self.display_sdf(image, brightness, None);
     let resolution = image.width();
     let Δp = 1.0 / resolution as f64;
 
@@ -206,5 +208,38 @@ impl <T> GradientDescent<T, f64>
         });
       f(i as usize, img);
     });
+    image
+  }
+}
+
+impl <T> Quadtree<T> {
+  pub fn draw_layout(&self, image: &mut RgbaImage) {
+    use geometry::Line;
+
+    let px = 1.0 / image.width() as f64;
+    self.traverse(&mut |node| {
+      if node.children.is_some() { return Ok(()) };
+
+      let rect = node.rect;
+      let lines = [
+        [[0.0, 0.0], [rect.size.width, 0.0]],
+        [[rect.size.width, 0.0], rect.size.into()],
+        [rect.size.into(), [0.0, rect.size.height]],
+        [[0.0, rect.size.height], [0.0, 0.0]]
+      ];
+      let alpha = 1.0 - (node.depth as f64 / self.max_depth as f64);
+      lines.iter().for_each(|&[a, b]| {
+        Line { a: a.into(), b: b.into(), thickness: px }
+          .translate(rect.origin.to_vector())
+          .texture(Rgba([
+            ((1.0 - alpha).powi(2) * 255.0) as u8,
+            0,
+            128,
+            ((1.0 - alpha).powf(0.5) * 255.0) as u8])
+          )
+          .draw(image);
+      });
+      Ok(())
+    }).ok();
   }
 }

@@ -7,7 +7,7 @@ use {
     solver::{Argmax2D, z_order_storage::ZOrderStorage},
     error::Result
   },
-  image::{Luma, Pixel, Rgba}
+  image::{Luma, Pixel, Rgba, RgbaImage}
 };
 
 #[test] #[ignore] fn gradient() -> Result<()> {
@@ -19,7 +19,7 @@ use {
     .scale(0.25)
     .sdf(p)));
   grad
-    .display_sdf(3.0, Some(18))
+    .display_sdf(&mut RgbaImage::new(512, 512), 3.0, Some(18))
     .save("test/test_grad.png")?;
   Ok(())
 }
@@ -33,6 +33,7 @@ use {
     .scale(0.25)
     .sdf(p)));
   grad.trajectory_animation(
+    &mut RgbaImage::new(512, 512),
     3.0,
     |i, img| {
       img.save(format!("test/test_grad/{}.png", i)).ok();

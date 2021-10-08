@@ -12,6 +12,7 @@ use {
 
 mod impl_gradientdescent_vec_fn;
 mod impl_gradientdescent_zorderstorage;
+mod impl_gradientdescent_adf;
 #[cfg(test)] mod tests;
 
 pub struct GradientDescent<T, P> {
@@ -21,12 +22,12 @@ pub struct GradientDescent<T, P> {
 
 #[derive(Copy, Clone)]
 pub struct LineSearchConfig<P> {
-  Δ: P,
-  initial_step_size: P,
-  decay_factor: P,
-  step_limit: Option<u64>,
-  max_attempts: u64,
-  control_factor: P
+  pub Δ: P,
+  pub initial_step_size: P,
+  pub decay_factor: P,
+  pub step_limit: Option<u64>,
+  pub max_attempts: u64,
+  pub control_factor: P
 }
 
 impl <P: Float> Default for LineSearchConfig<P> {
@@ -107,7 +108,7 @@ pub struct GradientDescentIter<'a, T, P> {
 impl <T, P> GradientDescent<T, P>
   where P: Float,
         Self: LineSearch<P> {
-  fn iter(&mut self) -> GradientDescentIter<T, P> {
+  pub fn iter(&mut self) -> GradientDescentIter<T, P> {
     use rand::prelude::*;
     GradientDescentIter {
       grad: self,
