@@ -7,44 +7,79 @@ use {
     sdf::SDF
   },
   std::rc::Rc,
-  euclid::{Point2D, Rect}
+  euclid::{Point2D, Size2D, Rect}
 };
+use itertools::Itertools;
 
 pub type ADF = Quadtree<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>;
 
 impl ADF {
-  pub fn insert_sdf(&mut self, sdf: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) {
+  pub fn prune(&mut self, domain: Rect<f64, WorldSpace>) {
+    if self.rect.intersects(&domain) && self.children.is_some() {
+      for child in self.children.as_deref_mut().unwrap() {
+        child.prune(domain);
+      }
 
-    let error = |sdf_1: &dyn Fn(_) -> f64, sdf_2: &dyn Fn(_) -> f64, rect| {
-      let epsilon = 1e-6;
+      let children = self.children.as_deref_mut().unwrap();
 
-      let control_points = |rect: Rect<_, _>| {
-        let p = [0.0, 0.25, 0.5, 0.75, 1.0];
-        itertools::iproduct!(p, p).map(move |p| {
-          rect.origin + rect.size.to_vector().component_mul(p.into())
-        })
-      };
+      if children.iter()
+        // only leafs
+        .all(|child| child.children.is_none())
+      && children.iter()
+        // equality of SDF functions
+          .map(|child| child.data.as_ref() as *const _)
+          .all_equal() {
+        self.data = children[0].data.clone();
+        self.children = None
+      }
+    }
+  }
 
-      control_points(rect)
-        .map(|point| {
-          let ground_truth = sdf_1(point).min(sdf_2(point));
-          (ground_truth - sdf_1(point)).abs()
-        })
-        .sum::<f64>() < epsilon
+  fn error(
+    sdf_1: &dyn Fn(Point2D<f64, WorldSpace>) -> f64,
+    sdf_2: &dyn Fn(Point2D<f64, WorldSpace>) -> f64,
+    rect: Rect<f64, WorldSpace>
+  ) -> bool {
+    let epsilon = 1e-6;
+
+    let control_points = |rect: Rect<_, _>| {
+      let p = [0.0, 0.25, 0.5, 0.75, 1.0];
+      itertools::iproduct!(p, p).map(move |p| {
+        rect.origin + rect.size.to_vector().component_mul(p.into())
+      })
     };
 
+    control_points(rect)
+      .map(|point| {
+        let ground_truth = sdf_1(point).min(sdf_2(point));
+        (ground_truth - sdf_1(point)).abs()
+      })
+      .sum::<f64>() < epsilon
+  }
+
+  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, sdf: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) {
+
     self.traverse_managed(&mut |node| {
-      if error(node.data.as_ref(), sdf.as_ref(), node.rect) {
+      // no intersection with domain
+      if !node.rect.intersects(&domain) {
         return TraverseCommand::Skip;
       }
 
-      // TODO: node pruning
+      // no refinement is required
+      if Self::error(node.data.as_ref(), sdf.as_ref(), node.rect) {
+        return TraverseCommand::Skip;
+      }
+
+      // new minimum
+      if Self::error(sdf.as_ref(), node.data.as_ref(), node.rect) {
+        node.data = sdf.clone();
+        return TraverseCommand::Ok;
+      };
 
       if node.children.is_none() {
         let sdf_old = node.data.clone();
-        let rect = node.rect;
         match node.subdivide(|rect_ch|
-          if error(sdf.as_ref(), sdf_old.as_ref(), rect_ch)  {
+          if Self::error(sdf.as_ref(), sdf_old.as_ref(), rect_ch)  {
             sdf.clone()
           } else {
             sdf_old.clone()
@@ -52,11 +87,9 @@ impl ADF {
           .as_deref_mut() {
           Some(children) => children.iter_mut()
             .for_each(|child| child
-              .insert_sdf(sdf.clone())
+              .insert_sdf_domain(domain, sdf.clone())
             ),
-          None if error(sdf.as_ref(), sdf_old.as_ref(), rect)
-            => node.data = sdf.clone(),
-          _ => ()
+          None => node.data = sdf.clone()
         }
         return TraverseCommand::Skip;
       }
@@ -80,7 +113,10 @@ impl SDF<f64> for ADF {
       geometry::{Circle, Shape},
       drawing,
       sdf,
-      solver::gradient_descent::{GradientDescent, LineSearchConfig}
+      solver::{
+        gradient_descent::{GradientDescent, LineSearchConfig},
+        argmax2d::Argmax2D
+      }
     },
     image::RgbaImage,
     euclid::Vector2D
@@ -88,19 +124,22 @@ impl SDF<f64> for ADF {
 
   #[test] #[ignore] fn draw_layout() -> Result<()> {
     let mut image = RgbaImage::new(512, 512);
-    let mut adf = ADF::new(8, Rc::new(sdf::boundary_rect));
+    let mut adf = ADF::new(8, Rc::new(|_| f64::MAX / 2.0));
+    let domain = Rect::from_size(Size2D::splat(1.0));
 
     let t0 = std::time::Instant::now();
-    adf.insert_sdf(Rc::new(|p| Circle
+    adf.insert_sdf_domain(domain, Rc::new(|p| Circle
       .scale(0.25)
       .translate(Vector2D::splat(0.5))
       .sdf(p)
     ));
-    adf.insert_sdf(Rc::new(|p| Circle
+    adf.prune(domain);
+    adf.insert_sdf_domain(domain, Rc::new(|p| Circle
       .scale(0.125)
       .translate(Vector2D::splat(0.125))
       .sdf(p)
     ));
+    adf.prune(domain);
     println!("{}us", t0.elapsed().as_micros());
 
     drawing::display_sdf(|p| adf.sdf(p), &mut image, 4.0);
@@ -120,7 +159,7 @@ impl SDF<f64> for ADF {
 
     let t0 = std::time::Instant::now();
     grad.iter().build()
-      .take(2)
+      .take(3)
       .for_each(|(local_max, grad)| {
         let circle = {
           use std::f64::consts::PI;
@@ -134,11 +173,16 @@ impl SDF<f64> for ADF {
           Circle.translate(local_max.point - offset)
             .scale(r)
         };
-        grad.insert_sdf(move |p| circle.sdf(p));
+        grad.insert_sdf_domain(
+          Argmax2D::domain_empirical(local_max.point, local_max.distance),
+          move |p| circle.sdf(p)
+        );
+        //circle.texture(image::Luma([255]).to_rgba())
+        //  .draw(&mut image);
       });
     println!("profile: {}ms", t0.elapsed().as_millis());
     adf.print_stats();
-    drawing::display_sdf(|p| adf.sdf(p), &mut image, 4.0);
+    drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
     adf.draw_layout(&mut image);
     image.save("test/test_adf.png")?;
     Ok(())
