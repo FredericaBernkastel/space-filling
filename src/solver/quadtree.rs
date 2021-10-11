@@ -218,6 +218,8 @@ impl<T> Quadtree<T> {
 
   /// prints amount of total nodes in the tree, max subdivisions, and memory usage
   pub fn print_stats(&self) {
+    use humansize::{FileSize, file_size_opts as options};
+
     let mut total_nodes = 0u64;
     let mut max_depth = 0u8;
     self.traverse(&mut |node| {
@@ -231,7 +233,8 @@ impl<T> Quadtree<T> {
       mem::size_of::<Quadtree<T>(): {}",
       total_nodes,
       max_depth,
-      std::mem::size_of::<Quadtree<T>>() * total_nodes as usize
+      (std::mem::size_of::<Quadtree<T>>() * total_nodes as usize)
+        .file_size(options::BINARY).unwrap()
     );
   }
 }

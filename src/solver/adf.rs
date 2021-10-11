@@ -57,7 +57,8 @@ impl ADF {
       .sum::<f64>() < epsilon
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, sdf: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) {
+  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, sdf: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) -> bool {
+    let mut change_exists = false;
 
     self.traverse_managed(&mut |node| {
       // no intersection with domain
@@ -73,10 +74,12 @@ impl ADF {
       // new minimum
       if Self::error(sdf.as_ref(), node.data.as_ref(), node.rect) {
         node.data = sdf.clone();
+        change_exists = true;
         return TraverseCommand::Ok;
       };
 
       if node.children.is_none() {
+        change_exists = true;
         let sdf_old = node.data.clone();
         match node.subdivide(|rect_ch|
           if Self::error(sdf.as_ref(), sdf_old.as_ref(), rect_ch)  {
@@ -86,15 +89,21 @@ impl ADF {
           })
           .as_deref_mut() {
           Some(children) => children.iter_mut()
-            .for_each(|child| child
-              .insert_sdf_domain(domain, sdf.clone())
-            ),
-          None => node.data = sdf.clone()
+            .for_each(|child| {
+              child.insert_sdf_domain(domain, sdf.clone());
+            }),
+          None => {
+            let data = node.data.clone();
+            let sdf = sdf.clone();
+            node.data = Rc::new(move |p| sdf(p).min(data(p)));
+          }
         }
         return TraverseCommand::Skip;
       }
       TraverseCommand::Ok
     });
+
+    change_exists
   }
 }
 
@@ -151,16 +160,19 @@ impl SDF<f64> for ADF {
   #[test] #[ignore] fn gradient_adf() -> Result<()> {
     use rand::prelude::*;
 
-    let config = LineSearchConfig::default();
+    let config = LineSearchConfig {
+      Δ: (-14f64).exp2(),
+      decay_factor: 0.5,
+      ..Default::default()
+    };
     let mut image = RgbaImage::new(512, 512);
-    let mut adf = ADF::new(8, Rc::new(sdf::boundary_rect));
-    let mut grad = GradientDescent::<&mut ADF, _>::new(config, &mut adf);
+    let mut adf = ADF::new(9, Rc::new(sdf::boundary_rect));
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+    let mut circles = vec![];
 
     let t0 = std::time::Instant::now();
-    grad.iter().build()
-      .take(3)
-      .for_each(|(local_max, grad)| {
+    GradientDescent::<&mut ADF, _>::new(config, &mut adf).iter().build()
+      .filter_map(|(local_max, grad)| {
         let circle = {
           use std::f64::consts::PI;
 
@@ -176,14 +188,22 @@ impl SDF<f64> for ADF {
         grad.insert_sdf_domain(
           Argmax2D::domain_empirical(local_max.point, local_max.distance),
           move |p| circle.sdf(p)
-        );
-        //circle.texture(image::Luma([255]).to_rgba())
-        //  .draw(&mut image);
+        ).then(|| circle)
+      })
+      .enumerate()
+      .take(100000)
+      .for_each(|(i, c)| {
+        if i % 1000 == 0 { println!("#{}", i); };
+        circles.push(c);
       });
     println!("profile: {}ms", t0.elapsed().as_millis());
     adf.print_stats();
     drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
     adf.draw_layout(&mut image);
+    use {image::Pixel, drawing::Draw};
+    circles.into_iter()
+      .for_each(|c| c.texture(image::Luma([255]).to_rgba())
+      .draw(&mut image));
     image.save("test/test_adf.png")?;
     Ok(())
   }
