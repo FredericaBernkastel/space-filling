@@ -9,6 +9,7 @@ use {
   rand_pcg::Lcg128Xsl64,
   num_traits::Float
 };
+use std::fmt::Debug;
 
 mod impl_gradientdescent_vec_fn;
 mod impl_gradientdescent_zorderstorage;
@@ -118,17 +119,35 @@ impl <T, P> GradientDescent<T, P>
 }
 
 impl <'a, T, P> GradientDescentIter<'a, T, P>
-  where P: Float,
+  where P: Float + Send + Debug,
         GradientDescent<T, P>: LineSearch<P> {
-  pub fn build(mut self) -> impl Iterator<Item = (DistPoint<P, P, WorldSpace>, &'a mut GradientDescent<T, P>)> {
+  pub fn build(self) -> impl Iterator<Item = (DistPoint<P, P, WorldSpace>, &'a mut GradientDescent<T, P>)> {
+    use rayon::prelude::*;
+    use rand::prelude::*;
+
+    let grad = self.grad as *const _ as usize;
     (0..)
-      .map(move |_| {
-        let grad = unsafe { &mut *(self.grad as *const _ as *mut GradientDescent<_, _>) };
-        (grad.find_local_max(&mut self.rng), grad)
+      .map(move |i| {
+        let points: Vec<_> = (0..32).into_par_iter()
+          .filter_map(|j| {
+            let grad = unsafe { &mut *(grad as *mut GradientDescent<_, _>)};
+            grad.find_local_max(&mut Lcg128Xsl64::seed_from_u64(i * 32 + j))
+          })
+          .collect();
+        let mut points1 = vec![];
+        points.into_iter()
+          .for_each(|pn| {
+            points1.iter()
+              .all(|p: &DistPoint<_, _, _>| p.point.distance_to(pn.point) / P::from(2.0).unwrap() > pn.distance)
+              .then(|| points1.push(pn));
+          });
+
+        points1
       })
-      .take_while(|(l, _)| l.is_some())
-      .map(move |(l, grad)| {
-        (l.unwrap(), grad)
+      .take_while(|ps| ps.len() > 0)
+      .flat_map(move |ps| {
+        ps.into_iter()
+          .map(move |p| (p, unsafe { &mut *(grad as *mut GradientDescent<_, _>) }))
       })
   }
 }

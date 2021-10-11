@@ -161,12 +161,11 @@ impl SDF<f64> for ADF {
     use rand::prelude::*;
 
     let config = LineSearchConfig {
-      Δ: (-14f64).exp2(),
-      decay_factor: 0.5,
+      Δ: (-16f64).exp2(),
       ..Default::default()
     };
-    let mut image = RgbaImage::new(512, 512);
-    let mut adf = ADF::new(9, Rc::new(sdf::boundary_rect));
+    let mut image = RgbaImage::new(2048, 2048);
+    let mut adf = ADF::new(11, Rc::new(sdf::boundary_rect));
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let mut circles = vec![];
 
@@ -191,15 +190,16 @@ impl SDF<f64> for ADF {
         ).then(|| circle)
       })
       .enumerate()
-      .take(100000)
+      .take(1000000)
       .for_each(|(i, c)| {
         if i % 1000 == 0 { println!("#{}", i); };
         circles.push(c);
       });
+
     println!("profile: {}ms", t0.elapsed().as_millis());
     adf.print_stats();
-    drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
-    adf.draw_layout(&mut image);
+    //drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
+    //adf.draw_layout(&mut image);
     use {image::Pixel, drawing::Draw};
     circles.into_iter()
       .for_each(|c| c.texture(image::Luma([255]).to_rgba())
