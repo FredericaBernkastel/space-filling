@@ -9,9 +9,17 @@ use {
   std::rc::Rc,
   euclid::{Point2D, Size2D, Rect}
 };
-use itertools::Itertools;
 
-pub type ADF = Quadtree<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>;
+pub type ADF = Quadtree<Vec<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>;
+
+impl SDF<f64> for &[Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
+  fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
+    self.into_iter()
+      .map(|f| f(pixel))
+      .reduce(|a, b| if a <= b { a } else { b })
+      .unwrap_or(f64::MAX / 2.0)
+  }
+}
 
 impl ADF {
   pub fn prune(&mut self, domain: Rect<f64, WorldSpace>) {
@@ -21,14 +29,16 @@ impl ADF {
       }
 
       let children = self.children.as_deref_mut().unwrap();
+      let data = self.data.as_slice();
+      let rect = self.rect;
 
       if children.iter()
         // only leafs
         .all(|child| child.children.is_none())
       && children.iter()
         // equality of SDF functions
-          .map(|child| child.data.as_ref() as *const _)
-          .all_equal() {
+          .all(|child|
+            Self::error(&child.sdf_vec(), &|p| data.sdf(p), rect)) {
         self.data = children[0].data.clone();
         self.children = None
       }
@@ -57,6 +67,10 @@ impl ADF {
       .sum::<f64>() < epsilon
   }
 
+  fn sdf_vec(&self) -> impl Fn(Point2D<f64, WorldSpace>) -> f64 + '_ {
+    move |p| self.data.as_slice().sdf(p)
+  }
+
   pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, sdf: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) -> bool {
     let mut change_exists = false;
 
@@ -67,36 +81,34 @@ impl ADF {
       }
 
       // no refinement is required
-      if Self::error(node.data.as_ref(), sdf.as_ref(), node.rect) {
+      if Self::error(&node.sdf_vec(), sdf.as_ref(), node.rect) {
         return TraverseCommand::Skip;
       }
 
       // new minimum
-      if Self::error(sdf.as_ref(), node.data.as_ref(), node.rect) {
-        node.data = sdf.clone();
+      if Self::error(sdf.as_ref(), &node.sdf_vec(), node.rect) {
+        node.data = vec![sdf.clone()];
         change_exists = true;
         return TraverseCommand::Ok;
       };
 
       if node.children.is_none() {
         change_exists = true;
-        let sdf_old = node.data.clone();
+        let data = node.data.clone();
+        let sdf_old = |p| data.as_slice().sdf(p);
         match node.subdivide(|rect_ch|
-          if Self::error(sdf.as_ref(), sdf_old.as_ref(), rect_ch)  {
-            sdf.clone()
+          if Self::error(sdf.as_ref(), &sdf_old, rect_ch)  {
+            vec![sdf.clone()]
           } else {
-            sdf_old.clone()
+            data.clone()
           })
           .as_deref_mut() {
           Some(children) => children.iter_mut()
             .for_each(|child| {
               child.insert_sdf_domain(domain, sdf.clone());
             }),
-          None => {
-            let data = node.data.clone();
-            let sdf = sdf.clone();
-            node.data = Rc::new(move |p| sdf(p).min(data(p)));
-          }
+          // max subdivisions
+          None => node.data.push(sdf.clone())
         }
         return TraverseCommand::Skip;
       }
@@ -110,8 +122,8 @@ impl ADF {
 impl SDF<f64> for ADF {
   fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
     match self.pt_to_node(pixel) {
-      Some(node) => (node.data)(pixel),
-      None => (self.data)(pixel),
+      Some(node) => node.sdf_vec()(pixel),
+      None => self.sdf_vec()(pixel),
     }}}
 
 #[cfg(test)] mod tests {
@@ -133,7 +145,7 @@ impl SDF<f64> for ADF {
 
   #[test] #[ignore] fn draw_layout() -> Result<()> {
     let mut image = RgbaImage::new(512, 512);
-    let mut adf = ADF::new(8, Rc::new(|_| f64::MAX / 2.0));
+    let mut adf = ADF::new(8, vec![Rc::new(|_| f64::MAX / 2.0)]);
     let domain = Rect::from_size(Size2D::splat(1.0));
 
     let t0 = std::time::Instant::now();
@@ -165,7 +177,7 @@ impl SDF<f64> for ADF {
       ..Default::default()
     };
     let mut image = RgbaImage::new(2048, 2048);
-    let mut adf = ADF::new(11, Rc::new(sdf::boundary_rect));
+    let mut adf = ADF::new(11, vec![Rc::new(sdf::boundary_rect)]);
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let mut circles = vec![];
 
