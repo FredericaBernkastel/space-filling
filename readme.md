@@ -54,7 +54,26 @@ Run with `cargo run --release --features "drawing" --example image_dataset -- "<
 In `src/legacy` you can find numeruos algorithms which are worth re-exploring, including quadtree and GPU implementations. 
 
 ## Future work
-- Add more sample SDFs, and generic draw trait
-- Extend to discretization below 2<sup>-16</sup> (gigapixel resolution)
+[x] Add more sample SDFs, and generic draw trait  
+[x] Extend to support precision below 2<sup>-16</sup> (gigapixel resolution)
+
+A new algorithm is being developed in the separate branch, offering 10-100x memory reduction, as well as 
+continuous field representation (as opposed to discrete).  
+Based on the paper "Adaptively Sampled Distance Fields" (doi:[10.1145/344779.344899](http://dx.doi.org/10.1145/344779.344899)),
+and my implementation gradient descent with a custom convergence factor, as follows:
+![](doc/eq2.svg)  
+Where `D` is a control parameter, and `y` specifies exponential convergence rate.  
+Further will be abbreviated as `GradientDescent<ADF>`, or to be more specific, 
+`GradientDescent<Quadtree<Vec<Rc<dyn Fn(Point2D<f64>) -> f64>>>>`.  
+Each node contains multiple signed distance functions. The actual value at a point is computed as 
+minimum of all the functions. However, more theoretical research is required 
+in order to speed up the algorithm:
+- How to compute if two functions are identical in a specific domain 
+  (and speficic error threshold).
+- How to compute if one function is smaller at any point of specific domain.
+
+Additionally, one approach would be to use "bin splitting" strategy which should limit
+growth rate of the quadtree.  
+Or alternatively, would storing polynomial approximations instead offer more advantages?  
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
