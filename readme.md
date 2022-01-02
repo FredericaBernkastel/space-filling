@@ -11,12 +11,13 @@ Where **sdf<sub>n</sub>** are custom signed distance functions. Aggregate minima
 **c<sub>n+1</sub>** marks a point with highest value of the field, which then supplied to the next iteration
 of the algorithm.
 
-Currently, the solver is fully parallel, and highly generic.
+Currently, the solver is parallel, and highly generic.
 Supported:
 - Regular (fractal) distributions
 - Random distributions
-- Any shapes which can be represented with SDF: curves, regular polygons, non-convex polygons, disjoint areas
-- Mixed shapes.
+- Any shapes which can be represented with SDF: curves, regular polygons, 
+  non-convex and disjoint areas, fractals or any sets with non-integer
+  hausdorff dimension (as long as the distance can be approximated)
 
 ## Examples
 You can run examples with following command:  
@@ -60,20 +61,20 @@ In `src/legacy` you can find numeruos algorithms which are worth re-exploring, i
 A new algorithm is being developed in the separate branch, offering 10-100x memory reduction, as well as 
 continuous field representation (as opposed to discrete).  
 Based on the paper "Adaptively Sampled Distance Fields" (doi:[10.1145/344779.344899](http://dx.doi.org/10.1145/344779.344899)),
-and my implementation gradient descent with a custom convergence factor, as follows:
+and my implementation of gradient descent with a custom convergence factor, as follows:
 ![](doc/eq2.svg)  
-Where `D` is a control parameter, and `y` specifies exponential convergence rate.  
-Further will be abbreviated as `GradientDescent<ADF>`, or to be more specific, 
+Where `D` is a control parameter, and `y` specifies the base exponential convergence rate.  
+Further will be referenced as `GradientDescent<ADF>`, or to be more specific, 
 `GradientDescent<Quadtree<Vec<Rc<dyn Fn(Point2D<f64>) -> f64>>>>`.  
 Each node contains multiple signed distance functions. The actual value at a point is computed as 
 minimum of all the functions. However, more theoretical research is required 
-in order to speed up the algorithm:
-- How to compute if two functions are identical in a specific domain 
-  (and speficic error threshold).
-- How to compute if one function is smaller at any point of specific domain.
+in order to speed up the algorithm. How to efficiently approximate following logical statements:
+- ![](doc/eq3.svg)
+- ![](doc/eq4.svg)
 
-Additionally, one approach would be to use "bin splitting" strategy which should limit
-growth rate of the quadtree.  
-Or alternatively, would storing polynomial approximations instead offer more advantages?  
+where `f` and `g` are arbitrary non-analytical functions.  
+Additionally, in order to limit growth rate of the quadtree, 
+it's possible to use "bin splitting" strategy.  
+Alternatively, would storing polynomial approximations instead offer more advantages?  
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
