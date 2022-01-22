@@ -92,30 +92,88 @@ impl ADF {
         return TraverseCommand::Ok;
       };
 
-      if node.children.is_none() {
-        change_exists = true;
-        let data = node.data.clone();
+      if node.children.is_some() {
+        return TraverseCommand::Ok;
+      }
+
+      change_exists = true;
+      const BUCKET_SIZE: usize = 4;
+
+      let prune = |data: &[Rc<dyn Fn(_) -> _>], rect| {
+        let mut new_data = vec![];
+        for (i, f) in data.iter().enumerate() {
+          let sdf_old = |p|
+            data.iter().enumerate()
+              .filter_map(|(j, f)| if i != j {
+                Some(f(p))
+              } else { None })
+              .fold(f64::MAX / 2.0, |a, b| a.min(b));
+          if !Self::error(&sdf_old, f.as_ref(), rect) {
+            new_data.push(f.clone())
+          }
+        };
+        new_data
+      };
+
+      if node.depth == node.max_depth {
+
+        node.data.push(sdf.clone());
+        //node.data = prune(node.data.as_slice(), node.rect);
+
+      } else {
+
+        let data = prune(node.data.as_slice(), node.rect);
         let sdf_old = |p| data.as_slice().sdf(p);
-        match node.subdivide(|rect_ch|
-          if Self::error(sdf.as_ref(), &sdf_old, rect_ch)  {
-            vec![sdf.clone()]
-          } else {
-            data.clone()
-          })
-          .as_deref_mut() {
-          Some(children) => children.iter_mut()
+
+        if node.data.len() < BUCKET_SIZE {
+
+          if !Self::error(sdf.as_ref(), &sdf_old, node.rect) {
+            node.data.push(sdf.clone())
+          }
+
+        } else {
+
+          node.subdivide(|rect_ch|
+            if Self::error(sdf.as_ref(), &sdf_old, rect_ch) {
+              vec![sdf.clone()]
+            } else {
+              data.clone()
+            })
+            .as_deref_mut()
+            .unwrap()
+            .iter_mut()
             .for_each(|child| {
               child.insert_sdf_domain(domain, sdf.clone());
-            }),
-          // max subdivisions
-          None => node.data.push(sdf.clone())
+            });
         }
-        return TraverseCommand::Skip;
       }
-      TraverseCommand::Ok
+      return TraverseCommand::Skip;
     });
 
     change_exists
+  }
+
+  pub fn print_stats_adf(&self) {
+    use humansize::{FileSize, file_size_opts as options};
+
+    let mut total_nodes = 0u64;
+    let mut total_size = 0usize;
+    let mut max_depth = 0u8;
+    self.traverse(&mut |node| {
+      total_nodes += 1;
+      total_size += std::mem::size_of::<Self>()
+        + node.data.capacity() * std::mem::size_of::<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
+      max_depth = (max_depth).max(node.depth);
+      Ok(())
+    }).ok();
+    println!(
+      "total nodes: {}\n\
+      max subdivisions: {}\n\
+      mem::size_of::<Quadtree<T>(): {}",
+      total_nodes,
+      max_depth,
+      total_size.file_size(options::BINARY).unwrap()
+    );
   }
 }
 
@@ -176,7 +234,7 @@ impl SDF<f64> for ADF {
       Δ: (-16f64).exp2(),
       ..Default::default()
     };
-    let mut image = RgbaImage::new(2048, 2048);
+    let mut image = RgbaImage::new(512, 512);
     let mut adf = ADF::new(11, vec![Rc::new(sdf::boundary_rect)]);
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let mut circles = vec![];
@@ -202,20 +260,20 @@ impl SDF<f64> for ADF {
         ).then(|| circle)
       })
       .enumerate()
-      .take(1000000)
+      .take(10)
       .for_each(|(i, c)| {
         if i % 1000 == 0 { println!("#{}", i); };
         circles.push(c);
       });
 
     println!("profile: {}ms", t0.elapsed().as_millis());
-    adf.print_stats();
-    //drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
-    //adf.draw_layout(&mut image);
-    use {image::Pixel, drawing::Draw};
+    adf.print_stats_adf();
+    drawing::display_sdf(|p| adf.sdf(p), &mut image, 3.5);
+    adf.draw_layout(&mut image);
+    /*use {image::Pixel, drawing::Draw};
     circles.into_iter()
       .for_each(|c| c.texture(image::Luma([255]).to_rgba())
-      .draw(&mut image));
+      .draw(&mut image));*/
     image.save("test/test_adf.png")?;
     Ok(())
   }
