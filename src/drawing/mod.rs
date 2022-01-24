@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use {
   crate::{
-    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch, quadtree::Quadtree},
+    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch, quadtree::Quadtree, adf::ADF},
     geometry::{
       self, BoundingBox, Shape,
       PixelSpace, WorldSpace,
@@ -213,7 +213,7 @@ impl <T> GradientDescent<T, f64>
 }
 
 impl <T> Quadtree<T> {
-  pub fn draw_layout(&self, image: &mut RgbaImage) {
+  pub fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
     use geometry::Line;
 
     let px = 1.0 / image.width() as f64;
@@ -241,5 +241,44 @@ impl <T> Quadtree<T> {
       });
       Ok(())
     }).ok();
+    self
+  }
+
+  pub fn draw_bounding(&self, domain: euclid::Rect<f64, WorldSpace>, image: &mut RgbaImage) -> &Self {
+    self.traverse(&mut |node| {
+      if node.children.is_none() && node.rect.intersects(&domain) {
+        let rect = node.rect;
+        geometry::Rect {
+          size: rect.size.to_vector().to_point()
+        } .translate(rect.origin.to_vector() + rect.size.to_vector() * 0.5)
+          .texture(Rgba([0xFF, 0, 0, 0x7F]))
+          .draw(image)
+      }
+      Ok(())
+    }).ok();
+    self
+  }
+}
+
+impl ADF {
+  pub fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self {
+    display_sdf(|p| self.sdf(p), image, brightness);
+    self
+  }
+  pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
+    self.traverse(&mut |node| {
+      if node.children.is_none() {
+        let rect = node.rect;
+        let alpha = (((node.data.len() - 1) as f64 / 3.0).powf(1.75)
+          * 0.33 * 255.0) as u8;
+        geometry::Rect {
+          size: rect.size.to_vector().to_point()
+        } .translate(rect.origin.to_vector() + rect.size.to_vector() * 0.5)
+          .texture(Rgba([0x7F, 0xFF, 0, alpha]))
+          .draw(image)
+      }
+      Ok(())
+    }).ok();
+    self
   }
 }
