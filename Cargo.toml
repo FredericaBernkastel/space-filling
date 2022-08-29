@@ -8,8 +8,8 @@ repository = "https://github.com/FredericaBernkastel/space-filling"
 documentation = "https://docs.rs/space-filling/"
 categories = ["science"]
 keywords = ["generative-art"]
-license = "GPL-3.0-only"
-edition = "2018"
+license = "GPL-3.0"
+edition = "2021"
 exclude = ["LICENCE", "doc/*", "src/legacy/*"]
 
 [lib]
@@ -25,21 +25,19 @@ rayon = "1.5"
 euclid = "0.22"
 num-traits = "0.2"
 itertools = "0.10"
-humansize = "1.1"
 
 [dev-dependencies]
 regex = "1.4"
 open = "1.4"
 walkdir = "2.3"
 lexical-sort = "0.3"
+humansize = "1.1"
 
 [features]
 default = []
 drawing = ["image", "rand", "rand_pcg"]
 
 [profile.release]
-lto = true
-opt-level = 3
 
 [package.metadata.docs.rs]
 all-features = true

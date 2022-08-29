@@ -60,7 +60,7 @@ pub trait LineSearch<P: Float> {
       let grad = self.Δf(p) * step_size;
       if grad.length() < config.Δ { break; }
       step_size = step_size * config.decay_factor;
-      p = p + grad * config.control_factor;
+      p += grad * config.control_factor;
     }
     p
   }
@@ -94,8 +94,8 @@ pub trait LineSearch<P: Float> {
       let grad = self.Δf(p) * step_size;
       if grad.length() < config.Δ { break; }
       step_size = step_size * config.decay_factor;
-      p = p + grad * config.control_factor;
-      trajectory.push(p)
+      p += grad * config.control_factor;
+      trajectory.push(p);
     }
     trajectory
   }
@@ -144,7 +144,7 @@ impl <'a, T, P> GradientDescentIter<'a, T, P>
 
         points1
       })
-      .take_while(|ps| ps.len() > 0)
+      .take_while(|ps| !ps.is_empty())
       .flat_map(move |ps| {
         ps.into_iter()
           .map(move |p| (p, unsafe { &mut *(grad as *mut GradientDescent<_, _>) }))

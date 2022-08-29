@@ -61,7 +61,7 @@ impl Quadtrant {
       })
   }
 
-  pub fn inv(self: Self) -> Self {
+  pub fn inv(self) -> Self {
     use Quadtrant::*;
     match self {
       TL => BR,
@@ -71,7 +71,7 @@ impl Quadtrant {
     }
   }
 
-  pub fn mirror_x(self: Self) -> Self {
+  pub fn mirror_x(self) -> Self {
     use Quadtrant::*;
     match self {
       TL => TR,
@@ -81,7 +81,7 @@ impl Quadtrant {
     }
   }
 
-  pub fn mirror_y(self: Self) -> Self {
+  pub fn mirror_y(self) -> Self {
     use Quadtrant::*;
     match self {
       TL => BL,
@@ -192,13 +192,10 @@ impl<T> Quadtree<T> {
   /// return all nodes, containing `pt`
   pub fn path_to_pt(&self, pt: Point<f64>) -> Vec<&Self> {
     let mut result = vec![self];
-    match self.children.as_deref() {
-      Some(children) => {
-        if let Some(quad) = Quadtrant::get(self.rect, pt) {
-          result.append(&mut children[quad as usize].path_to_pt(pt));
-        }
-      },
-      None => ()
+    if let Some(children) = self.children.as_deref() {
+      if let Some(quad) = Quadtrant::get(self.rect, pt) {
+        result.append(&mut children[quad as usize].path_to_pt(pt));
+      }
     }
     result
   }
@@ -206,35 +203,38 @@ impl<T> Quadtree<T> {
   /// find a smallest node containing pt
   pub fn pt_to_node(&self, pt: Point<f64>) -> Option<&Self> {
     let mut node = self;
-    loop {
-      match node.children.as_deref() {
-        Some(children) =>
-          node = &children[Quadtrant::get(node.rect, pt)? as usize],
-        None => break
-      }
+    while let Some(children) = node.children.as_deref() {
+      node = &children[Quadtrant::get(node.rect, pt)? as usize]
     }
     Some(node)
   }
+}
 
-  /// prints amount of total nodes in the tree, max subdivisions, and memory usage
-  pub fn print_stats(&self) {
-    use humansize::{FileSize, file_size_opts as options};
+#[cfg(test)] mod tests {
+  use super::*;
 
-    let mut total_nodes = 0u64;
-    let mut max_depth = 0u8;
-    self.traverse(&mut |node| {
-      total_nodes += 1;
-      max_depth = (max_depth).max(node.depth);
-      Ok(())
-    }).ok();
-    println!(
-      "total nodes: {}\n\
+  impl<T> Quadtree<T> {
+
+    /// prints amount of total nodes in the tree, max subdivisions, and memory usage
+    pub fn print_stats(&self) {
+      use humansize::{FileSize, file_size_opts as options};
+
+      let mut total_nodes = 0u64;
+      let mut max_depth = 0u8;
+      self.traverse(&mut |node| {
+        total_nodes += 1;
+        max_depth = (max_depth).max(node.depth);
+        Ok(())
+      }).ok();
+      println!(
+        "total nodes: {}\n\
       max subdivisions: {}\n\
       mem::size_of::<Quadtree<T>(): {}",
-      total_nodes,
-      max_depth,
-      (std::mem::size_of::<Quadtree<T>>() * total_nodes as usize)
-        .file_size(options::BINARY).unwrap()
-    );
+        total_nodes,
+        max_depth,
+        (std::mem::size_of::<Quadtree<T>>() * total_nodes as usize)
+          .file_size(options::BINARY).unwrap()
+      );
+    }
   }
 }

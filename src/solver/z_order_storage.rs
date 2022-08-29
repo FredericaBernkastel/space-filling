@@ -117,17 +117,13 @@ pub struct Chunk<'a, T> {
 }
 
 impl<'a, T> Chunk<'a, T> {
-  unsafe fn slice_mut(&self) -> &mut [T] {
-    std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut T, self.slice.len())
-  }
-
   fn offset_to_xy_normalized<P: Float>(&self, offset: u64) -> Point2D<P, WorldSpace> {
     let xy = offset_to_xy(offset, self.size) + self.top_left.to_vector();
     (xy.cast::<P>() / P::from(self.global_size).unwrap()).cast_unit()
   }
 
   pub(crate) fn pixels_mut<P: Float>(&self) -> impl Iterator<Item = (Point2D<P, WorldSpace>, &mut T)> {
-    unsafe { self.slice_mut() }
+    unsafe { std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut T, self.slice.len()) }
       .iter_mut()
       .enumerate()
       .map(move |(i, value)| (

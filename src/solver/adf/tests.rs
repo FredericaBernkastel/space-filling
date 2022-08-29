@@ -11,7 +11,7 @@ use {
     }
   },
   image::{Rgba, RgbaImage},
-  euclid::Vector2D
+  euclid::{Vector2D, Size2D}
 };
 
 impl ADF {
@@ -64,55 +64,65 @@ impl ADF {
   Ok(())
 }
 
+// profile: 5.96s, 100k circles, adf_subdiv = 8
 #[test] #[ignore] fn gradient_adf() -> Result<()> {
   use rand::prelude::*;
 
   let config = LineSearchConfig {
     Δ: (-16f64).exp2(),
-    decay_factor: 0.85,
+    //decay_factor: 0.85,
     step_limit: Some(256),
+    //initial_step_size: 1.0,
     ..Default::default()
   };
-  let mut image = RgbaImage::new(512, 512);
-  let mut representation = ADF::new(11, vec![Rc::new(sdf::boundary_rect)]);
+  let mut image = RgbaImage::new(1024, 1024);
+  let mut representation = ADF::new(8, vec![Rc::new(sdf::boundary_rect)]);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-  let mut circles = vec![];
+  let mut primitives = vec![];
+  let mut trials = 0u64;
 
   let t0 = std::time::Instant::now();
   GradientDescent::<&mut ADF, _>::new(config, &mut representation).iter().build()
     .filter_map(|(local_max, grad)| {
-      let circle = {
+      trials += 1;
+      let primitive = {
         use std::f64::consts::PI;
 
         let angle = rng.gen_range::<f64, _>(-PI..=PI);
-        let r = (rng.gen_range::<f64, _>(config.Δ..1.0).powf(1.0) * local_max.distance)
+        let r = (rng.gen_range::<f64, _>(config.Δ..1.0).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
-        Circle.translate(local_max.point - offset)
+        Circle
+          .translate(local_max.point - offset)
           .scale(r)
       };
       grad.insert_sdf_domain(
         Argmax2D::domain_empirical(local_max.point, local_max.distance),
-        move |p| circle.sdf(p)
-      ).then(|| circle)
+        move |p| primitive.sdf(p)
+      ).then(|| primitive)
     })
     .enumerate()
-    .take(10)
+    .take(100000)
     .for_each(|(i, c)| {
       if i % 1000 == 0 { println!("#{}", i); };
-      circles.push(c);
+      primitives.push(c);
     });
 
   println!("profile: {}ms", t0.elapsed().as_millis());
+  // TODO: Fix sdf insertion method
+  /* Here, `trials` denote failed attempts to instert a shape in ADF due to
+     imperfect quivalence test method. See `solver::adf::ADF::error` for more details.
+   */
+  println!("trials: {trials}");
   representation.print_stats_adf();
-  drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
-  representation.draw_layout(&mut image);
-  /*use {image::Pixel, drawing::Draw};
-  circles.into_iter()
-    .for_each(|c| c.texture(image::Luma([255]).to_rgba())
-    .draw(&mut image));*/
+  /*drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
+  representation.draw_layout(&mut image);*/
+  use {image::Pixel, drawing::Draw};
+  primitives.into_iter()
+    .for_each(|p| p.texture(image::Luma([255]).to_rgba())
+    .draw(&mut image));
   image.save("test/test_adf.png")?;
   Ok(())
 }

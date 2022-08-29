@@ -23,7 +23,7 @@ impl <S, P> SDF<P> for Rotation<S, P>
         P: Float {
   fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
     let pivot = self.shape.bounding_box().center();
-    let pixel = Rotation2D::new(self.angle.clone())
+    let pixel = Rotation2D::new(self.angle)
       .transform_point( (pixel - pivot).to_point())
       + pivot.to_vector();
 
@@ -36,9 +36,9 @@ impl <S, P> SDF<P> for Scale<S, P>
         P: Float {
   fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
     let c = self.shape.bounding_box().center();
-    let pixel = ((pixel - c) / self.scale.clone() + c.to_vector())
+    let pixel = ((pixel - c) / self.scale + c.to_vector())
       .to_point();
-    self.shape.sdf(pixel) * self.scale.clone()
+    self.shape.sdf(pixel) * self.scale
   }
 }
 

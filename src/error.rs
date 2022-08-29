@@ -155,7 +155,7 @@ impl Error {
 
   /// Construct a chained error from another boxed error and a kind, and generates a backtrace
   #[allow(unknown_lints, bare_trait_objects)]
-  pub fn with_boxed_chain<K>(error: Box<::std::error::Error + Send>, kind: K) -> Error
+  pub fn with_boxed_chain<K>(error: Box<dyn ::std::error::Error + Send>, kind: K) -> Error
     where K: Into<ErrorKind>
   {
     Error(

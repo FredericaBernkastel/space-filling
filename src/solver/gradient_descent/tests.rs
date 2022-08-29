@@ -25,16 +25,41 @@ use {
 }
 
 #[test] #[ignore] fn trajectory() -> Result<()> {
+  use rand::prelude::*;
+
+  let config = LineSearchConfig {
+    //initial_step_size: 1.0,
+    ..Default::default()
+  };
   let mut grad = GradientDescent::<Vec<Box<dyn Fn(_) -> _ + Send + Sync>>, _>
-    ::new(LineSearchConfig::default());
+    ::new(config);
   grad.insert_sdf(Box::new(sdf::boundary_rect));
-  grad.insert_sdf(Box::new(|p| Circle
+  /*grad.insert_sdf(Box::new(|p| Circle
     .translate(V2::splat(0.25))
     .scale(0.25)
-    .sdf(p)));
+    .sdf(p)));*/
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(1);
+
+  grad.iter().build()
+    .take(10)
+    .for_each(|(local_max, grad)| {
+      let circle = {
+        use std::f64::consts::PI;
+
+        let angle = rng.gen_range::<f64, _>(-PI..=PI);
+        let r = (rng.gen_range::<f64, _>(config.Δ..1.0).powf(0.1) * local_max.distance)
+          .min(1.0 / 6.0);
+        let delta = local_max.distance - r;
+        let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
+
+        Circle.translate(local_max.point - offset)
+          .scale(r)
+      };
+      grad.insert_sdf(Box::new(move |p| circle.sdf(p)));
+    });
   grad.trajectory_animation(
     &mut RgbaImage::new(512, 512),
-    3.0,
+    5.0,
     |i, img| {
       img.save(format!("test/test_grad/{}.png", i)).ok();
     }
