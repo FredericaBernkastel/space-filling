@@ -1,9 +1,12 @@
 use {
   crate::{
-    solver::quadtree::{
-      Quadtree, TraverseCommand
+    solver::{
+      gradient_descent::{GradientDescent, LineSearch, LineSearchConfig},
+      quadtree::{
+        Quadtree, TraverseCommand
+      }
     },
-    geometry::WorldSpace,
+    geometry::{Shape, shapes, WorldSpace},
     sdf::SDF
   },
   std::rc::Rc,
@@ -23,6 +26,68 @@ impl SDF<f64> for &[Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
   }
 }
 
+fn sdf_partialord(
+  f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
+  g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
+  domain: Rect<f64, WorldSpace>
+) -> Option<std::cmp::Ordering> {
+  let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
+    .translate(domain.center().to_vector())
+    .sdf(v);
+
+  let config = LineSearchConfig {
+    Δ: (-16f64).exp2(),
+    initial_step_size: 0.5,
+    decay_factor: 0.85,
+    step_limit: Some(256),
+    ..Default::default()
+  };
+
+  /*
+  fn remove_dir_contents<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(path)? {
+      std::fs::remove_file(entry?.path())?;
+    }
+    Ok(())
+  }
+  remove_dir_contents("test/test_grad").ok();
+  GradientDescent::<&dyn Fn(_) -> _, _>::new(
+    LineSearchConfig { control_factor: -1.0, ..config },
+    &|v|
+      if domain.contains(v) { f(v) } else { boundary_constraint(v) }
+  ).trajectory_animation(
+    &mut RgbaImage::new(512, 512),
+    1.0,
+    |i, mut img| {
+      use {image::Pixel, crate::drawing::Draw};
+      shapes::Rect { size: domain.size.to_vector().to_point() }
+        .translate(domain.center().to_vector())
+        .texture(Rgba::from([255,0,0,16]))
+        .draw(&mut img);
+      img.save(format!("test/test_grad/{}.png", i)).ok();
+    }
+  );*/
+
+  let fmin = GradientDescent::<&dyn Fn(_) -> _, _>::new(
+    LineSearchConfig { control_factor: -1.0, ..config },
+    &|v| if domain.contains(v) { f(v) } else { boundary_constraint(v) }
+  ).ascend_boundary(domain.center(), domain);
+
+  let gmax = GradientDescent::<&dyn Fn(_) -> _, _>::new(
+    LineSearchConfig { control_factor: 1.0, ..config},
+    &|v| if domain.contains(v) { g(v) } else { -boundary_constraint(v) }
+  ).ascend_boundary(domain.center(), domain);
+
+  /*println!("domain: {domain:?}\nfmin:{fmin:?}\ngmax:{gmax:?}");
+  let mut _t = "".to_string();
+  std::io::stdin().read_line(&mut _t).unwrap();*/
+
+  match () {
+    _ if f(fmin) >= g(gmax) => Some(std::cmp::Ordering::Greater),
+    _ => None
+  }
+}
+
 impl ADF {
 
   // TODO: optimization is required
@@ -32,39 +97,35 @@ impl ADF {
     if and only if at least one point of `f` is lower than combined distance field (`g`) within
     a certain domain `D` (tree node).
     If no change is present, therefore updating `g` within the domain may be safely
-    skipped. However, it is imperfect: the test is only performed within a static squared grid of
+    skipped. However, it is imperfect: the test is only performed within a static square grid of
     25 control points, thus sometimes yielding incorrect result, and generally being very slow.
 
-    Proposition. use gradient descent to find the maximal error value, and answer following questions:
+    Proposition. Use gradient descent (see `sdf_partialord`) in order to pick the control points
+    more carefully, and answer following questions:
     \begin{align*}
-&|f(\overrightarrow{v})-g(\overrightarrow{v})| < error, \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(1)\\
-&f(\overrightarrow{v}) < g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(2)\\
-&f(\overrightarrow{v}) > g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(3)\\
-&\exists \overrightarrow{v}\epsilon \,\mathfrak{D}: f(\overrightarrow{v}) < g(\overrightarrow{v}) &(4)
+&f(\overrightarrow{v}) < g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(1)\\
+&f(\overrightarrow{v}) > g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(2)\\
+&\exists \overrightarrow{v}\epsilon \,\mathfrak{D}: f(\overrightarrow{v}) < g(\overrightarrow{v}) &(3)
 \end{align}
 
-    But, how to properly specify the boundary condition of `D`?
+    Proposition 2. Use interior point method in order to specify the boundary constraint of `D`
    */
-  fn error(
-    sdf_1: &dyn Fn(Point2D<f64, WorldSpace>) -> f64,
-    sdf_2: &dyn Fn(Point2D<f64, WorldSpace>) -> f64,
-    rect: Rect<f64, WorldSpace>
-  ) -> bool {
-    let epsilon = 1e-9;
 
+  /// f(v) > g(v) forall v e D
+  fn higher_all(
+    f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
+    g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
+    d: Rect<f64, WorldSpace>
+  ) -> bool {
     let control_points = |rect: Rect<_, _>| {
-      let p = [0.0, 1.0/4.0, 2.0/4.0, 3.0/4.0, 1.0];
-      itertools::iproduct!(p, p).map(move |p| {
-        rect.origin + rect.size.to_vector().component_mul(p.into())
-      })
+      let n = 5;
+      let p = (0..n).map(move |x| x as f64 / (n - 1) as f64);
+      itertools::iproduct!(p.clone(), p.clone())
+        .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
     };
 
-    control_points(rect)
-      .map(|point| {
-        let ground_truth = sdf_1(point).min(sdf_2(point));
-        (ground_truth - sdf_1(point)).abs()
-      })
-      .sum::<f64>() < epsilon
+    !control_points(d)
+      .any(|v| g(v) - f(v) > 0.0)
   }
 
   fn sdf_vec(&self) -> impl Fn(Point2D<f64, WorldSpace>) -> f64 + '_ {
@@ -86,12 +147,15 @@ impl ADF {
       }
 
       // f(v) > g(v) forall v e D, no refinement is required
-      if Self::error(&node.sdf_vec(), f.as_ref(), node.rect) {
+      if Self::higher_all(f.as_ref(), &node.sdf_vec(), node.rect) {
         return TraverseCommand::Skip;
       }
+      /*if sdf_partialord(f.as_ref(), &node.sdf_vec(), node.rect) == Some(std::cmp::Ordering::Greater) {
+        return TraverseCommand::Skip;
+      }*/
 
       // f(v) <= g(v) forall v e D, a minor optimization
-      if Self::error(f.as_ref(), &node.sdf_vec(), node.rect) {
+      if Self::higher_all(&node.sdf_vec(), f.as_ref(), node.rect) {
         node.data = vec![f.clone()];
         change_exists = true;
         return TraverseCommand::Skip;
@@ -111,7 +175,7 @@ impl ADF {
               } else { None })
               .fold(f64::MAX / 2.0, |a, b| a.min(b));
           // there exists v e D, such that f(v) < g(v)
-          if !Self::error(&sdf_old, f.as_ref(), rect) {
+          if !Self::higher_all(f.as_ref(), &sdf_old, rect) {
             g.push(f.clone())
           }
         };

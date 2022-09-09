@@ -5,12 +5,13 @@ use {
     geometry::WorldSpace,
     solver::DistPoint
   },
-  euclid::{Point2D, Vector2D as V2},
+  euclid::{Point2D, Vector2D as V2, Rect},
   rand_pcg::Lcg128Xsl64,
   num_traits::Float
 };
 use std::fmt::Debug;
 
+mod impl_gradientdescent_fn;
 mod impl_gradientdescent_vec_fn;
 mod impl_gradientdescent_zorderstorage;
 mod impl_gradientdescent_adf;
@@ -59,6 +60,30 @@ pub trait LineSearch<P: Float> {
     for _ in 0..config.step_limit.unwrap_or(u64::MAX) {
       let grad = self.Δf(p) * step_size;
       if grad.length() < config.Δ { break; }
+      step_size = step_size * config.decay_factor;
+      p += grad * config.control_factor;
+    }
+    p
+  }
+  fn ascend_boundary(&self, mut p: Point2D<P, WorldSpace>, boundary: Rect<P, WorldSpace>) -> Point2D<P, WorldSpace> {
+    let config = self.config();
+    let mut step_size = config.initial_step_size;
+    for _ in 0..config.step_limit.unwrap_or(u64::MAX) {
+      let grad = self.Δf(p) * step_size;
+      if grad.length() < config.Δ { break; }
+
+      let boundary_o = Rect::new(
+        boundary.origin - V2::splat(config.Δ * P::from(2f64).unwrap()),
+        (boundary.size.to_vector() + V2::splat(config.Δ * P::from(4f64).unwrap())).to_size()
+      );
+      let boundary_i = Rect::new(
+        boundary.origin + V2::splat(config.Δ * P::from(2f64).unwrap()),
+        (boundary.size.to_vector() - V2::splat(config.Δ * P::from(4f64).unwrap())).to_size()
+      );
+      if boundary_o.contains(p) && !boundary_i.contains(p) {
+        break;
+      }
+
       step_size = step_size * config.decay_factor;
       p += grad * config.control_factor;
     }

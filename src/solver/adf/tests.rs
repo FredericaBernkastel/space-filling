@@ -69,9 +69,9 @@ impl ADF {
   use rand::prelude::*;
 
   let config = LineSearchConfig {
-    Δ: (-16f64).exp2(),
-    //decay_factor: 0.85,
-    step_limit: Some(256),
+    Δ: 1e-6,
+    decay_factor: 0.85,
+    step_limit: None,
     //initial_step_size: 1.0,
     ..Default::default()
   };
@@ -112,13 +112,13 @@ impl ADF {
 
   println!("profile: {}ms", t0.elapsed().as_millis());
   // TODO: Fix sdf insertion method
-  /* Here, `trials` denote failed attempts to instert a shape in ADF due to
-     imperfect quivalence test method. See `solver::adf::ADF::error` for more details.
+  /* Here, `adf_error_margin` denotes failed attempts to instert a shape in ADF due to
+     imperfect quivalence test method. See `solver::adf::ADF::higher_all` for more details.
    */
-  println!("trials: {trials}");
+  println!("adf_error_margin: {}%", (trials as f64 / primitives.len() as f64 - 1.0) * 100.0);
   representation.print_stats_adf();
-  /*drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
-  representation.draw_layout(&mut image);*/
+  //drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
+  //representation.draw_layout(&mut image);
   use {image::Pixel, drawing::Draw};
   primitives.into_iter()
     .for_each(|p| p.texture(image::Luma([255]).to_rgba())
