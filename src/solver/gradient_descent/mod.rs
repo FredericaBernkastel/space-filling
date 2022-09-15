@@ -5,7 +5,7 @@ use {
     geometry::WorldSpace,
     solver::DistPoint
   },
-  euclid::{Point2D, Vector2D as V2, Rect},
+  euclid::{Point2D, Vector2D as V2},
   rand_pcg::Lcg128Xsl64,
   num_traits::Float
 };
@@ -38,7 +38,7 @@ impl <P: Float> Default for LineSearchConfig<P> {
       Δ: P::from(1.0 / 1024.0).unwrap(),
       initial_step_size: P::one(),
       decay_factor: P::from(0.85).unwrap(),
-      step_limit: Some(40),
+      step_limit: None,
       max_attempts: 50,
       control_factor: P::one()
     }}}
@@ -47,48 +47,46 @@ pub trait LineSearch<P: Float> {
   fn config(&self) -> LineSearchConfig<P>;
   fn sample_sdf(&self, pixel: Point2D<P, WorldSpace>) -> P;
 
-  fn Δf(&self, p: Point2D<P, WorldSpace>) -> V2<P, WorldSpace> {
+  fn grad_f(&self, p: Point2D<P, WorldSpace>) -> V2<P, WorldSpace> {
     let Δp = self.config().Δ;
+    let fp = self.sample_sdf(p);
     V2::new(
-      self.sample_sdf(p + V2::new(Δp, P::zero())) - self.sample_sdf(p),
-      self.sample_sdf(p + V2::new(P::zero(), Δp)) - self.sample_sdf(p),
+      self.sample_sdf(p + V2::new(Δp, P::zero())) - fp,
+      self.sample_sdf(p + V2::new(P::zero(), Δp)) - fp,
     ) / Δp
   }
   fn ascend(&self, mut p: Point2D<P, WorldSpace>) -> Point2D<P, WorldSpace> {
     let config = self.config();
     let mut step_size = config.initial_step_size;
     for _ in 0..config.step_limit.unwrap_or(u64::MAX) {
-      let grad = self.Δf(p) * step_size;
+      let grad = self.grad_f(p) * step_size;
       if grad.length() < config.Δ { break; }
       step_size = step_size * config.decay_factor;
       p += grad * config.control_factor;
     }
     p
   }
-  fn ascend_boundary(&self, mut p: Point2D<P, WorldSpace>, boundary: Rect<P, WorldSpace>) -> Point2D<P, WorldSpace> {
+
+  fn ascend_normal_criteria(&self, mut p: Point2D<P, WorldSpace>) -> bool {
     let config = self.config();
     let mut step_size = config.initial_step_size;
-    for _ in 0..config.step_limit.unwrap_or(u64::MAX) {
-      let grad = self.Δf(p) * step_size;
-      if grad.length() < config.Δ { break; }
+    loop {
+      if step_size < config.Δ { break; }
 
-      let boundary_o = Rect::new(
-        boundary.origin - V2::splat(config.Δ * P::from(2f64).unwrap()),
-        (boundary.size.to_vector() + V2::splat(config.Δ * P::from(4f64).unwrap())).to_size()
-      );
-      let boundary_i = Rect::new(
-        boundary.origin + V2::splat(config.Δ * P::from(2f64).unwrap()),
-        (boundary.size.to_vector() - V2::splat(config.Δ * P::from(4f64).unwrap())).to_size()
-      );
-      if boundary_o.contains(p) && !boundary_i.contains(p) {
-        break;
-      }
+      let fp = self.sample_sdf(p);
+      if fp > P::zero() { return true }
+
+      let grad = V2::new(
+        self.sample_sdf(p + V2::new(config.Δ, P::zero())) - fp,
+        self.sample_sdf(p + V2::new(P::zero(), config.Δ)) - fp,
+      ).normalize() * step_size;
 
       step_size = step_size * config.decay_factor;
       p += grad * config.control_factor;
     }
-    p
+    false
   }
+
   fn find_local_max(&mut self, rng: &mut Lcg128Xsl64) -> Option<DistPoint<P, P, WorldSpace>> {
     use rand::Rng;
     let config = self.config();
@@ -116,7 +114,7 @@ pub trait LineSearch<P: Float> {
     // slow: 0.85 -> 40
     // veryslow: 0.95 -> 128
     for _ in 0..config.step_limit.unwrap_or(u64::MAX) {
-      let grad = self.Δf(p) * step_size;
+      let grad = self.grad_f(p) * step_size;
       if grad.length() < config.Δ { break; }
       step_size = step_size * config.decay_factor;
       p += grad * config.control_factor;

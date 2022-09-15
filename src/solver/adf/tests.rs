@@ -24,7 +24,7 @@ impl ADF {
     self.traverse(&mut |node| {
       total_nodes += 1;
       total_size += std::mem::size_of::<Self>()
-        + node.data.capacity() * std::mem::size_of::<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
+        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
       max_depth = (max_depth).max(node.depth);
       Ok(())
     }).ok();
@@ -42,16 +42,16 @@ impl ADF {
 
 #[test] #[ignore] fn draw_layout() -> Result<()> {
   let mut image = RgbaImage::new(512, 512);
-  let mut adf = ADF::new(8, vec![Rc::new(|_| f64::MAX / 2.0)]);
+  let mut adf = ADF::new(8, vec![Arc::new(|_| f64::MAX / 2.0)]);
   let domain = Rect::from_size(Size2D::splat(1.0));
 
   let t0 = std::time::Instant::now();
-  adf.insert_sdf_domain(domain, Rc::new(|p| Circle
+  adf.insert_sdf_domain(domain, Arc::new(|p| Circle
     .scale(0.25)
     .translate(Vector2D::splat(0.5))
     .sdf(p)
   ));
-  adf.insert_sdf_domain(domain, Rc::new(|p| Circle
+  adf.insert_sdf_domain(domain, Arc::new(|p| Circle
     .scale(0.125)
     .translate(Vector2D::splat(0.125))
     .sdf(p)
@@ -71,12 +71,10 @@ impl ADF {
   let config = LineSearchConfig {
     Δ: 1e-6,
     decay_factor: 0.85,
-    step_limit: None,
-    //initial_step_size: 1.0,
     ..Default::default()
   };
   let mut image = RgbaImage::new(1024, 1024);
-  let mut representation = ADF::new(8, vec![Rc::new(sdf::boundary_rect)]);
+  let mut representation = ADF::new(7, vec![Arc::new(sdf::boundary_rect)]);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
   let mut primitives = vec![];
   let mut trials = 0u64;
@@ -135,7 +133,7 @@ impl ADF {
     Δ: (-16f64).exp2(),
     ..Default::default()
   };
-  let mut representation = ADF::new(11, vec![Rc::new(sdf::boundary_rect)]);
+  let mut representation = ADF::new(11, vec![Arc::new(sdf::boundary_rect)]);
   let mut circles = vec![];
   let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 
@@ -206,7 +204,7 @@ impl ADF {
 
     representation.insert_sdf_domain(
       domain,
-      Rc::new(move |p| circle.sdf(p))
+      Arc::new(move |p| circle.sdf(p))
     ).then(|| {
       circles.push(circle);
       i += 1;

@@ -145,6 +145,36 @@ impl<T> Quadtree<T> {
     }
   }
 
+  pub fn traverse_managed_parallel(&mut self, f: &mut (dyn FnMut(&mut Self) -> TraverseCommand)) {
+    if f(self) == TraverseCommand::Ok {
+      self.traverse_managed_parallel_a(f);
+    }
+  }
+
+  fn traverse_managed_parallel_a(&mut self, f: &mut (dyn FnMut(&mut Self) -> TraverseCommand)) {
+    use rayon::prelude::*;
+
+    if let Some(children) = self.children.as_deref() {
+      let mut children_ptr = [0; 4];
+      for i in 0..4 {
+        children_ptr[i] = &children[i] as *const _ as usize;
+      };
+
+      let f = &f as *const _ as usize;
+
+      children_ptr.into_par_iter()
+        .for_each(move |child| {
+          let child = unsafe { &mut *(child as *mut Self) };
+          let f = unsafe {
+            &mut **(f as *const *mut (dyn FnMut(&mut Self) -> TraverseCommand))
+          };
+          if f(child) == TraverseCommand::Ok {
+            child.traverse_managed_parallel_a(f);
+          }
+        })
+    }
+  }
+
   pub fn subdivide(&mut self, f: impl Fn(Rect<f64, WorldSpace>) -> T) -> &mut Option<Box<[Quadtree<T>; 4]>> {
     if self.depth < self.max_depth && self.children.is_none() {
       let rect = self.rect;

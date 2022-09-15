@@ -163,7 +163,7 @@ impl <T> GradientDescent<T, f64>
       .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
         / grid_count as f64)
       .for_each(|p| {
-        let grad = self.Δf(p) * Δp * 20.0;
+        let grad = self.grad_f(p) * Δp * 20.0;
         Self::display_vec(p, p + grad, 1.0, Δp, image);
       });
 

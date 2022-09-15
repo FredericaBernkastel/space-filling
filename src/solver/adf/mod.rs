@@ -9,15 +9,15 @@ use {
     geometry::{Shape, shapes, WorldSpace},
     sdf::SDF
   },
-  std::rc::Rc,
+  std::sync::Arc,
   euclid::{Point2D, Rect}
 };
 
 #[cfg(test)] mod tests;
 
-pub type ADF = Quadtree<Vec<Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>;
+pub type ADF = Quadtree<Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>;
 
-impl SDF<f64> for &[Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
+impl SDF<f64> for &[Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
   fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
     self.iter()
       .map(|f| f(pixel))
@@ -30,62 +30,21 @@ fn sdf_partialord(
   f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
   g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
   domain: Rect<f64, WorldSpace>
-) -> Option<std::cmp::Ordering> {
+) -> bool {
   let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
     .translate(domain.center().to_vector())
     .sdf(v);
 
   let config = LineSearchConfig {
-    Δ: (-16f64).exp2(),
-    initial_step_size: 0.5,
+    Δ: 1e-6,
     decay_factor: 0.85,
-    step_limit: Some(256),
     ..Default::default()
   };
 
-  /*
-  fn remove_dir_contents<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(path)? {
-      std::fs::remove_file(entry?.path())?;
-    }
-    Ok(())
-  }
-  remove_dir_contents("test/test_grad").ok();
-  GradientDescent::<&dyn Fn(_) -> _, _>::new(
-    LineSearchConfig { control_factor: -1.0, ..config },
-    &|v|
-      if domain.contains(v) { f(v) } else { boundary_constraint(v) }
-  ).trajectory_animation(
-    &mut RgbaImage::new(512, 512),
-    1.0,
-    |i, mut img| {
-      use {image::Pixel, crate::drawing::Draw};
-      shapes::Rect { size: domain.size.to_vector().to_point() }
-        .translate(domain.center().to_vector())
-        .texture(Rgba::from([255,0,0,16]))
-        .draw(&mut img);
-      img.save(format!("test/test_grad/{}.png", i)).ok();
-    }
-  );*/
-
-  let fmin = GradientDescent::<&dyn Fn(_) -> _, _>::new(
-    LineSearchConfig { control_factor: -1.0, ..config },
-    &|v| if domain.contains(v) { f(v) } else { boundary_constraint(v) }
-  ).ascend_boundary(domain.center(), domain);
-
-  let gmax = GradientDescent::<&dyn Fn(_) -> _, _>::new(
-    LineSearchConfig { control_factor: 1.0, ..config},
-    &|v| if domain.contains(v) { g(v) } else { -boundary_constraint(v) }
-  ).ascend_boundary(domain.center(), domain);
-
-  /*println!("domain: {domain:?}\nfmin:{fmin:?}\ngmax:{gmax:?}");
-  let mut _t = "".to_string();
-  std::io::stdin().read_line(&mut _t).unwrap();*/
-
-  match () {
-    _ if f(fmin) >= g(gmax) => Some(std::cmp::Ordering::Greater),
-    _ => None
-  }
+   !GradientDescent::<&dyn Fn(_) -> _, _>::new(
+    LineSearchConfig { control_factor: 1.0, ..config },
+    &|v| if domain.contains(v) { g(v) - f(v) } else { -boundary_constraint(v) }
+  ).ascend_normal_criteria(domain.center())
 }
 
 impl ADF {
@@ -125,17 +84,17 @@ impl ADF {
     };
 
     !control_points(d)
-      .any(|v| g(v) - f(v) > 0.0)
+      .any(|v| g(v) > f(v))
   }
 
   fn sdf_vec(&self) -> impl Fn(Point2D<f64, WorldSpace>) -> f64 + '_ {
     move |p| self.data.as_slice().sdf(p)
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, f: Rc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>) -> bool {
+  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, f: Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64 + Send + Sync>) -> bool {
     let mut change_exists = false;
 
-    self.traverse_managed(&mut |node| {
+    self.traverse_managed_parallel(&mut |node| {
       // no intersection with domain
       if !node.rect.intersects(&domain) {
         return TraverseCommand::Skip;
@@ -147,25 +106,22 @@ impl ADF {
       }
 
       // f(v) > g(v) forall v e D, no refinement is required
-      if Self::higher_all(f.as_ref(), &node.sdf_vec(), node.rect) {
+      if sdf_partialord(f.as_ref(), &node.sdf_vec(), node.rect) {
         return TraverseCommand::Skip;
       }
-      /*if sdf_partialord(f.as_ref(), &node.sdf_vec(), node.rect) == Some(std::cmp::Ordering::Greater) {
-        return TraverseCommand::Skip;
-      }*/
 
       // f(v) <= g(v) forall v e D, a minor optimization
-      if Self::higher_all(&node.sdf_vec(), f.as_ref(), node.rect) {
+      if sdf_partialord(&node.sdf_vec(), f.as_ref(), node.rect) {
         node.data = vec![f.clone()];
         change_exists = true;
         return TraverseCommand::Skip;
       };
 
       change_exists = true;
-      const BUCKET_SIZE: usize = 2;
+      const BUCKET_SIZE: usize = 3;
 
       // remove SDF primitives, that do not affect the field within `D`
-      let prune = |data: &[Rc<dyn Fn(_) -> _>], rect| {
+      let prune = |data: &[Arc<dyn Fn(_) -> _>], rect| {
         let mut g = vec![];
         for (i, f) in data.iter().enumerate() {
           let sdf_old = |p|
@@ -175,7 +131,7 @@ impl ADF {
               } else { None })
               .fold(f64::MAX / 2.0, |a, b| a.min(b));
           // there exists v e D, such that f(v) < g(v)
-          if !Self::higher_all(f.as_ref(), &sdf_old, rect) {
+          if !sdf_partialord(f.as_ref(), &sdf_old, rect) {
             g.push(f.clone())
           }
         };
@@ -191,7 +147,7 @@ impl ADF {
       } else if node.data.len() < BUCKET_SIZE {
 
         //node.data = prune(node.data.as_slice(), node.rect);
-        //if !Self::error(f.as_ref(), &node.sdf_vec(), node.rect) {
+        //if !Self::higher_all(f.as_ref(), &node.sdf_vec(), node.rect) {
           node.data.push(f.clone());
         //}
 
@@ -200,13 +156,14 @@ impl ADF {
         let mut g = node.data.clone();
         g.push(f.clone());
 
-        node.subdivide(|rect_ch| prune(&g, rect_ch))
+        node.subdivide(|rect_ch| prune(&g, rect_ch));
+        /*node.subdivide(|rect_ch| prune(&g, rect_ch))
           .as_deref_mut()
           .unwrap()
-          .iter_mut()
+          .into_iter()
           .for_each(|child| {
             child.insert_sdf_domain(domain, f.clone());
-          });
+          });*/
       }
       TraverseCommand::Skip
     });

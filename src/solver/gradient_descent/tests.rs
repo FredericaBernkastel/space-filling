@@ -139,7 +139,7 @@ use {
     .take(1000)
     .for_each(|(local_max, grad)| {
       let shape = {
-        let Δ = grad.Δf(local_max.point).normalize();
+        let Δ = grad.grad_f(local_max.point).normalize();
         let r = rng.gen_range(grad.line_config.Δ..1.0).powf(1.0) * local_max.distance.min(size_bound);
         let offset = local_max.point - Δ * (local_max.distance - r);
 
