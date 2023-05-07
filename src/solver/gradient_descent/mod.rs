@@ -148,13 +148,15 @@ impl <'a, T, P> GradientDescentIter<'a, T, P>
     use rayon::prelude::*;
     use rand::prelude::*;
 
+    const BATCH_SIZE: u64 = 32;
+
     let grad = self.grad as *const _ as usize;
     (0..)
       .map(move |i| {
-        let points: Vec<_> = (0..32).into_par_iter()
+        let points: Vec<_> = (0..BATCH_SIZE).into_par_iter()
           .filter_map(|j| {
             let grad = unsafe { &mut *(grad as *mut GradientDescent<_, _>)};
-            grad.find_local_max(&mut Lcg128Xsl64::seed_from_u64(i * 32 + j))
+            grad.find_local_max(&mut Lcg128Xsl64::seed_from_u64(i * BATCH_SIZE + j))
           })
           .collect();
         let mut points1 = vec![];

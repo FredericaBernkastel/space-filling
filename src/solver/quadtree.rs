@@ -10,6 +10,7 @@ use {
 
 type Point<T> = Point2D<T, WorldSpace>;
 
+#[derive(Clone)]
 pub struct Quadtree<T> {
   pub rect: Rect<f64, WorldSpace>,
   pub children: Option<Box<[Quadtree<T>; 4]>>,

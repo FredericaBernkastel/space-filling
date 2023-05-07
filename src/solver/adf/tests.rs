@@ -86,10 +86,11 @@ impl ADF {
       let primitive = {
         use std::f64::consts::PI;
 
-        let angle = rng.gen_range::<f64, _>(-PI..=PI);
-        let r = (rng.gen_range::<f64, _>(config.Δ..1.0).powf(5.0) * local_max.distance)
+        let angle = rng.gen_range(-PI..=PI);
+        let r = (rng.gen_range(config.Δ..1.0).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
+        // polar to cartesian
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
 
         Circle
@@ -111,16 +112,20 @@ impl ADF {
   println!("profile: {}ms", t0.elapsed().as_millis());
   // TODO: Fix sdf insertion method
   /* Here, `adf_error_margin` denotes failed attempts to instert a shape in ADF due to
-     imperfect quivalence test method. See `solver::adf::ADF::higher_all` for more details.
+     imperfect primitive elimination method. See `solver::adf::ADF::higher_all` for more details.
    */
   println!("adf_error_margin: {}%", (trials as f64 / primitives.len() as f64 - 1.0) * 100.0);
   representation.print_stats_adf();
   //drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
   //representation.draw_layout(&mut image);
   use {image::Pixel, drawing::Draw};
-  primitives.into_iter()
+  /*primitives.into_iter()
     .for_each(|p| p.texture(image::Luma([255]).to_rgba())
-    .draw(&mut image));
+    .draw(&mut image));*/
+  representation
+    .texture(image::Luma([255]).to_rgba())
+    .draw(&mut image);
+
   image.save("test/test_adf.png")?;
   Ok(())
 }

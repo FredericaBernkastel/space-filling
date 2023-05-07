@@ -1,3 +1,4 @@
+use euclid::Box2D;
 use {
   crate::{
     solver::{
@@ -12,6 +13,7 @@ use {
   std::sync::Arc,
   euclid::{Point2D, Rect}
 };
+use crate::geometry::BoundingBox;
 
 #[cfg(test)] mod tests;
 
@@ -33,7 +35,7 @@ fn sdf_partialord(
 ) -> bool {
   let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
     .translate(domain.center().to_vector())
-    .sdf(v);
+    .sdf(v); // IPM boundary
 
   let config = LineSearchConfig {
     Δ: 1e-6,
@@ -41,15 +43,28 @@ fn sdf_partialord(
     ..Default::default()
   };
 
-   !GradientDescent::<&dyn Fn(_) -> _, _>::new(
-    LineSearchConfig { control_factor: 1.0, ..config },
+  let perturbation_grid = 1; // GD lattice density, N^2
+  // higher values improve precision
+
+  let control_points = |rect: Rect<_, _>| {
+    let p = (0..perturbation_grid).map(move |x| x as f64 / (perturbation_grid - 1) as f64);
+    itertools::iproduct!(p.clone(), p.clone())
+      .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
+  };
+
+  let test = |v| GradientDescent::<&dyn Fn(_) -> _, _>::new(
+    config,
     &|v| if domain.contains(v) { g(v) - f(v) } else { -boundary_constraint(v) }
-  ).ascend_normal_criteria(domain.center())
+  ).ascend_normal_criteria(v);
+
+  !match perturbation_grid {
+    1 => test(domain.center()),
+    2..=u32::MAX => control_points(domain).any(|v| test(v)),
+    _ => panic!("Invalid perturbation grid density: {perturbation_grid}")
+  }
 }
 
 impl ADF {
-
-  // TODO: optimization is required
   /*
     Upon insertion of a new SDF primitive (`f`), this function tests whether it does
     change the distance field within a certain domain (remember that it is considered changed
@@ -68,9 +83,12 @@ impl ADF {
 \end{align}
 
     Proposition 2. Use interior point method in order to specify the boundary constraint of `D`
+
+    Update: implemented in [adf::sdf_partialord]
    */
 
   /// f(v) > g(v) forall v e D
+  #[deprecated] #[allow(unused)]
   fn higher_all(
     f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
     g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
@@ -165,6 +183,7 @@ impl ADF {
             child.insert_sdf_domain(domain, f.clone());
           });*/
       }
+      //TODO: despite issuing Skip, newly divided node continues to be explored. Rework Traverse API
       TraverseCommand::Skip
     });
 
@@ -178,3 +197,10 @@ impl SDF<f64> for ADF {
       Some(node) => node.sdf_vec()(pixel),
       None => self.sdf_vec()(pixel),
     }}}
+
+impl BoundingBox<f64> for ADF {
+  fn bounding_box(&self) -> Box2D<f64, WorldSpace> {
+    Box2D::new(
+      Point2D::splat(0.0),
+      Point2D::splat(1.0)
+    )}}
