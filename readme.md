@@ -8,7 +8,7 @@ and offers very limited control over the distribution.
 In this work, i present a new solver over discrete signed distance field:   
 ![](doc/eq1.svg)  
 Where **sdf<sub>n</sub>** are custom signed distance functions. Aggregate minima of which is stored in a bitmap. 
-**c<sub>n+1</sub>** marks a point with highest value of the field, which then supplied to the next iteration
+**c<sub>n+1</sub>** marks global maxima of the field, which then supplied to the next iteration
 of the algorithm.
 
 Currently, the solver is parallel, and highly generic.
@@ -19,7 +19,11 @@ Supported:
   non-convex and disjoint areas, fractals or any sets with non-integer
   hausdorff dimension (as long as the distance can be approximated)
 
-## Examples
+## Gallery
+<details>
+  <summary>Expand</summary>
+
+### Examples
 You can run examples with following command:  
 `cargo run --release --features "drawing" --example <example name> -- -C target-cpu=native`
 
@@ -33,9 +37,6 @@ Given `(xy, value)` of the maxima, a new random circle is inserted within a doma
 
 [`examples/embedded`](examples/embedded.rs)   
 A regular distribution embedded in a random one.
-1. Insert a random distribution of circles;
-1. Invert the distance field;
-1. Insert a fractal distribution.
 
 [`examples/polymorphic`](examples/polymorphic.rs)  
 Showcasing:
@@ -50,6 +51,23 @@ Showcasing:
 Display over 100'000 images.  
 Run with `cargo run --release --features "drawing" --example image_dataset -- "<image folder>" -C target-cpu=native`  
 ![](doc/image_dataset.gif)
+.  
+.
+### Extra
+
+`1M.webp`  
+![](doc/extra/1M.webp)
+`onion.webp`  
+![](doc/extra/onion.webp)
+`gothic.webp`  
+![](doc/extra/gothic.webp)
+`pengagram2.webp`  
+![](doc/extra/pengagram2.webp)
+`percolation.webp`  
+![](doc/extra/percolation.webp)
+`baba.webp`  
+![](doc/extra/baba.webp)
+</details>
 
 ## Past work
 In `src/legacy` you can find numeruos algorithms which are worth re-exploring, including quadtree and GPU implementations. 
@@ -57,22 +75,19 @@ In `src/legacy` you can find numeruos algorithms which are worth re-exploring, i
 ## Future work
 - [x] Add more sample SDFs, and generic draw trait  
 - [x] Extend to support precision below 2<sup>-16</sup> (gigapixel resolution)
+- [ ] Rework traits
 
 A new algorithm is being developed in the separate branch, offering 10-100x memory reduction, as well as 
 continuous field representation (as opposed to discrete).  
 Based on the paper "Adaptively Sampled Distance Fields" (doi:[10.1145/344779.344899](http://dx.doi.org/10.1145/344779.344899)),
 and my implementation of gradient descent with a custom convergence factor, as follows:
 ![](doc/eq2.svg)  
-Where `D` is a control parameter, and `y` specifies the base exponential convergence rate.  
+Where `D` is a control parameter, and `y` controls the exponential convergence rate.  
 Further will be referenced as `GradientDescent<ADF>`, or to be more specific, 
-`GradientDescent<Quadtree<Vec<Rc<dyn Fn(Point2D<f64>) -> f64>>>>`.  
-Each node contains multiple signed distance functions. The actual value at a point is computed as 
-minimum of all the functions. However, more theoretical research is required 
-in order to speed up the algorithm. How to efficiently approximate following logical statements:
-- ![](doc/eq3.svg)
-- ![](doc/eq4.svg)
+`GradientDescent<Quadtree<Vec<Arc<dyn Fn(Point2D<f64>) -> f64>>>>`.  
+Each bucket contains multiple signed distance functions (primitives). The actual value at a point is computed as 
+minimum of all the functions. Primitive elimination within a bucket was implemented using [interior point method](https://en.wikipedia.org/wiki/Interior-point_method); however, due to performance constraints sometimes yielding invalid approximation. More theoretical research is required in order to implement the elimination which is both precise and fast enough.
 
-where `f` and `g` are arbitrary non-analytical functions.  
 Alternatively, would storing polynomial approximations instead offer more advantages?  
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
