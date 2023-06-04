@@ -10,7 +10,9 @@ use {
     geometry::{Shape, shapes, WorldSpace},
     sdf::SDF
   },
-  std::sync::Arc,
+  std::sync::{
+    Arc, atomic::{AtomicBool, Ordering}
+  },
   euclid::{Point2D, Rect}
 };
 use crate::geometry::BoundingBox;
@@ -59,7 +61,7 @@ fn sdf_partialord(
 
   !match perturbation_grid {
     1 => test(domain.center()),
-    2..=u32::MAX => control_points(domain).any(|v| test(v)),
+    2..=u32::MAX => control_points(domain).any(test),
     _ => panic!("Invalid perturbation grid density: {perturbation_grid}")
   }
 }
@@ -110,9 +112,9 @@ impl ADF {
   }
 
   pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, f: Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64 + Send + Sync>) -> bool {
-    let mut change_exists = false;
+    let change_exists = AtomicBool::new(false);
 
-    self.traverse_managed_parallel(&mut |node| {
+    self.traverse_managed_parallel(|node| {
       // no intersection with domain
       if !node.rect.intersects(&domain) {
         return TraverseCommand::Skip;
@@ -131,11 +133,11 @@ impl ADF {
       // f(v) <= g(v) forall v e D, a minor optimization
       if sdf_partialord(&node.sdf_vec(), f.as_ref(), node.rect) {
         node.data = vec![f.clone()];
-        change_exists = true;
+        change_exists.store(true, Ordering::SeqCst);
         return TraverseCommand::Skip;
       };
 
-      change_exists = true;
+      change_exists.store(true, Ordering::SeqCst);
       const BUCKET_SIZE: usize = 3;
 
       // remove SDF primitives, that do not affect the field within `D`
@@ -187,7 +189,7 @@ impl ADF {
       TraverseCommand::Skip
     });
 
-    change_exists
+    change_exists.load(Ordering::SeqCst)
   }
 }
 

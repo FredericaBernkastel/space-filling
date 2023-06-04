@@ -32,6 +32,7 @@ open = "1.4"
 walkdir = "2.3"
 lexical-sort = "0.3"
 humansize = "1.1"
+num-complex = "0.4"
 
 [features]
 default = []
@@ -62,3 +63,8 @@ required-features = ["drawing"]
 [[example]]
 name = "image_dataset"
 required-features = ["drawing"]
+
+[[example]]
+name = "custom_primitive"
+required-features = ["drawing"]
+path = "examples/adf/custom_primitive.rs"
