@@ -1,12 +1,11 @@
 use {
   crate::{
-    error::Result,
     geometry::{WorldSpace, PixelSpace}
   },
   super::DistPoint,
   euclid::{Point2D, Rect, Box2D},
   rayon::iter::ParallelIterator,
-  error_chain::bail
+  anyhow::{Result, bail},
 };
 use num_traits::{NumCast, Float};
 

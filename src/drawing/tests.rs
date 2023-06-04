@@ -1,10 +1,10 @@
 use {
   super::*,
   crate::{
-    error::Result,
     geometry::{Circle, Square}
   },
   euclid::Angle,
+  anyhow::Result,
   image::{Rgba, RgbaImage},
 };
 

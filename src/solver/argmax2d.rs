@@ -1,12 +1,12 @@
 use {
   crate::{
-    error::Result,
     geometry::{PixelSpace, WorldSpace}
   },
   super::{
     DistPoint,
     z_order_storage::ZOrderStorage
   },
+  anyhow::Result,
   euclid::{Rect, Point2D, Vector2D as V2, Size2D},
   num_traits::{Float, FloatConst}
 };

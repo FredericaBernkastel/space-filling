@@ -17,8 +17,8 @@ name = "space_filling"
 path = "src/lib.rs"
 
 [dependencies]
-error-chain = "0.12"
-image = { version = "0.23", default_features = false, features = ["png", "jpeg"], optional = true }
+anyhow = "1.0"
+image = { version = "0.24", default_features = false, features = ["png", "jpeg"], optional = true }
 rand = { version = "0.8", default-features = false, optional = true }
 rand_pcg = { version = "0.3", optional = true }
 rayon = "1.5"

@@ -5,8 +5,8 @@ use {
     drawing::Draw,
     sdf::{self, SDF},
     solver::{Argmax2D, z_order_storage::ZOrderStorage},
-    error::Result
   },
+  anyhow::Result,
   image::{Luma, Pixel, Rgba, RgbaImage}
 };
 

@@ -1,12 +1,12 @@
 use {
   space_filling::{
     geometry::{Shape, Circle, Translation, Scale},
-    error::Result,
     sdf::{self, SDF},
     solver::Argmax2D,
     drawing::Draw
   },
   image::{Luma, Pixel},
+  anyhow::Result,
   euclid::Point2D
 };
 

@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 use {
   space_filling::{
-    error::Result,
     solver::Argmax2D,
     drawing::{self, DrawSync},
     geometry::{Shape, BoundingBox}
   },
   embedded::embedded,
+  anyhow::Result,
   image::RgbaImage
 };
 mod embedded;

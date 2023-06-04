@@ -2,12 +2,12 @@ use {
   std::sync::Arc,
   space_filling::{
     geometry::{Shape, Circle, Square},
-    error::Result,
     sdf,
     solver::Argmax2D,
     drawing::{self, DrawSync}
   },
   image::{RgbaImage, Rgba, DynamicImage},
+  anyhow::Result,
   euclid::{Point2D, Angle}
 };
 

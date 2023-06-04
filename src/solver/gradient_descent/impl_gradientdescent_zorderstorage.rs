@@ -7,10 +7,10 @@ use {
   crate::{
     geometry::WorldSpace,
     solver::z_order_storage::ZOrderStorage,
-    error::Result,
     sdf
   },
   euclid::{Point2D, Size2D, Rect, Box2D},
+  anyhow::Result,
   num_traits::{Float, Signed}
 };
 

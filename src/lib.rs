@@ -141,7 +141,6 @@
 #![cfg_attr(doc, feature(doc_cfg))]
 #![allow(rustdoc::private_intra_doc_links)]
 
-pub mod error;
 pub mod sdf;
 pub mod solver;
 pub mod geometry;

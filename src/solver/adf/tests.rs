@@ -1,7 +1,6 @@
 use {
   super::*,
   crate::{
-    error::Result,
     geometry::{Circle, Shape},
     drawing,
     sdf,
@@ -10,6 +9,7 @@ use {
       argmax2d::Argmax2D
     }
   },
+  anyhow::Result,
   image::{Rgba, RgbaImage},
   euclid::{Vector2D, Size2D}
 };

@@ -1,7 +1,6 @@
 use euclid::{Rect, Size2D};
 use {
   space_filling::{
-    error::Result,
     sdf::{self, SDF},
     solver::{adf::ADF, Argmax2D, gradient_descent::{GradientDescent, LineSearch, LineSearchConfig}},
     drawing::Draw,
@@ -9,6 +8,7 @@ use {
   },
   euclid::{Point2D, Vector2D as V2, Box2D},
   image::{RgbaImage, Luma, Pixel},
+  anyhow::Result,
   num_complex::Complex,
   num_traits::Float,
   std::sync::Arc

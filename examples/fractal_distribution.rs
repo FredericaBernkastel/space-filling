@@ -1,11 +1,11 @@
 use {
   space_filling::{
     geometry::{Shape, Circle, Translation, Scale},
-    error::Result,
     sdf::{self, SDF},
     solver::Argmax2D,
     drawing::Draw
   },
+  anyhow::Result,
   image::{Luma, Pixel}
 };
 

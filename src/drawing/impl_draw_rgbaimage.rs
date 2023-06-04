@@ -7,9 +7,9 @@ use {
     imageops::FilterType
   },
   num_traits::{NumCast, AsPrimitive},
+  anyhow::Result,
   crate::{
     drawing::{Draw, DrawSync, Shape, Texture, rescale_bounding_box},
-    error::Result,
     geometry::{BoundingBox, PixelSpace, WorldSpace},
     sdf::SDF
   }
@@ -170,7 +170,7 @@ pub fn draw_parallel<P>(
     .collect::<Vec<_>>();
 
   if draw_data_chunks.len() != num_threads {
-    error_chain::bail!("chunks are unsatisfied");
+    anyhow::bail!("chunks are unsatisfied");
   }
 
   let partial_buffers = draw_data_chunks.into_iter().map(|chunk| {
