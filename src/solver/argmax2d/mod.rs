@@ -1,21 +1,17 @@
 use {
   crate::{
-    geometry::{PixelSpace, WorldSpace}
+    geometry::{DistPoint, PixelSpace, WorldSpace}
   },
-  super::{
-    DistPoint,
-    z_order_storage::ZOrderStorage
-  },
+  z_order_storage::ZOrderStorage,
   anyhow::Result,
-  euclid::{Rect, Point2D, Vector2D as V2, Size2D},
-  num_traits::{Float, FloatConst}
+  euclid::{Rect, Point2D, Size2D},
 };
 
-pub type ArgmaxResult = DistPoint<f32, f32, WorldSpace>;
+pub mod z_order_storage;
 
 pub struct Argmax2D {
   pub (crate) dist_map: ZOrderStorage<Vec<f32>>,
-  chunk_argmax: Vec<ArgmaxResult>
+  chunk_argmax: Vec<DistPoint<f32, f32, WorldSpace>>
 }
 
 impl Argmax2D {
@@ -24,7 +20,7 @@ impl Argmax2D {
     let chunk_count = storage.chunk_count() as usize;
     Ok(Self {
       dist_map: storage,
-      chunk_argmax: vec![ArgmaxResult::default(); chunk_count]
+      chunk_argmax: vec![DistPoint::default(); chunk_count]
     })
   }
 
@@ -33,11 +29,11 @@ impl Argmax2D {
   }
 
   #[inline]
-  fn write_cache(&self, id: u64, dist: ArgmaxResult) {
+  fn write_cache(&self, id: u64, dist: DistPoint<f32, f32, WorldSpace>) {
     unsafe { *(&self.chunk_argmax[id as usize] as *const _ as *mut _) = dist }
   }
 
-  pub fn find_max(&self) -> ArgmaxResult {
+  pub fn find_max(&self) -> DistPoint<f32, f32, WorldSpace> {
     *self.chunk_argmax.iter()
       .max()
       .unwrap()
@@ -61,7 +57,7 @@ impl Argmax2D {
         let chunk = self.dist_map.get_chunk_xy(chunk_xy);
         let max_dist = chunk.pixels_mut().map(|(xy_normalized, value)| {
           *value = (*value).min(sdf(xy_normalized));
-          ArgmaxResult {
+          DistPoint {
             distance: *value,
             point: xy_normalized
           }
@@ -78,7 +74,7 @@ impl Argmax2D {
     self.dist_map.chunks_par_iter().for_each(|chunk| {
       let max_dist = chunk.pixels_mut().map(|(xy_normalized, value)| {
         *value = -*value;
-        ArgmaxResult {
+        DistPoint {
           distance: *value,
           point: xy_normalized
         }
@@ -88,28 +84,20 @@ impl Argmax2D {
     });
   }
 
-  pub fn domain_empirical<P: Float + FloatConst>(center: Point2D<P, WorldSpace>, max_dist: P) -> Rect<P, WorldSpace> {
-    let size = max_dist * P::from(4.0).unwrap() * P::SQRT_2();
-    Rect {
-      origin: (center.to_vector() - V2::splat(size) / (P::one() + P::one())).to_point(),
-      size: Size2D::splat(size)
-    }
-  }
-
-  pub fn iter(&mut self) -> ArgmaxIter {
+  /*pub fn iter(&mut self) -> ArgmaxIter {
     let min_dist = 0.5 * std::f32::consts::SQRT_2 / self.dist_map.resolution as f32;
     ArgmaxIter {
       argmax: self,
       min_dist
     }
-  }
+  }*/
 
   pub fn pixels(&self) -> impl Iterator<Item = DistPoint<f32, u64, PixelSpace>> + '_ {
     self.dist_map.pixels()
   }
 }
 
-pub struct ArgmaxIter<'a> {
+/*pub struct ArgmaxIter<'a> {
   argmax: &'a mut Argmax2D,
   min_dist: f32
 }
@@ -133,5 +121,4 @@ impl<'a> ArgmaxIter<'a> {
       (argmax.find_max(), argmax)
     })
       .take_while(move |(dist, _)| dist.distance >= min_dist)
-  }
-}
+  }*/

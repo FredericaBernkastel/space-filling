@@ -1,43 +1,35 @@
 #![allow(non_snake_case)]
 use {
   crate::{
-    solver::{Argmax2D, GradientDescent, DistPoint, gradient_descent::LineSearch, quadtree::Quadtree, adf::ADF},
+    solver::{
+      Argmax2D, adf::{ADF, quadtree::Quadtree}
+    },
     geometry::{
       self, BoundingBox, Shape,
-      PixelSpace, WorldSpace,
-      Translation, Rotation, Scale,
-      Circle
+      PixelSpace, WorldSpace, DistPoint,
+      Translation, Rotation, Scale
     },
     sdf::SDF
   },
   euclid::{Box2D, Point2D, Size2D, Vector2D as V2},
   image::{
     ImageBuffer, Luma, Rgba, Pixel, RgbaImage
-  },
-  std::{
-    ops::Deref
   }
 };
 
 mod impl_draw_rgbaimage;
 #[cfg(test)] mod tests;
-pub use impl_draw_rgbaimage::draw_parallel;
 
 pub trait Draw<Prec, Backend>: Shape<Prec> {
   fn draw(&self, image: &mut Backend);
 }
 
-pub trait DrawSync<Prec, Backend>: Draw<Prec, Backend> + Send + Sync {}
-impl <T, P, Backend> DrawSync<P, Backend> for T where T: Draw<P, Backend> + Send + Sync {}
-
-// rust doesn't support trait upcast yet
-impl<P, B> SDF<P> for Box<dyn Draw<P, B>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.deref().sdf(pixel) } }
-impl<P, B> BoundingBox<P> for Box<dyn Draw<P, B>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.deref().bounding_box() } }
-impl<P, B> SDF<P> for Box<dyn DrawSync<P, B>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.deref().sdf(pixel) } }
-impl<P, B> BoundingBox<P> for Box<dyn DrawSync<P, B>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.deref().bounding_box() } }
+impl<Ty, P> SDF<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.as_ref().sdf(pixel) } }
+impl<Ty, P> BoundingBox<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.as_ref().bounding_box() } }
 
 static MSG: &str = "Draw is only implemented for Texture";
 
+// Rust doesn't support trait upcasting yet
 impl <B, S, P> Draw<P, B> for Translation<S, P> where Translation<S, P>: Shape<P> {
   fn draw(&self, _: &mut B) { unreachable!("{}", MSG) } }
 impl <B, S, P> Draw<P, B> for Rotation<S, P> where Rotation<S, P>: Shape<P> {
@@ -81,14 +73,16 @@ fn rescale_bounding_box(
 }
 
 /// Draw shapes, parallel.
-/// Faster compared to [`draw_parallel`], low memory usage.
-/// Will cause undefined behaviour if two shapes intersect.
-pub fn draw_parallel_unsafe<P, B>(
-  framebuffer: &mut B,
-  shapes: impl rayon::iter::ParallelIterator<Item = Box<dyn DrawSync<P, B>>>
-) -> &mut B where B: Sync + Send {
+/// May cause undefined behaviour.
+pub fn draw_parallel<Float, Backend, Sh>(
+  framebuffer: &mut Backend,
+  shapes: impl rayon::iter::ParallelIterator<Item =Sh>
+) -> &mut Backend
+  where Backend: Sync + Send,
+        Sh: AsRef<dyn Draw<Float, Backend> + Send + Sync>
+{
   shapes.for_each(|shape|
-    shape.draw(unsafe { &mut *(framebuffer as *const _ as *mut B) })
+    shape.as_ref().draw(unsafe { &mut *(framebuffer as *const _ as *mut Backend) })
   );
   framebuffer
 }
@@ -122,91 +116,6 @@ impl Argmax2D {
     self.dist_map.pixels().for_each(|DistPoint { distance, point }| {
       let color = Luma::from([(distance / max_dist * 255.0) as u8]);
       *image.get_pixel_mut(point.x as u32, point.y as u32) = color.to_rgb();
-    });
-    image
-  }
-}
-
-impl <T> GradientDescent<T, f64>
-  where GradientDescent<T, f64>: LineSearch<f64> {
-
-  fn display_vec (
-    p1: Point2D<f64, WorldSpace>,
-    p2: Point2D<f64, WorldSpace>,
-    alpha: f64,
-    Δp: f64,
-    img: &mut RgbaImage
-  ) {
-    let shapes: Vec<Box<dyn Draw<_, RgbaImage>>> = vec![
-      Box::new(geometry::Line {
-        a: p1,
-        b: p2,
-        thickness: Δp
-      }),
-      Box::new(Circle
-        .scale(Δp * 3.0)
-        .translate(p2.to_vector()))
-    ];
-    shapes.into_iter().for_each(|s| s
-      .texture(|_| Rgba([255, 0, 0, (alpha * 255.0) as u8]))
-      .draw(img));
-  }
-
-  pub fn display_sdf<'a>(&self, image: &'a mut RgbaImage, brightness: f64, gradient_marks: Option<u64>) -> &'a mut RgbaImage {
-    let Δp = 1.0 / image.width() as f64;
-
-    display_sdf(|p| self.sample_sdf(p), image, brightness);
-
-    // gradiend vector field
-    let grid_count = gradient_marks.unwrap_or(0);
-    itertools::iproduct!(0..grid_count, 0..grid_count)
-      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
-        / grid_count as f64)
-      .for_each(|p| {
-        let grad = self.grad_f(p).normalize() * Δp * 20.0;
-        Self::display_vec(p, p + grad, 1.0, Δp, image);
-      });
-
-    image
-  }
-
-  pub fn trajectory_animation<'a>(&self, image: &'a mut RgbaImage, brightness: f64, f: impl Fn(usize, RgbaImage)) -> &'a mut RgbaImage {
-    let image = self.display_sdf(image, brightness, None);
-    let resolution = image.width();
-    let Δp = 1.0 / resolution as f64;
-
-    let trajectory_trail = move |p1, p2, p3, img: &mut _| {
-      if let (Some(p1), Some(p2)) = (p1, p2) {
-        Self::display_vec(p1, p2, 0.25, Δp, img);
-      }
-      if let (Some(p2), Some(p3)) = (p2, p3) {
-        Self::display_vec(p2, p3, 0.5, Δp, img);
-      }
-      if let Some(p3) = p3 {
-        Self::display_vec(p3, p3, 1.0, Δp, img);
-      }
-    };
-
-    let grid_count = 9;
-    let trajectories = itertools::iproduct!(0..grid_count, 0..grid_count)
-      .map(|(x, y)| (Point2D::new(x, y).to_f64() + V2::splat(0.5))
-        / grid_count as f64)
-      .map(|p| self.trajectory(p))
-      .collect::<Vec<_>>();
-
-    let max_len = trajectories.iter().map(|x| x.len()).max().unwrap_or(0);
-    (0isize..max_len as isize).for_each(|i| {
-      let mut img = image.clone();
-      trajectories.iter()
-        .for_each(|trajectory| {
-          trajectory_trail(
-            trajectory.get((i - 2).max(0) as usize).cloned(),
-            trajectory.get((i - 1).max(0) as usize).cloned(),
-            trajectory.get(i as usize).cloned(),
-            &mut img
-          );
-        });
-      f(i as usize, img);
     });
     image
   }
@@ -266,7 +175,7 @@ impl ADF {
     self
   }
   pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
-    self.traverse(&mut |node| {
+    self.tree.traverse(&mut |node| {
       if node.children.is_none() {
         let rect = node.rect;
         let alpha = (((node.data.len() - 1) as f64 / 3.0).powf(1.75)

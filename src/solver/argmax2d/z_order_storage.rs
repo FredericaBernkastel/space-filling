@@ -1,8 +1,7 @@
 use {
   crate::{
-    geometry::{WorldSpace, PixelSpace}
+    geometry::{DistPoint, WorldSpace, PixelSpace}
   },
-  super::DistPoint,
   euclid::{Point2D, Rect, Box2D},
   rayon::iter::ParallelIterator,
   anyhow::{Result, bail},

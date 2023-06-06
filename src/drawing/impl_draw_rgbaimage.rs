@@ -1,21 +1,22 @@
 #![allow(non_snake_case)]
+
+use num_traits::Float;
 use {
-  std::{thread, sync::Arc, ops::Fn},
+  std::{sync::Arc, ops::Fn},
   euclid::{Point2D, Rect, Size2D},
   image::{
     DynamicImage, GenericImageView, Pixel, Rgba, RgbaImage,
     imageops::FilterType
   },
   num_traits::{NumCast, AsPrimitive},
-  anyhow::Result,
   crate::{
-    drawing::{Draw, DrawSync, Shape, Texture, rescale_bounding_box},
+    drawing::{Draw, Shape, Texture, rescale_bounding_box},
     geometry::{BoundingBox, PixelSpace, WorldSpace},
     sdf::SDF
   }
 };
 
-impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
+impl <Cutie, P: Float> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
   where Cutie: Shape<P> + Clone,
         P: NumCast + AsPrimitive<f64>
 {
@@ -28,7 +29,7 @@ impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
 
 impl <'a, Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, &'a DynamicImage>
   where Cutie: Shape<P>,
-        P: NumCast + AsPrimitive<f64>
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
@@ -61,7 +62,7 @@ impl <'a, Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, &'a DynamicImage>
 impl <Cutie, F, P> Draw<P, RgbaImage> for Texture<Cutie, F>
   where Cutie: Shape<P>,
         F: Fn(Point2D<P, WorldSpace>) -> Rgba<u8>,
-        P: NumCast + AsPrimitive<f64>
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
@@ -92,7 +93,7 @@ impl <Cutie, F, P> Draw<P, RgbaImage> for Texture<Cutie, F>
 
 impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, DynamicImage>
   where Cutie: Shape<P> + Clone,
-        P: NumCast + AsPrimitive<f64>
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
@@ -104,7 +105,7 @@ impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, DynamicImage>
 
 impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, Arc<DynamicImage>>
   where Cutie: Shape<P> + Clone,
-        P: NumCast + AsPrimitive<f64>
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
@@ -142,62 +143,4 @@ fn sdf_overlay_aa(sdf: f64, Δp: f64, mut col1: Rgba<u8>, mut col2: Rgba<u8>) ->
   col2.0[3] = ((col2.0[3] as f64) * alpha) as u8;
   col1.blend(&col2);
   col1
-}
-
-/// Draw shapes, parallel.
-/// Will use `resolution.x * resolution.y * num_threads * 4` bytes of memory.
-pub fn draw_parallel<P>(
-  shapes: impl Iterator<Item = Arc<dyn DrawSync<P, RgbaImage>>>,
-  resolution: Point2D<u32, PixelSpace>,
-  num_threads: usize
-) -> Result<RgbaImage>
-  where P: 'static
-{
-  use rand::prelude::*;
-
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-
-  let mut draw_data = shapes
-    .collect::<Vec<_>>();
-  // will distribute the load between threads [statistically] evenly
-  draw_data.shuffle(&mut rng);
-
-  let num_threads = num_threads.min(draw_data.len());
-
-  let draw_data_chunks = draw_data
-    .chunks((draw_data.len() as f64 / num_threads as f64).ceil() as usize)
-    .map(|chunk| chunk.to_vec())
-    .collect::<Vec<_>>();
-
-  if draw_data_chunks.len() != num_threads {
-    anyhow::bail!("chunks are unsatisfied");
-  }
-
-  let partial_buffers = draw_data_chunks.into_iter().map(|chunk| {
-    thread::spawn( move || {
-      let mut framebuffer = RgbaImage::new(resolution.x, resolution.y);
-
-      chunk.into_iter()
-        .for_each(|shape| {
-          shape.draw(&mut framebuffer);
-        });
-
-      framebuffer
-    })
-  }).collect::<Vec<_>>() // thread handles
-    .into_iter()
-    .map(|thread| thread.join().unwrap())
-    .collect::<Vec<_>>();
-
-  let mut final_buffer = partial_buffers[0].clone();
-
-  // merge partial buffers
-  partial_buffers
-    .into_iter()
-    .skip(1)
-    .for_each(|buffer|
-      image::imageops::overlay(&mut final_buffer, &buffer, 0, 0)
-    );
-
-  Ok(final_buffer)
 }

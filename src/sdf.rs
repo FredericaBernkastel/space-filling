@@ -1,16 +1,18 @@
 use {
   euclid::{Point2D, Vector2D as V2, Rotation2D, Box2D},
-  crate::geometry::{self, WorldSpace, Shape, Rotation, Scale, Translation, BoundingBox},
+  crate::{
+    geometry::{self, WorldSpace, Shape, Rotation, Scale, Translation, BoundingBox},
+  },
   num_traits::{Float, Signed},
   std::ops::{Neg, Sub}
 };
 
 /// Signed distance function
 pub trait SDF<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T;
+  fn sdf(&self, p: Point2D<T, WorldSpace>) -> T;
 }
 
-impl <S, P> SDF<P> for Translation<S, P>
+impl <S, P: Float> SDF<P> for Translation<S, P>
   where S: Shape<P>,
         P: Clone + Sub<Output = P>  {
   fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {

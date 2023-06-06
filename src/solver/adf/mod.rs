@@ -1,25 +1,36 @@
-use euclid::Box2D;
 use {
   crate::{
     solver::{
-      gradient_descent::{GradientDescent, LineSearch, LineSearchConfig},
-      quadtree::{
-        Quadtree, TraverseCommand
-      }
+      line_search::LineSearch
     },
-    geometry::{Shape, shapes, WorldSpace},
-    sdf::SDF
+    geometry::{Shape, shapes, WorldSpace, BoundingBox},
+    sdf::SDF,
   },
-  std::sync::{
-    Arc, atomic::{AtomicBool, Ordering}
+  quadtree::{
+    Quadtree, TraverseCommand
   },
-  euclid::{Point2D, Rect}
+  std::{
+    sync::{
+      Arc, atomic::{AtomicBool, Ordering}
+    },
+    fmt::{Debug, Formatter}
+  },
+  euclid::{Point2D, Box2D, Rect}
 };
-use crate::geometry::BoundingBox;
 
 #[cfg(test)] mod tests;
+pub mod quadtree;
 
-pub type ADF = Quadtree<Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>;
+#[derive(Clone)]
+pub struct ADF {
+  pub tree: Quadtree<Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>,
+  /// Gradient Descent lattice density, N^2
+  /// higher values improve precision
+  gd_lattice_density: u32
+}
+
+unsafe impl Send for ADF {}
+unsafe impl Sync for ADF {}
 
 impl SDF<f64> for &[Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
   fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
@@ -31,42 +42,50 @@ impl SDF<f64> for &[Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
 }
 
 fn sdf_partialord(
-  f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
-  g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
-  domain: Rect<f64, WorldSpace>
+  f: impl Fn(Point2D<f64, WorldSpace>) -> f64,
+  g: impl Fn(Point2D<f64, WorldSpace>) -> f64,
+  domain: Rect<f64, WorldSpace>,
+  lattice_density: u32
 ) -> bool {
   let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
     .translate(domain.center().to_vector())
     .sdf(v); // IPM boundary
 
-  let config = LineSearchConfig {
-    Δ: 1e-6,
+  let line_search = LineSearch {
     decay_factor: 0.85,
     ..Default::default()
   };
 
-  let perturbation_grid = 1; // GD lattice density, N^2
-  // higher values improve precision
-
   let control_points = |rect: Rect<_, _>| {
-    let p = (0..perturbation_grid).map(move |x| x as f64 / (perturbation_grid - 1) as f64);
+    let p = (0..lattice_density).map(move |x| x as f64 / (lattice_density - 1) as f64);
     itertools::iproduct!(p.clone(), p.clone())
       .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
   };
 
-  let test = |v| GradientDescent::<&dyn Fn(_) -> _, _>::new(
-    config,
-    &|v| if domain.contains(v) { g(v) - f(v) } else { -boundary_constraint(v) }
-  ).ascend_normal_criteria(v);
+  let test = |v| line_search.optimize_normal(
+    |v| if domain.contains(v) { g(v) - f(v) } else { -boundary_constraint(v) },
+    v
+  );
 
-  !match perturbation_grid {
+  !match lattice_density {
     1 => test(domain.center()),
     2..=u32::MAX => control_points(domain).any(test),
-    _ => panic!("Invalid perturbation grid density: {perturbation_grid}")
+    _ => panic!("Invalid perturbation grid density: {lattice_density}")
   }
 }
 
 impl ADF {
+  //move |p| self.tree.data.as_slice().sdf(p)
+  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>) -> Self {
+    Self {
+      tree: Quadtree::new(max_depth, init),
+      gd_lattice_density: 1
+    }
+  }
+  pub fn with_gd_lattice_density(mut self, density: u32) -> Self {
+    self.gd_lattice_density = density;
+    self
+  }
   /*
     Upon insertion of a new SDF primitive (`f`), this function tests whether it does
     change the distance field within a certain domain (remember that it is considered changed
@@ -107,14 +126,10 @@ impl ADF {
       .any(|v| g(v) > f(v))
   }
 
-  fn sdf_vec(&self) -> impl Fn(Point2D<f64, WorldSpace>) -> f64 + '_ {
-    move |p| self.data.as_slice().sdf(p)
-  }
-
   pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, f: Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64 + Send + Sync>) -> bool {
     let change_exists = AtomicBool::new(false);
 
-    self.traverse_managed_parallel(|node| {
+    self.tree.traverse_managed_parallel(|node| {
       // no intersection with domain
       if !node.rect.intersects(&domain) {
         return TraverseCommand::Skip;
@@ -126,18 +141,28 @@ impl ADF {
       }
 
       // f(v) > g(v) forall v e D, no refinement is required
-      if sdf_partialord(f.as_ref(), &node.sdf_vec(), node.rect) {
+      if sdf_partialord(
+        f.as_ref(),
+        |p| node.data.as_slice().sdf(p),
+        node.rect,
+        self.gd_lattice_density
+      ) {
         return TraverseCommand::Skip;
       }
 
       // f(v) <= g(v) forall v e D, a minor optimization
-      if sdf_partialord(&node.sdf_vec(), f.as_ref(), node.rect) {
+      if sdf_partialord(
+        |p| node.data.as_slice().sdf(p),
+        f.as_ref(),
+        node.rect,
+        self.gd_lattice_density
+      ) {
         node.data = vec![f.clone()];
-        change_exists.store(true, Ordering::SeqCst);
+        change_exists.store(true, Ordering::Relaxed);
         return TraverseCommand::Skip;
       };
 
-      change_exists.store(true, Ordering::SeqCst);
+      change_exists.store(true, Ordering::Relaxed);
       const BUCKET_SIZE: usize = 3;
 
       // remove SDF primitives, that do not affect the field within `D`
@@ -151,7 +176,12 @@ impl ADF {
               } else { None })
               .fold(f64::MAX / 2.0, |a, b| a.min(b));
           // there exists v e D, such that f(v) < g(v)
-          if !sdf_partialord(f.as_ref(), &sdf_old, rect) {
+          if !sdf_partialord(
+            f.as_ref(),
+            sdf_old,
+            rect,
+            self.gd_lattice_density
+          ) {
             g.push(f.clone())
           }
         };
@@ -191,13 +221,17 @@ impl ADF {
 
     change_exists.load(Ordering::SeqCst)
   }
+
+  pub unsafe fn as_mut(&self) -> &mut Self {
+    &mut *(self as *const _ as *mut _)
+  }
 }
 
 impl SDF<f64> for ADF {
   fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
-    match self.pt_to_node(pixel) {
-      Some(node) => node.sdf_vec()(pixel),
-      None => self.sdf_vec()(pixel),
+    match self.tree.pt_to_node(pixel) {
+      Some(node) => node.data.as_slice().sdf(pixel),
+      None => self.tree.data.as_slice().sdf(pixel),
     }}}
 
 impl BoundingBox<f64> for ADF {
@@ -206,3 +240,25 @@ impl BoundingBox<f64> for ADF {
       Point2D::splat(0.0),
       Point2D::splat(1.0)
     )}}
+
+impl Debug for ADF {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    use humansize::{FileSize, file_size_opts as options};
+
+    let mut total_nodes = 0u64;
+    let mut total_size = 0usize;
+    let mut max_depth = 0u8;
+    self.tree.traverse(&mut |node| {
+      total_nodes += 1;
+      total_size += std::mem::size_of::<Self>()
+        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
+      max_depth = (max_depth).max(node.depth);
+      Ok(())
+    }).ok();
+    f.debug_struct("ADF")
+      .field("total_nodes", &total_nodes)
+      .field("max_depth", &max_depth)
+      .field("size", &total_size.file_size(options::BINARY).unwrap())
+      .finish()
+  }
+}

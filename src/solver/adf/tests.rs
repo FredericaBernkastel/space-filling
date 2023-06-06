@@ -1,46 +1,22 @@
 use {
   super::*,
   crate::{
-    geometry::{Circle, Shape},
+    geometry::{Circle, Shape, P2},
     drawing,
     sdf,
     solver::{
-      gradient_descent::{GradientDescent, LineSearch, LineSearchConfig},
-      argmax2d::Argmax2D
-    }
+      adf::ADF, line_search::LineSearch
+    },
+    util
   },
   anyhow::Result,
   image::{Rgba, RgbaImage},
-  euclid::{Vector2D, Size2D}
+  euclid::{Vector2D, Size2D},
+  std::cell::Cell
 };
+use crate::geometry::DistPoint;
 
-impl ADF {
-  pub fn print_stats_adf(&self) -> &Self {
-    use humansize::{FileSize, file_size_opts as options};
-
-    let mut total_nodes = 0u64;
-    let mut total_size = 0usize;
-    let mut max_depth = 0u8;
-    self.traverse(&mut |node| {
-      total_nodes += 1;
-      total_size += std::mem::size_of::<Self>()
-        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
-      max_depth = (max_depth).max(node.depth);
-      Ok(())
-    }).ok();
-    println!(
-      "total nodes: {}\n\
-      max subdivisions: {}\n\
-      mem::size_of::<Quadtree<T>(): {}",
-      total_nodes,
-      max_depth,
-      total_size.file_size(options::BINARY).unwrap()
-    );
-    self
-  }
-}
-
-#[test] #[ignore] fn draw_layout() -> Result<()> {
+#[test] fn draw_layout() -> Result<()> {
   let mut image = RgbaImage::new(512, 512);
   let mut adf = ADF::new(8, vec![Arc::new(|_| f64::MAX / 2.0)]);
   let domain = Rect::from_size(Size2D::splat(1.0));
@@ -59,48 +35,46 @@ impl ADF {
   println!("{}us", t0.elapsed().as_micros());
 
   drawing::display_sdf(|p| adf.sdf(p), &mut image, 4.0);
-  adf.draw_layout(&mut image);
+  adf.tree.draw_layout(&mut image);
   image.save("test/test_adf.png")?;
   Ok(())
 }
 
-// profile: 5.96s, 100k circles, adf_subdiv = 8
+// profile: 4.85s, 100k circles, adf_subdiv = 7
 #[test] #[ignore] fn gradient_adf() -> Result<()> {
   use rand::prelude::*;
 
-  let config = LineSearchConfig {
-    Δ: 1e-6,
-    decay_factor: 0.85,
-    ..Default::default()
-  };
   let mut image = RgbaImage::new(1024, 1024);
-  let mut representation = ADF::new(7, vec![Arc::new(sdf::boundary_rect)]);
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+  let representation = ADF::new(7, vec![Arc::new(sdf::boundary_rect)]);
   let mut primitives = vec![];
-  let mut trials = 0u64;
+  let trials = Cell::new(0u64);
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   let t0 = std::time::Instant::now();
-  GradientDescent::<&mut ADF, _>::new(config, &mut representation).iter().build()
-    .filter_map(|(local_max, grad)| {
-      trials += 1;
-      let primitive = {
+
+  util::local_maxima_iter(
+    Box::new(|p| representation.sdf(p)),
+    32, 0, LineSearch::default()
+  ).inspect(|_| trials.set(trials.get() + 1))
+    .filter_map(|local_max| {
+      let circle = {
         use std::f64::consts::PI;
 
         let angle = rng.gen_range(-PI..=PI);
-        let r = (rng.gen_range(config.Δ..1.0).powf(5.0) * local_max.distance)
+        let r = (rng.gen_range(1e-6f64..1.0).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
         // polar to cartesian
-        let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
+        let offset = P2::from([angle.cos(), angle.sin()]) * delta;
 
-        Circle
-          .translate(local_max.point - offset)
+        Circle.translate(local_max.point - offset)
           .scale(r)
       };
-      grad.insert_sdf_domain(
-        Argmax2D::domain_empirical(local_max.point, local_max.distance),
-        move |p| primitive.sdf(p)
-      ).then(|| primitive)
+      // alternately use safe RwLock<ADF> for 1.5x slowdown
+      unsafe { representation.as_mut() }.insert_sdf_domain(
+        util::domain_empirical(local_max),
+        Arc::new(move |p| circle.sdf(p))
+      ).then(|| circle)
     })
     .enumerate()
     .take(100000)
@@ -114,8 +88,8 @@ impl ADF {
   /* Here, `adf_error_margin` denotes failed attempts to instert a shape in ADF due to
      imperfect primitive elimination method. See `solver::adf::ADF::higher_all` for more details.
    */
-  println!("adf_error_margin: {}%", (trials as f64 / primitives.len() as f64 - 1.0) * 100.0);
-  representation.print_stats_adf();
+  println!("adf_error_margin: {:+.3e}", trials.get() as f64 / primitives.len() as f64 - 1.0);
+  println!("{representation:#?}");
   //drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
   //representation.draw_layout(&mut image);
   use {image::Pixel, drawing::Draw};
@@ -134,22 +108,23 @@ impl ADF {
   use rand::prelude::*;
   use drawing::Draw;
 
-  let config = LineSearchConfig {
-    Δ: (-16f64).exp2(),
-    ..Default::default()
-  };
+  std::fs::create_dir("test\\anim").ok();
+
   let mut representation = ADF::new(11, vec![Arc::new(sdf::boundary_rect)]);
   let mut circles = vec![];
   let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 
-
   let mut i = 0;
   'main: while i < 32 {
-    let mut grad = GradientDescent::<&mut ADF, _>::new(config, &mut representation);
     let mut local_max = None;
-    for _ in 0..config.max_attempts {
-      local_max = grad.find_local_max(&mut rng);
-      if local_max.is_some() { break; }
+    for _ in 0..50 {
+      let p0 = P2::new(
+        rng.gen_range(0.0..1.0),
+        rng.gen_range(0.0..1.0),
+      );
+      let ret = LineSearch::default().optimize(|p| representation.sdf(p), p0);
+      let ret = DistPoint { distance: representation.sdf(ret), point: ret};
+      if ret.distance > 0.0 { local_max = Some(ret); break; }
     };
     let local_max = match local_max {
       Some(r) => r,
@@ -163,6 +138,7 @@ impl ADF {
     representation
       .display_sdf(&mut image, 3.5)
       .draw_bucket_weights(&mut image)
+      .tree
       .draw_layout(&mut image);
     image.save(format!("test/anim/#{}_0.png", i))?;
 
@@ -181,7 +157,7 @@ impl ADF {
       use std::f64::consts::PI;
 
       let angle = rng.gen_range::<f64, _>(-PI..=PI);
-      let r = (rng.gen_range::<f64, _>(config.Δ..1.0).powf(1.0) * local_max.distance)
+      let r = (rng.gen_range::<f64, _>(0.0..1.0).powf(1.0) * local_max.distance)
         .min(1.0 / 6.0);
       let delta = local_max.distance - r;
       let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
@@ -189,7 +165,7 @@ impl ADF {
       Circle.translate(local_max.point - offset)
         .scale(r)
     };
-    let domain = Argmax2D::domain_empirical(local_max.point, local_max.distance);
+    let domain = util::domain_empirical(local_max);
 
     circle.texture(Rgba([0x45, 0x8F, 0xF5, 0xFF]))
       .draw(&mut image);
@@ -204,7 +180,7 @@ impl ADF {
         .draw(&mut image);
       image.save(format!("test/anim/#{}_3.png", i))?;
     }
-    representation.draw_bounding(domain, &mut image);
+    representation.tree.draw_bounding(domain, &mut image);
     image.save(format!("test/anim/#{}_4.png", i))?;
 
     representation.insert_sdf_domain(
@@ -216,7 +192,7 @@ impl ADF {
     });
   };
 
-  representation.print_stats_adf();
+  println!("{representation:#?}");
 
   Ok(())
 }

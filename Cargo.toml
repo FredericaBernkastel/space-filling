@@ -25,13 +25,13 @@ rayon = "1.5"
 euclid = "0.22"
 num-traits = "0.2"
 itertools = "0.10"
+humansize = "1.1"
 
 [dev-dependencies]
 regex = "1.4"
 open = "1.4"
 walkdir = "2.3"
 lexical-sort = "0.3"
-humansize = "1.1"
 num-complex = "0.4"
 
 [features]
@@ -45,26 +45,31 @@ all-features = true
 rustdoc-args = ["--cfg", "doc"]
 
 [[example]]
-name = "fractal_distribution"
+name = "01_fractal_distribution"
 required-features = ["drawing"]
+path = "examples/argmax2d/01_fractal_distribution.rs"
 
 [[example]]
-name = "random_distribution"
+name = "02_random_distribution"
 required-features = ["drawing"]
+path = "examples/gd_adf/02_random_distribution.rs"
 
 [[example]]
-name = "embedded"
+name = "03_embedded"
 required-features = ["drawing"]
+path = "examples/argmax2d/03_embedded.rs"
 
 [[example]]
-name = "polymorphic"
+name = "04_polymorphic"
 required-features = ["drawing"]
+path = "examples/gd_adf/04_polymorphic.rs"
 
 [[example]]
-name = "image_dataset"
+name = "05_image_dataset"
 required-features = ["drawing"]
+path = "examples/argmax2d/05_image_dataset.rs"
 
 [[example]]
-name = "custom_primitive"
+name = "06_custom_primitive"
 required-features = ["drawing"]
-path = "examples/adf/custom_primitive.rs"
+path = "examples/gd_adf/06_custom_primitive.rs"

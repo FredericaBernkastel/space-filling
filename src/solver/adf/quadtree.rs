@@ -146,29 +146,24 @@ impl<T> Quadtree<T> {
     }
   }
 
-  pub fn traverse_managed_parallel(&mut self, mut f: impl Fn(&mut Self) -> TraverseCommand + Send + Sync) {
+  pub fn traverse_managed_parallel(&mut self, f: impl Fn(&mut Self) -> TraverseCommand + Send + Sync) {
     if f(self) == TraverseCommand::Ok {
-      self.traverse_managed_parallel_a(&mut f);
+      self.traverse_managed_parallel_a(&f);
     }
   }
 
-  fn traverse_managed_parallel_a(&mut self, f: &mut (dyn Fn(&mut Self) -> TraverseCommand + Send + Sync)) {
+  fn traverse_managed_parallel_a(&mut self, f: &(impl Fn(&mut Self) -> TraverseCommand + Send + Sync)) {
     use rayon::prelude::*;
 
-    if let Some(children) = self.children.as_deref() {
+    if let Some(children) = self.children.as_deref_mut() {
       let mut children_ptr = [0; 4];
       for i in 0..4 {
-        children_ptr[i] = &children[i] as *const _ as usize;
+        children_ptr[i] = &mut children[i] as *mut _ as usize;
       };
-
-      let f = &f as *const _ as usize;
 
       children_ptr.into_par_iter()
         .for_each(move |child| {
           let child = unsafe { &mut *(child as *mut Self) };
-          let f = unsafe {
-            &mut **(f as *const *mut (dyn Fn(&mut Self) -> TraverseCommand + Send + Sync))
-          };
           if f(child) == TraverseCommand::Ok {
             child.traverse_managed_parallel_a(f);
           }
