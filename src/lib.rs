@@ -5,21 +5,20 @@
 //! Here, "shape" denotes one or multiple regions of ℝ² space, that can be represented by a
 //! signed distance function.
 //!
-//! # Basic usage
+//! # Basic usage, Argmax2D solver
 //! ```no_run
 //! # use {
 //! #   space_filling::{
-//! #     error::Result,
-//! #     solver::Argmax2D,
 //! #     geometry::{Shape, Circle, Scale, Translation},
-//! #     drawing::Draw
+//! #     sdf::{self, SDF},
+//! #     solver::Argmax2D,
+//! #     drawing::Draw,
+//! #     util
 //! #   },
+//! #   anyhow::Result,
 //! #   image::{Luma, Pixel}
 //! # };
-//! # type AffineT<T> = Scale<Translation<T, f32>, f32>;
-//! # fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
-//! #   [].iter().cloned()
-//! # }
+//! #
 //! # fn main() -> Result<()> {
     //! let path = "out.png";
     //!
@@ -29,70 +28,88 @@
     //!   * Resolution must be divisible by chunk size.
     //!   * Resolution affects the precision of solver, and is not related to final picture size.
     //!   * Chunk size is only important for optimization. Best values depend on the actual
-    //!   * system configuration, but typically (resolution -> chunk):
-    //!   * - 1024 -> 16
-    //!   * - 4096 -> 32
-    //!   * - 16384 -> 64
+    //!   * system configuration, but typically `chunk = resolution.sqrt() / 2`
     //!   **/
-    //! let mut argmax = Argmax2D::new(1024, 16)?;
+    //! let mut representation = Argmax2D::new(1024, 16)?;
+    //! // prevent shapes from escaping image
+    //! representation.insert_sdf(sdf::boundary_rect);
     //!
     //! // Initialize image buffer, which will hold final image.
     //! let mut image = image::RgbaImage::new(2048, 2048);
+    //!
     //! // Generate the distribution of shapes:
-    //! distribution(&mut argmax)
-    //!   .take(1000)
-    //!   .for_each(|shape| shape
+    //! for _ in 0..1000 {
+    //!   // find global maxima of the field
+    //!   let global_max = representation.find_max();
+    //!   // Make a new circle at the location with highest distance to all other circles.
+    //!   let circle = Circle
+    //!     .translate(global_max.point.to_vector())
+    //!     .scale(global_max.distance / 4.0);
+    //!   /** Update the field.
+    //!    * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
+    //!    * only a certain part of the field is being changed every time, depending on the
+    //!    * current maximum distance. To be exact - a square region with a side of
+    //!    * max_dist * 4.0 * sqrt(2.0), which made possible achieving
+    //!    * greater speed of computation. **/
+    //!   representation.insert_sdf_domain(
+    //!     util::domain_empirical(global_max),
+    //!     |v| circle.sdf(v)
+    //!   );
+    //!   circle
     //!     .texture(Luma([255u8]).to_rgba()) // fill with white color
-    //!     .draw(&mut image)); // draw the shape on image
+    //!     .draw(&mut image); // draw the shape on image
+    //! }
     //! image.save(path)?; // save image
 //! #   Ok(())
 //! # }
 //! ```
-//! The distribution function can be defined as follows:
-//! ```
-//! # use space_filling::{
-//! #   geometry::{Circle, Shape, Translation, Scale},
-//! #   error::Result,
-//! #   sdf::{self, SDF},
-//! #   solver::Argmax2D,
+//! # GD-ADF solver
+//! ```no_run
+//! # use {
+//! #   space_filling::{
+//! #     geometry::{Shape, Circle, Translation, Scale, P2},
+//! #     sdf::{self, SDF},
+//! #     solver::{line_search::LineSearch, adf::ADF},
+//! #     drawing::Draw,
+//! #     util
+//! #   },
+//! #   image::{Luma, Pixel},
+//! #   anyhow::Result,
+//! #   rand::prelude::*,
+//! #   std::sync::{Arc, RwLock}
 //! # };
-//! # use euclid::Vector2D;
-//! // A set with an affine morphism on it
-//! type AffineT<T> = Scale<Translation<T, f32>, f32>;
+//! #
+//! # fn main() -> Result<()> {
+    //! let path = "out.png";
+    //! let mut representation = RwLock::new(ADF::<f64>::new(5, vec![Arc::new(sdf::boundary_rect)]));
+    //! let mut image = image::RgbaImage::new(2048, 2048);
+    //! // In case of GD-ADF, it is adviced to use `util::local_maxima_iter`,
+    //! // as it is capable of finding multiple local maxima in parallel.
+    //! // By default, this is an infinite iterator.
+    //! util::local_maxima_iter(
+    //!   // provide a closure for sampling distance field
+    //!   Box::new(|p| representation.read().unwrap().sdf(p)),
+    //!   32, 0, LineSearch::default()
+    //! ).filter_map(|local_max| {
+    //!   let circle = Circle
+    //!     .translate(local_max.point.to_vector())
+    //!     .scale(local_max.distance / 4.0);
+    //!   // Update distance field. Since the precision is not perfect, sometimes update may fail -
+    //!   // thus Option is returned
+    //!   representation.write().unwrap().insert_sdf_domain(
+    //!     util::domain_empirical(local_max),
+    //!     Arc::new(move |p| circle.sdf(p))
+    //!   ).then(|| circle)
+    //! }).take(1000) // stop, once 1000 circles were successfully added
+    //!   .for_each(|shape| shape
+    //!     .texture(Luma([255u8]).to_rgba())
+    //!     .draw(&mut image)
+    //!   );
+    //!
+    //! image.save(path)?;
+  //! # Ok(())
+//! # }
 //!
-//! fn distribution(argmax: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle>> + '_ {
-//!   argmax.insert_sdf(sdf::boundary_rect); // all shapes must be *inside* the image
-//!
-//!   argmax.iter() // Returns an iterator builder. See `argmax2d::ArgmaxIter` for more options.
-//!      // Finish build. By default, this is an infinite iterator, which will break
-//!      // only after reaching a certain distance threshold (i.e. no more space).
-//!     .build()
-//!     .map(|(argmax_ret, argmax)| {
-//!      /** Here, on each iteration, `argmax_ret` contains largest value of the
-//!        * distance field, and its location;
-//!        * `&mut Argmax2D` is passed here too. Using the one from outer scope is impossible,
-//!        * because only one mutable reference must be active at any given time. **/
-//!
-//!       // Make a new circle at the location with highest distance to all other circles.
-//!       let circle = Circle
-//!         .translate(argmax_ret.point.to_vector())
-//!         .scale(argmax_ret.distance / 4.0);
-//!
-//!       /** Update the field.
-//!         * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
-//!         * only a certain part of the field is being changed every time, depending on the
-//!         * current maximum distance. To be exact - a square region with a side of
-//!         * max_dist * 4.0 * sqrt(2.0), which made possible achieving
-//!         * greater speed of computation. **/
-//!       argmax.insert_sdf_domain(
-//!         Argmax2D::domain_empirical(argmax_ret.point, argmax_ret.distance),
-//!         |pixel| circle.sdf(pixel)
-//!       );
-//!
-//!       // Return the generated circle
-//!       circle
-//!     })
-//! }
 //! ```
 //! <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/fractal_distribution.png">
 //!
@@ -100,7 +117,6 @@
 //! There are three main traits related to drawing:
 //! - `trait `[`Shape`](`geometry::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
 //! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`geometry::Shape`)`
-//! - `trait `[`DrawSync`](`drawing::DrawSync`)`: `[`Draw`](`drawing::Draw`)` + Send + Sync`
 //!
 //! Draw is primarily implemented on [`Texture`](`drawing::Texture`):
 //! ```text
@@ -126,9 +142,8 @@
 //! let shapes: Vec<Box<dyn Draw<RgbaImage>>> = ...
 //! ```
 //!
-//! Lastly, there are two functions: [`draw_parallel`](drawing::draw_parallel),
-//! [`draw_parallel_unsafe`](drawing::draw_parallel_unsafe) that accept an iterator on
-//! `dyn DrawSync<RgbaImage>`. It is constructed via trait object casting, exactly as above.
+//! Lastly, there are is: [`draw_parallel`](drawing::draw_parallel), that accept an iterator on
+//! `dyn Draw<RgbaImage> + Send + Sync`. It is constructed via trait object casting, exactly as above.
 //! See `examples/polymorphic.rs` and `drawing/tests::polymorphic_*` for more examples.
 //!
 //! This way, both distribution generation and drawing are guaranteed to evenly load all available

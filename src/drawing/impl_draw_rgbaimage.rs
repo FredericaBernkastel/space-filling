@@ -60,8 +60,8 @@ impl <'a, Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, &'a DynamicImage>
   }
 }
 
-/// F: Fn(pixel: Point2D) -> Rgba<u8>
-/// where pixel is in normalized texture coordinates.
+/// `F: Fn(v: Point2D) -> Rgba<u8>`
+/// where `v` is in normalized texture coordinates.
 impl <Cutie, F, P> Draw<P, RgbaImage> for Texture<Cutie, F>
   where Cutie: Shape<P>,
         F: Fn(Point2D<P, WorldSpace>) -> Rgba<u8>,
