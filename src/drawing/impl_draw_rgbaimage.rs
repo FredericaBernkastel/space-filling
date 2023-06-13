@@ -3,7 +3,7 @@
 use num_traits::Float;
 use {
   std::{sync::Arc, ops::Fn},
-  euclid::{Point2D, Rect, Size2D},
+  euclid::{Point2D, Rect, Size2D, Box2D},
   image::{
     DynamicImage, GenericImageView, Pixel, Rgba, RgbaImage,
     imageops::FilterType
@@ -15,6 +15,9 @@ use {
     sdf::SDF
   }
 };
+
+impl<Ty, P> SDF<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.as_ref().sdf(pixel) } }
+impl<Ty, P> BoundingBox<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.as_ref().bounding_box() } }
 
 impl <Cutie, P: Float> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
   where Cutie: Shape<P> + Clone,

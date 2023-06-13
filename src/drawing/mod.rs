@@ -14,7 +14,8 @@ use {
   euclid::{Box2D, Point2D, Size2D, Vector2D as V2},
   image::{
     ImageBuffer, Luma, Rgba, Pixel, RgbaImage
-  }
+  },
+  num_traits::{Float, AsPrimitive, Signed}
 };
 
 mod impl_draw_rgbaimage;
@@ -23,9 +24,6 @@ mod impl_draw_rgbaimage;
 pub trait Draw<Prec, Backend>: Shape<Prec> {
   fn draw(&self, image: &mut Backend);
 }
-
-impl<Ty, P> SDF<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.as_ref().sdf(pixel) } }
-impl<Ty, P> BoundingBox<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.as_ref().bounding_box() } }
 
 static MSG: &str = "Draw is only implemented for Texture";
 
@@ -81,8 +79,9 @@ pub fn draw_parallel<Float, Backend, Sh>(
   where Backend: Sync + Send,
         Sh: AsRef<dyn Draw<Float, Backend> + Send + Sync>
 {
+  let ptr = framebuffer as *mut _ as usize;
   shapes.for_each(|shape|
-    shape.as_ref().draw(unsafe { &mut *(framebuffer as *const _ as *mut Backend) })
+    shape.as_ref().draw(unsafe { &mut *(ptr as *mut Backend) })
   );
   framebuffer
 }
@@ -121,7 +120,7 @@ impl Argmax2D {
   }
 }
 
-impl <T> Quadtree<T> {
+impl <Data, _Float: Float> Quadtree<Data, _Float> {
   pub fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
     use geometry::Line;
 
@@ -129,7 +128,7 @@ impl <T> Quadtree<T> {
     self.traverse(&mut |node| {
       if node.children.is_some() { return Ok(()) };
 
-      let rect = node.rect;
+      let rect = node.rect.cast();
       let lines = [
         [[0.0, 0.0], [rect.size.width, 0.0]],
         [[rect.size.width, 0.0], rect.size.into()],
@@ -153,10 +152,10 @@ impl <T> Quadtree<T> {
     self
   }
 
-  pub fn draw_bounding(&self, domain: euclid::Rect<f64, WorldSpace>, image: &mut RgbaImage) -> &Self {
+  pub fn draw_bounding(&self, domain: euclid::Rect<_Float, WorldSpace>, image: &mut RgbaImage) -> &Self {
     self.traverse(&mut |node| {
       if node.children.is_none() && node.rect.intersects(&domain) {
-        let rect = node.rect;
+        let rect = node.rect.cast();
         geometry::Rect {
           size: rect.size.to_vector().to_point()
         } .translate(rect.origin.to_vector() + rect.size.to_vector() * 0.5)
@@ -169,9 +168,9 @@ impl <T> Quadtree<T> {
   }
 }
 
-impl ADF {
+impl <_Float: Float + Signed + AsPrimitive<f64>> ADF<_Float> {
   pub fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self {
-    display_sdf(|p| self.sdf(p), image, brightness);
+    display_sdf(|p| self.sdf(p.cast()).to_f64().unwrap(), image, brightness);
     self
   }
   pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
@@ -182,7 +181,7 @@ impl ADF {
           * 0.33 * 255.0) as u8;
         geometry::Rect {
           size: rect.size.to_vector().to_point()
-        } .translate(rect.origin.to_vector() + rect.size.to_vector() * 0.5)
+        } .translate(rect.origin.to_vector() + rect.size.to_vector() * _Float::from(0.5).unwrap())
           .texture(Rgba([0x7F, 0xFF, 0, alpha]))
           .draw(image)
       }

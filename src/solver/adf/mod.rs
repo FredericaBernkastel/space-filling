@@ -3,7 +3,7 @@ use {
     solver::{
       line_search::LineSearch
     },
-    geometry::{Shape, shapes, WorldSpace, BoundingBox},
+    geometry::{Shape, shapes, P2, WorldSpace, BoundingBox},
     sdf::SDF,
   },
   quadtree::{
@@ -15,49 +15,47 @@ use {
     },
     fmt::{Debug, Formatter}
   },
-  euclid::{Point2D, Box2D, Rect}
+  euclid::{Point2D, Box2D, Rect},
+  num_traits::{Float, Signed}
 };
 
 #[cfg(test)] mod tests;
-pub mod quadtree;
+pub(crate) mod quadtree;
 
 #[derive(Clone)]
-pub struct ADF {
-  pub tree: Quadtree<Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>>,
+pub struct ADF<Float> {
+  pub tree: Quadtree<Vec<Arc<dyn Fn(P2<Float>) -> Float>>, Float>,
   /// Gradient Descent lattice density, N^2
   /// higher values improve precision
-  gd_lattice_density: u32
+  ipm_gd_lattice_density: u32,
+  ipm_line_config: LineSearch<Float>
 }
 
-unsafe impl Send for ADF {}
-unsafe impl Sync for ADF {}
+unsafe impl<Float> Send for ADF<Float> {}
+unsafe impl<Float> Sync for ADF<Float> {}
 
-impl SDF<f64> for &[Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>] {
-  fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
+impl <_Float: Float> SDF<_Float> for &[Arc<dyn Fn(P2<_Float>) -> _Float>] {
+  fn sdf(&self, pixel: P2<_Float>) -> _Float {
     self.iter()
       .map(|f| f(pixel))
       .reduce(|a, b| if a <= b { a } else { b })
-      .unwrap_or(f64::MAX / 2.0)
+      .unwrap_or(_Float::max_value() / (_Float::one() + _Float::one()))
   }
 }
 
-fn sdf_partialord(
-  f: impl Fn(Point2D<f64, WorldSpace>) -> f64,
-  g: impl Fn(Point2D<f64, WorldSpace>) -> f64,
-  domain: Rect<f64, WorldSpace>,
-  lattice_density: u32
+fn sdf_partialord<_Float: Float + Signed>(
+  f: impl Fn(P2<_Float>) -> _Float,
+  g: impl Fn(P2<_Float>) -> _Float,
+  domain: Rect<_Float, WorldSpace>,
+  lattice_density: u32,
+  line_search: LineSearch<_Float>
 ) -> bool {
   let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
     .translate(domain.center().to_vector())
     .sdf(v); // IPM boundary
 
-  let line_search = LineSearch {
-    decay_factor: 0.85,
-    ..Default::default()
-  };
-
   let control_points = |rect: Rect<_, _>| {
-    let p = (0..lattice_density).map(move |x| x as f64 / (lattice_density - 1) as f64);
+    let p = (0..lattice_density).map(move |x| _Float::from(x).unwrap() / _Float::from(lattice_density - 1).unwrap());
     itertools::iproduct!(p.clone(), p.clone())
       .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
   };
@@ -74,16 +72,23 @@ fn sdf_partialord(
   }
 }
 
-impl ADF {
+impl <_Float: Float + Signed + Sync> ADF<_Float> {
   //move |p| self.tree.data.as_slice().sdf(p)
-  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>) -> Self {
+  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(P2<_Float>) -> _Float>>) -> Self {
     Self {
       tree: Quadtree::new(max_depth, init),
-      gd_lattice_density: 1
+      ipm_gd_lattice_density: 1,
+      ipm_line_config: LineSearch::default()
     }
   }
+  /// Controls precision of bucket primitive pruning
   pub fn with_gd_lattice_density(mut self, density: u32) -> Self {
-    self.gd_lattice_density = density;
+    self.ipm_gd_lattice_density = density;
+    self
+  }
+  /// Underlying GD settings for the interior point method
+  pub fn with_ipm_line_config(mut self, line_config: LineSearch<_Float>) -> Self {
+    self.ipm_line_config = line_config;
     self
   }
   /*
@@ -126,7 +131,7 @@ impl ADF {
       .any(|v| g(v) > f(v))
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: Rect<f64, WorldSpace>, f: Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64 + Send + Sync>) -> bool {
+  pub fn insert_sdf_domain(&mut self, domain: Rect<_Float, WorldSpace>, f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>) -> bool {
     let change_exists = AtomicBool::new(false);
 
     self.tree.traverse_managed_parallel(|node| {
@@ -145,7 +150,8 @@ impl ADF {
         f.as_ref(),
         |p| node.data.as_slice().sdf(p),
         node.rect,
-        self.gd_lattice_density
+        self.ipm_gd_lattice_density,
+        self.ipm_line_config
       ) {
         return TraverseCommand::Skip;
       }
@@ -155,7 +161,8 @@ impl ADF {
         |p| node.data.as_slice().sdf(p),
         f.as_ref(),
         node.rect,
-        self.gd_lattice_density
+        self.ipm_gd_lattice_density,
+        self.ipm_line_config
       ) {
         node.data = vec![f.clone()];
         change_exists.store(true, Ordering::Relaxed);
@@ -166,7 +173,7 @@ impl ADF {
       const BUCKET_SIZE: usize = 3;
 
       // remove SDF primitives, that do not affect the field within `D`
-      let prune = |data: &[Arc<dyn Fn(_) -> _>], rect| {
+      let prune = |data: &[Arc<dyn Fn(P2<_Float>) -> _Float>], rect| {
         let mut g = vec![];
         for (i, f) in data.iter().enumerate() {
           let sdf_old = |p|
@@ -174,13 +181,14 @@ impl ADF {
               .filter_map(|(j, f)| if i != j {
                 Some(f(p))
               } else { None })
-              .fold(f64::MAX / 2.0, |a, b| a.min(b));
+              .fold(_Float::max_value() / (_Float::one() + _Float::one()), |a, b| a.min(b));
           // there exists v e D, such that f(v) < g(v)
           if !sdf_partialord(
             f.as_ref(),
             sdf_old,
             rect,
-            self.gd_lattice_density
+            self.ipm_gd_lattice_density,
+            self.ipm_line_config
           ) {
             g.push(f.clone())
           }
@@ -206,7 +214,7 @@ impl ADF {
         let mut g = node.data.clone();
         g.push(f.clone());
 
-        node.subdivide(|rect_ch| prune(&g, rect_ch));
+        node.subdivide(|rect_ch| prune(g.as_slice(), rect_ch));
         /*node.subdivide(|rect_ch| prune(&g, rect_ch))
           .as_deref_mut()
           .unwrap()
@@ -223,25 +231,26 @@ impl ADF {
   }
 
   pub unsafe fn as_mut(&self) -> &mut Self {
-    &mut *(self as *const _ as *mut _)
+    let ptr = self as *const _ as usize;
+    &mut *(ptr as *const Self as *mut _)
   }
 }
 
-impl SDF<f64> for ADF {
-  fn sdf(&self, pixel: Point2D<f64, WorldSpace>) -> f64 {
+impl <_Float: Float> SDF<_Float> for ADF<_Float> {
+  fn sdf(&self, pixel: P2<_Float>) -> _Float {
     match self.tree.pt_to_node(pixel) {
       Some(node) => node.data.as_slice().sdf(pixel),
       None => self.tree.data.as_slice().sdf(pixel),
     }}}
 
-impl BoundingBox<f64> for ADF {
-  fn bounding_box(&self) -> Box2D<f64, WorldSpace> {
+impl <_Float: Float> BoundingBox<_Float> for ADF<_Float> {
+  fn bounding_box(&self) -> Box2D<_Float, WorldSpace> {
     Box2D::new(
-      Point2D::splat(0.0),
-      Point2D::splat(1.0)
+      P2::splat(_Float::zero()),
+      P2::splat(_Float::one())
     )}}
 
-impl Debug for ADF {
+impl <_Float: Float> Debug for ADF<_Float> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     use humansize::{FileSize, file_size_opts as options};
 
@@ -251,7 +260,7 @@ impl Debug for ADF {
     self.tree.traverse(&mut |node| {
       total_nodes += 1;
       total_size += std::mem::size_of::<Self>()
-        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(Point2D<f64, WorldSpace>) -> f64>>();
+        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(P2<f64>) -> f64>>();
       max_depth = (max_depth).max(node.depth);
       Ok(())
     }).ok();

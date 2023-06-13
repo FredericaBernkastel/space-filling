@@ -5,21 +5,22 @@ use {
   },
   std::{fmt::{Debug, Formatter}},
   anyhow::Result,
-  euclid::{Point2D, Size2D, Rect}
+  euclid::{Point2D, Size2D, Rect},
+  num_traits::Float
 };
 
 type Point<T> = Point2D<T, WorldSpace>;
 
 #[derive(Clone)]
-pub struct Quadtree<T> {
-  pub rect: Rect<f64, WorldSpace>,
-  pub children: Option<Box<[Quadtree<T>; 4]>>,
+pub struct Quadtree<Data, Float> {
+  pub rect: Rect<Float, WorldSpace>,
+  pub children: Option<Box<[Quadtree<Data, Float>; 4]>>,
   pub depth: u8,
   pub max_depth: u8,
-  pub data: T
+  pub data: Data
 }
 
-impl<T: Debug> Debug for Quadtree<T> {
+impl<Data: Debug, _Float: Float + Debug> Debug for Quadtree<Data, _Float> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Quadtree")
       .field("rect", &self.rect)
@@ -40,23 +41,26 @@ pub enum Quadtrant {
   BR = 3
 }
 
-const QUADRANT_ORIGIN: [Point<f64>; 4] = [
-  Point::new(0.0, 0.0),
-  Point::new(0.5, 0.0),
-  Point::new(0.0, 0.5),
-  Point::new(0.5, 0.5)
-];
+fn quadrant_origin<_Float: Float>() -> [Point<_Float>; 4] {
+  let half = _Float::one() / (_Float::one() + _Float::one());
+  [
+    Point::new(_Float::zero(), _Float::zero()),
+    Point::new(half, _Float::zero()),
+    Point::new(_Float::zero(), half),
+    Point::new(half, half)
+  ]
+}
 
 impl Quadtrant {
   /// determine the section of a rectangle, containing `pt`
-  pub fn get(rect: Rect<f64, WorldSpace>, pt: Point<f64>) -> Option<Self> {
+  pub fn get<_Float: Float>(rect: Rect<_Float, WorldSpace>, pt: Point<_Float>) -> Option<Self> {
     use Quadtrant::*;
     [TL, TR, BL, BR].iter()
       .find_map(|&quad| {
         let origin = rect.origin +
-          QUADRANT_ORIGIN[quad as usize].to_vector()
+          quadrant_origin()[quad as usize].to_vector()
             .component_mul(rect.size.to_vector());
-        Rect { origin, size: rect.size / 2.0 }
+        Rect { origin, size: rect.size / (_Float::one() + _Float::one()) }
           .contains(pt)
           .then(|| quad)
       })
@@ -99,10 +103,10 @@ pub enum TraverseCommand {
   Skip
 }
 
-impl<T> Quadtree<T> {
-  pub fn new(max_depth: u8, init: T) -> Self {
+impl<Data, _Float: Float> Quadtree<Data, _Float> {
+  pub fn new(max_depth: u8, init: Data) -> Self {
     Quadtree {
-      rect: Rect::from_size(Size2D::splat(1.0)),
+      rect: Rect::from_size(Size2D::splat(_Float::one())),
       children: None,
       depth: 0,
       max_depth,
@@ -171,16 +175,16 @@ impl<T> Quadtree<T> {
     }
   }
 
-  pub fn subdivide(&mut self, f: impl Fn(Rect<f64, WorldSpace>) -> T) -> &mut Option<Box<[Quadtree<T>; 4]>> {
+  pub fn subdivide(&mut self, f: impl Fn(Rect<_Float, WorldSpace>) -> Data) -> &mut Option<Box<[Quadtree<Data, _Float>; 4]>> {
     if self.depth < self.max_depth && self.children.is_none() {
       let rect = self.rect;
-      let children: [Quadtree<T>; 4] = [0, 1, 2, 3]
+      let children: [Quadtree<Data, _Float>; 4] = [0, 1, 2, 3]
         .map(|i| {
           let rect = Rect {
             origin: rect.origin +
-              QUADRANT_ORIGIN[i as usize].to_vector()
+              quadrant_origin()[i as usize].to_vector()
                 .component_mul(rect.size.to_vector()),
-            size: rect.size / 2.0
+            size: rect.size / (_Float::one() + _Float::one())
           };
           Quadtree {
             rect,
@@ -195,9 +199,9 @@ impl<T> Quadtree<T> {
     &mut self.children
   }
 
-  pub fn leaves_planar(&mut self) -> Vec<&mut Quadtree<T>> {
+  pub fn leaves_planar(&mut self) -> Vec<&mut Quadtree<Data, _Float>> {
 
-    fn nodes_planar_a<T>(tree: &mut Quadtree<T>) -> Vec<*mut Quadtree<T>> {
+    fn nodes_planar_a<Data, Float>(tree: &mut Quadtree<Data, Float>) -> Vec<*mut Quadtree<Data, Float>> {
       let mut result = vec![];
       if let Some(children) = tree.children.as_deref_mut() {
         for child in children.iter_mut() {
@@ -216,7 +220,7 @@ impl<T> Quadtree<T> {
   }
 
   /// return all nodes, containing `pt`
-  pub fn path_to_pt(&self, pt: Point<f64>) -> Vec<&Self> {
+  pub fn path_to_pt(&self, pt: Point<_Float>) -> Vec<&Self> {
     let mut result = vec![self];
     if let Some(children) = self.children.as_deref() {
       if let Some(quad) = Quadtrant::get(self.rect, pt) {
@@ -227,7 +231,7 @@ impl<T> Quadtree<T> {
   }
 
   /// find a smallest node containing pt
-  pub fn pt_to_node(&self, pt: Point<f64>) -> Option<&Self> {
+  pub fn pt_to_node(&self, pt: Point<_Float>) -> Option<&Self> {
     let mut node = self;
     while let Some(children) = node.children.as_deref() {
       node = &children[Quadtrant::get(node.rect, pt)? as usize]
@@ -239,7 +243,7 @@ impl<T> Quadtree<T> {
 #[cfg(test)] mod tests {
   use super::*;
 
-  impl<T> Quadtree<T> {
+  impl<Data, _Float: Float> Quadtree<Data, _Float> {
 
     /// prints amount of total nodes in the tree, max subdivisions, and memory usage
     pub fn print_stats(&self) {
@@ -258,7 +262,7 @@ impl<T> Quadtree<T> {
       mem::size_of::<Quadtree<T>(): {}",
         total_nodes,
         max_depth,
-        (std::mem::size_of::<Quadtree<T>>() * total_nodes as usize)
+        (std::mem::size_of::<Quadtree<Data, _Float>>() * total_nodes as usize)
           .file_size(options::BINARY).unwrap()
       );
     }

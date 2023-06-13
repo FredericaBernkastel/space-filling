@@ -19,8 +19,8 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0"
 image = { version = "0.24", default_features = false, features = ["png", "jpeg"], optional = true }
-rand = { version = "0.8", default-features = false, optional = true }
-rand_pcg = { version = "0.3", optional = true }
+rand = { version = "0.8", default-features = false }
+rand_pcg = { version = "0.3" }
 rayon = "1.5"
 euclid = "0.22"
 num-traits = "0.2"
@@ -36,7 +36,7 @@ num-complex = "0.4"
 
 [features]
 default = []
-drawing = ["image", "rand", "rand_pcg"]
+drawing = ["image"]
 
 [profile.release]
 

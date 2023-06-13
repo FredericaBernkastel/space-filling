@@ -15,10 +15,10 @@ use {
   std::sync::{Arc, RwLock}
 };
 
-type AffineT<T, P> = Scale<Translation<T, P>, P>;
+type AffineT<T> = Scale<Translation<T, f64>, f64>;
 
 // profile: 62ms, 1000 circrles, adf_subdiv = 5
-fn random_distribution(representation: &RwLock<ADF>) -> impl Iterator<Item = AffineT<Circle, f64>> + '_  {
+fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item = AffineT<Circle>> + '_  {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   util::local_maxima_iter(
@@ -47,10 +47,10 @@ fn random_distribution(representation: &RwLock<ADF>) -> impl Iterator<Item = Aff
 
 fn main() -> Result<()> {
   let path = "out.png";
-  let mut representation = RwLock::new(ADF::new(5, vec![Arc::new(sdf::boundary_rect)]));
+  let representation = RwLock::new(ADF::new(5, vec![Arc::new(sdf::boundary_rect)]));
   let mut image = image::RgbaImage::new(2048, 2048);
 
-  random_distribution(&mut representation)
+  random_distribution(&representation)
     .take(1000)
     .for_each(|shape| shape
       .texture(Luma([255u8]).to_rgba())

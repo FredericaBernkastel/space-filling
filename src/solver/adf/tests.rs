@@ -45,7 +45,7 @@ use crate::geometry::DistPoint;
   use rand::prelude::*;
 
   let mut image = RgbaImage::new(1024, 1024);
-  let representation = ADF::new(7, vec![Arc::new(sdf::boundary_rect)]);
+  let representation = ADF::<f64>::new(7, vec![Arc::new(sdf::boundary_rect)]);
   let mut primitives = vec![];
   let trials = Cell::new(0u64);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -61,7 +61,7 @@ use crate::geometry::DistPoint;
         use std::f64::consts::PI;
 
         let angle = rng.gen_range(-PI..=PI);
-        let r = (rng.gen_range(1e-6f64..1.0).powf(5.0) * local_max.distance)
+        let r = (rng.gen_range(1e-6..1.0).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
         // polar to cartesian

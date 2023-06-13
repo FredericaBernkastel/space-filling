@@ -30,7 +30,8 @@ impl Argmax2D {
 
   #[inline]
   fn write_cache(&self, id: u64, dist: DistPoint<f32, f32, WorldSpace>) {
-    unsafe { *(&self.chunk_argmax[id as usize] as *const _ as *mut _) = dist }
+    let ptr = &self.chunk_argmax[id as usize] as *const _ as usize;
+    unsafe { *(ptr as *const DistPoint<f32, f32, WorldSpace> as *mut _) = dist }
   }
 
   pub fn find_max(&self) -> DistPoint<f32, f32, WorldSpace> {
@@ -84,41 +85,7 @@ impl Argmax2D {
     });
   }
 
-  /*pub fn iter(&mut self) -> ArgmaxIter {
-    let min_dist = 0.5 * std::f32::consts::SQRT_2 / self.dist_map.resolution as f32;
-    ArgmaxIter {
-      argmax: self,
-      min_dist
-    }
-  }*/
-
   pub fn pixels(&self) -> impl Iterator<Item = DistPoint<f32, u64, PixelSpace>> + '_ {
     self.dist_map.pixels()
   }
 }
-
-/*pub struct ArgmaxIter<'a> {
-  argmax: &'a mut Argmax2D,
-  min_dist: f32
-}
-
-impl<'a> ArgmaxIter<'a> {
-  pub fn min_dist(mut self, value: f32) -> Self {
-    self.min_dist = value;
-    self
-  }
-
-  pub fn min_dist_px(mut self, value: f32) -> Self {
-    self.min_dist = value / self.argmax.dist_map.resolution as f32;
-    self
-  }
-
-  pub fn build(self) -> impl Iterator<Item = (ArgmaxResult, &'a mut Argmax2D)> {
-    let min_dist = self.min_dist;
-    (0..).map(move |_| {
-      // this is awkward...
-      let argmax = unsafe { &mut *(self.argmax as *const _ as *mut Argmax2D) };
-      (argmax.find_max(), argmax)
-    })
-      .take_while(move |(dist, _)| dist.distance >= min_dist)
-  }*/

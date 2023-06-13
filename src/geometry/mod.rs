@@ -64,7 +64,7 @@ pub trait Shape<T>: SDF<T> + BoundingBox<T> {
     crate::drawing::Texture { shape: self, texture }
   }
 }
-impl <T: Float, Sh> Shape<T> for Sh where Sh: SDF<T> + BoundingBox<T> {}
+impl <T, Sh> Shape<T> for Sh where Sh: SDF<T> + BoundingBox<T> {}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Translation<S, T> {

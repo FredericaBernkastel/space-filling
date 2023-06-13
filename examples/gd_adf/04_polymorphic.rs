@@ -13,7 +13,7 @@ use {
   euclid::{Point2D, Angle}
 };
 
-fn polymorphic(representation: &RwLock<ADF>, texture: Arc<DynamicImage>)
+fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
   -> impl Iterator<Item = Arc<dyn Draw<f64, RgbaImage> + Send + Sync>> + '_
 {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);

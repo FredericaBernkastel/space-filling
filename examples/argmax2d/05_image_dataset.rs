@@ -1,4 +1,4 @@
-/// Generate a distribution, and use it to display an image dataset.
+//! Generate a distribution, and use it to display an image dataset.
 
 #![allow(dead_code)]
 use {
@@ -39,7 +39,8 @@ fn main() -> Result<()> {
     .flatten()
     .expect("Please provide a valid folder path in arguments");
 
-  let shapes = embedded(&mut Argmax2D::new(16384, 64)?);
+  let mut argmax = Argmax2D::new(16384, 64)?;
+  let shapes = embedded(&mut argmax);
 
   let files = find_files(
     &image_folder, {
