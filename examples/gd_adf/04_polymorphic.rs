@@ -72,7 +72,7 @@ fn main() -> Result<()> {
   );
   let texture = Arc::new(image::open("doc/fractal_distribution.png")?);
   let shapes = polymorphic(&mut representation, texture)
-    .take(2000).par_bridge();
+    .take(1000).par_bridge();
   drawing::draw_parallel(&mut RgbaImage::from_pixel(1024, 1024, Luma([255]).to_rgba()), shapes)
     .save(path)?;
   open::that(path)?;
