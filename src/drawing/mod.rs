@@ -21,7 +21,7 @@ use {
 mod impl_draw_rgbaimage;
 #[cfg(test)] mod tests;
 
-pub trait Draw<Prec, Backend>: Shape<Prec> {
+pub trait Draw<Float, Backend>: Shape<Float> {
   fn draw(&self, image: &mut Backend);
 }
 
@@ -37,7 +37,7 @@ impl <B, S, P> Draw<P, B> for Scale<S, P> where Scale<S, P>: Shape<P> {
 
 impl <B, P> Draw<P, B> for geometry::Line<P> where geometry::Line<P>: Shape<P> {
   fn draw(&self, _: &mut B) { unreachable!("{}", MSG) } }
-impl <B, P, U> Draw<P, B> for geometry::Polygon<U> where P: num_traits::Float, U: AsRef<[Point2D<P, WorldSpace>]> {
+impl <B, P, U> Draw<P, B> for geometry::Polygon<U> where P: Float, U: AsRef<[Point2D<P, WorldSpace>]> {
   fn draw(&self, _: &mut B) { unreachable!("{}", MSG) } }
 
 #[derive(Debug, Copy, Clone)]

@@ -4,9 +4,7 @@ use {
     geometry::{Circle, Shape, P2},
     drawing,
     sdf,
-    solver::{
-      adf::ADF, line_search::LineSearch
-    },
+    solver::{ADF, LineSearch},
     util
   },
   anyhow::Result,

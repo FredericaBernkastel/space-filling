@@ -4,7 +4,7 @@
 use {
   space_filling::{
     sdf::{self, SDF},
-    solver::{adf::ADF, line_search::LineSearch},
+    solver::{ADF, LineSearch},
     drawing::Draw,
     geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation},
     util

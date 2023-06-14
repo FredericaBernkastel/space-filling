@@ -3,7 +3,7 @@ use {
   space_filling::{
     geometry::{Shape, Ring, Square},
     sdf::{self, SDF},
-    solver::{adf::ADF, line_search::LineSearch},
+    solver::{ADF, LineSearch},
     drawing::{self, Draw},
     util
   },

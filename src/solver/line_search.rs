@@ -1,3 +1,5 @@
+//! Implements Gradient Descent optimizer with exponential decay factor.
+
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
@@ -11,6 +13,7 @@ use {
 
 #[derive(Copy, Clone)]
 pub struct LineSearch<P> {
+  /// Delta for calculating partial derivatives
   pub Δ: P,
   pub initial_step_size: P,
   pub decay_factor: P,
@@ -27,6 +30,7 @@ impl <P: Float> Default for LineSearch<P> {
     }}}
 
 impl<P: Float> LineSearch<P> {
+  /// Sample gradient of `f` at `p`.
   pub fn grad(&self, f: impl Fn(P2<P>) -> P, p: P2<P>) -> V2<P, WorldSpace> {
     let fp = f(p);
     V2::new(
@@ -35,6 +39,7 @@ impl<P: Float> LineSearch<P> {
     ) / self.Δ
   }
 
+  /// Find a local maxima of `f`, using `p` as an initial location.
   pub fn optimize(&self, f: impl Fn(P2<P>) -> P, mut p: P2<P>) -> P2<P> {
     let mut step_size = self.initial_step_size;
     for _ in 0..self.step_limit.unwrap_or(u64::MAX) {
@@ -46,7 +51,7 @@ impl<P: Float> LineSearch<P> {
     p
   }
 
-  pub fn optimize_normal(&self, f: impl Fn(P2<P>) -> P, mut p: P2<P>) -> bool {
+  pub(crate) fn optimize_normal(&self, f: impl Fn(P2<P>) -> P, mut p: P2<P>) -> bool {
     let mut step_size = self.initial_step_size;
     loop {
       if step_size < self.Δ { break; }

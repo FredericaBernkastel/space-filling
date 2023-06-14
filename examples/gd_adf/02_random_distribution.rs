@@ -5,7 +5,7 @@ use {
   space_filling::{
     geometry::{Shape, Circle, Translation, Scale, P2},
     sdf::{self, SDF},
-    solver::{line_search::LineSearch, adf::ADF},
+    solver::{LineSearch, ADF},
     drawing::Draw,
     util
   },
@@ -17,7 +17,7 @@ use {
 
 type AffineT<T> = Scale<Translation<T, f64>, f64>;
 
-// profile: 62ms, 1000 circrles, adf_subdiv = 5
+// profile: 62ms, 1000 circrles, adf_subdiv = 5, gd_lattice = 1
 fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item = AffineT<Circle>> + '_  {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
@@ -47,7 +47,9 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
 
 fn main() -> Result<()> {
   let path = "out.png";
-  let representation = RwLock::new(ADF::new(5, vec![Arc::new(sdf::boundary_rect)]));
+  let representation = RwLock::new(
+    ADF::new(5, vec![Arc::new(sdf::boundary_rect)])
+      .with_gd_lattice_density(3)); // set ADF to a high precision
   let mut image = image::RgbaImage::new(2048, 2048);
 
   random_distribution(&representation)

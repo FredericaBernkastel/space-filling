@@ -1,6 +1,6 @@
 [package]
 name = "space-filling"
-version = "0.3.1"
+version = "0.4.0"
 description = "Generalized 2D space filling"
 readme = "readme.md"
 authors = ["Frederica Bernkastel <bernkastel.frederica@protonmail.com>"]

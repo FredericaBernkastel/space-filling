@@ -113,8 +113,11 @@
 //! ```
 //! <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/fractal_distribution.png">
 //!
-//! # On dynamic dispatch and parallelism
-//! There are three main traits related to drawing:
+//! # Drawing
+//! Drawing was intended to be a rudimentary module for displaying sdf shapes. It is not highly
+//! optimized, and you are free to use third-party libraries for this purpose.
+//!
+//! There are two traits related to drawing:
 //! - `trait `[`Shape`](`geometry::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
 //! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`geometry::Shape`)`
 //!
@@ -136,22 +139,28 @@
 //!     .draw(...);
 //! }
 //! ```
-//! But this won't work, because all of `Shape` methods require `Sized`.
+//! But this won't work, because all of `Shape` methods require `Sized`, hence no object safe.
 //! Correct way is:
 //! ```ignore
 //! let shapes: Vec<Box<dyn Draw<RgbaImage>>> = ...
 //! ```
+//! However, since Rust never got a support of trait upcasting, we cannot obtain `dyn Shape` from
+//! `dyn Draw`, hence somewhat limited in capabilities.
 //!
-//! Lastly, there are is: [`draw_parallel`](drawing::draw_parallel), that accept an iterator on
-//! `dyn Draw<RgbaImage> + Send + Sync`. It is constructed via trait object casting, exactly as above.
-//! See `examples/polymorphic.rs` and `drawing/tests::polymorphic_*` for more examples.
+//! Lastly, there is: [`draw_parallel`](drawing::draw_parallel), which is convenient when shapes
+//! require heavy computations to draw, such as texture loading. It accepts an iterator on
+//! `dyn Draw<RgbaImage> + Send + Sync`, constructed via trait object casting, exactly as above.
+//! See `examples/argmax2d/03_embedded.rs`, `examples/gd_adf/04_polymorphic.rs` and
+//! `drawing/tests::polymorphic_*` for more details.
 //!
 //! This way, both distribution generation and drawing are guaranteed to evenly load all available
-//! cores, as long as enough memory bandwidth is available.
+//! cores.
 //!
 //! Have a good day, `nyaa~ =^_^=`
 //!
 //! <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/neko.gif">
+
+#![allow(clippy::type_complexity)]
 
 #![cfg_attr(doc, feature(doc_cfg))]
 #![allow(rustdoc::private_intra_doc_links)]

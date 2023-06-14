@@ -62,7 +62,7 @@ impl Quadtrant {
             .component_mul(rect.size.to_vector());
         Rect { origin, size: rect.size / (_Float::one() + _Float::one()) }
           .contains(pt)
-          .then(|| quad)
+          .then_some(quad)
       })
   }
 

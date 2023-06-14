@@ -1,3 +1,5 @@
+//! Discrete distance field representation. Uses an f32-bitmap to store the data.
+
 use {
   crate::{
     geometry::{DistPoint, PixelSpace, WorldSpace}
@@ -34,6 +36,7 @@ impl Argmax2D {
     unsafe { *(ptr as *const DistPoint<f32, f32, WorldSpace> as *mut _) = dist }
   }
 
+  /// Find global maxima.
   pub fn find_max(&self) -> DistPoint<f32, f32, WorldSpace> {
     *self.chunk_argmax.iter()
       .max()
@@ -85,6 +88,7 @@ impl Argmax2D {
     });
   }
 
+  /// Read underlying distance field bitmap.
   pub fn pixels(&self) -> impl Iterator<Item = DistPoint<f32, u64, PixelSpace>> + '_ {
     self.dist_map.pixels()
   }

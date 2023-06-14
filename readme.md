@@ -1,7 +1,7 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/space-filling.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/space-filling)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-space--filling-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K" height="20">](https://docs.rs/space-filling)
 
-Note: this is a part of ongoing research, no stability guarantees are made.  
+Note: this is a subject of ongoing research, no stability guarantees are made.  
 
 You can read this paper for introduction: 
 [Paul Bourke - Random space filling of the plane (2011)](http://paulbourke.net/fractals/randomtile/).  
@@ -17,11 +17,11 @@ A generic and parallel interface was implemented. Currently supported:
 - Any shapes which can be represented with SDF: curves, regular polygons, non-convex and disjoint areas, fractals or any sets with non-integer hausdorff dimension (as long as the distance can be approximated).
 
 ### Argmax2D
-SDF is stored as a discrete bitmap, with memory layout reminiscent of z-order curve. On each iteration, the solver is guaranteed to find **global maxima**, but increasing precision requires quadratic memory.
+SDF is stored as a discrete bitmap, with memory layout reminiscent of z-order curve. Solver is guaranteed to always find **global maxima**, but increasing precision requires quadratic memory.
 
 ### GD-ADF
 A paper "Adaptively Sampled Distance Fields" (doi:[10.1145/344779.344899](https://dl.acm.org/doi/10.1145/344779.344899)) offered an idea of reducing memory consumption, however it was very elaborate to not include _any_ hints for a practical implementation. The only one being - using polynomial approximations for every node of the k-d tree; however, current work takes a different path - by storing function primitives themselves in each node (bucket). Redundant primitive elimination within a bucket was performed using [interior-point method](https://en.wikipedia.org/wiki/Interior-point_method).  
-ADF itself implements SDF trait, allowing for complex fields composed of millions of primitives to be sampled efficiently — as opposed to computing it directly (with quadratic complexity in nature).  
+ADF itself implements SDF trait, allowing for complex fields composed of millions of primitives to be sampled efficiently — as opposed to computing it directly — with quadratic complexity in nature.  
 However, primitive elimination is not yet perfect. An elimination algorithm which is both precise and fast enough will be a subject of further theoretical research.
 
 Once the representation is obtained, the role of optimizer takes place. For practical purposes, gradient descent with exponential convergence has been chosen — making GD-ADF a **local maxima** algorithm; as described by following equation:  

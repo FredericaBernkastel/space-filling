@@ -4,7 +4,7 @@ use {
   rand::prelude::*,
   crate::{
     geometry::{P2, DistPoint, WorldSpace},
-    solver::line_search::LineSearch,
+    solver::LineSearch,
   }
 };
 
@@ -16,7 +16,7 @@ pub fn domain_empirical<P: Float + FloatConst>(p: DistPoint<P, P, WorldSpace>) -
   }
 }
 
-/// Find up to `batch_size` distinct local maxima using GD optimizer
+/// Find up to `batch_size` distinct local maxima using GD optimizer.
 pub fn find_max_parallel<_Float>(f: impl Fn(P2<_Float>) -> _Float + Send + Sync, batch_size: u64, rng: &mut impl Rng, line_search: LineSearch<_Float>)
                                  -> Vec<DistPoint<_Float, _Float, WorldSpace>>
   where _Float: Float + Send + Sync
@@ -38,14 +38,14 @@ pub fn find_max_parallel<_Float>(f: impl Fn(P2<_Float>) -> _Float + Send + Sync,
         point: p1,
         distance: f(p1)
       };
-      (p1.distance > line_search.Δ).then(|| p1)
+      (p1.distance > line_search.Δ).then_some(p1)
     })
     .collect();
   let mut points1 = vec![];
   points.into_iter()
     .for_each(|pn| {
       points1.iter()
-        .all(|p: &DistPoint<_, _, _>| p.point.distance_to(pn.point) / _Float::from(2.0).unwrap() > pn.distance)
+        .all(|p: &DistPoint<_, _, _>| p.point.distance_to(pn.point) > pn.distance * _Float::from(2.0).unwrap())
         .then(|| points1.push(pn));
     });
   points1

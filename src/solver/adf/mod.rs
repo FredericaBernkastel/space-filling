@@ -1,8 +1,10 @@
+//! Adaptive Distance Field, uses quadtree as an underlying data structire.
+//! Each node (bucket) stores several `Arc<dyn Fn(Point2D) -> {float}>`
+
+#![allow(clippy::mut_from_ref)]
 use {
   crate::{
-    solver::{
-      line_search::LineSearch
-    },
+    solver::LineSearch,
     geometry::{Shape, shapes, P2, WorldSpace, BoundingBox},
     sdf::SDF,
   },
@@ -56,7 +58,7 @@ fn sdf_partialord<_Float: Float + Signed>(
 
   let control_points = |rect: Rect<_, _>| {
     let p = (0..lattice_density).map(move |x| _Float::from(x).unwrap() / _Float::from(lattice_density - 1).unwrap());
-    itertools::iproduct!(p.clone(), p.clone())
+    itertools::iproduct!(p.clone(), p)
       .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
   };
 
@@ -73,7 +75,8 @@ fn sdf_partialord<_Float: Float + Signed>(
 }
 
 impl <_Float: Float + Signed + Sync> ADF<_Float> {
-  //move |p| self.tree.data.as_slice().sdf(p)
+  /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
+  /// `init` specifies initial sdf primitives.
   pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(P2<_Float>) -> _Float>>) -> Self {
     Self {
       tree: Quadtree::new(max_depth, init),
@@ -81,12 +84,12 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
       ipm_line_config: LineSearch::default()
     }
   }
-  /// Controls precision of bucket primitive pruning
+  /// Controls precision of primitive pruning in a bucket.
   pub fn with_gd_lattice_density(mut self, density: u32) -> Self {
     self.ipm_gd_lattice_density = density;
     self
   }
-  /// Underlying GD settings for the interior point method
+  /// Underlying GD settings for the interior point method (a part of primitive pruning).
   pub fn with_ipm_line_config(mut self, line_config: LineSearch<_Float>) -> Self {
     self.ipm_line_config = line_config;
     self
@@ -123,7 +126,7 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
     let control_points = |rect: Rect<_, _>| {
       let n = 5;
       let p = (0..n).map(move |x| x as f64 / (n - 1) as f64);
-      itertools::iproduct!(p.clone(), p.clone())
+      itertools::iproduct!(p.clone(), p)
         .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
     };
 
@@ -131,6 +134,7 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
       .any(|v| g(v) > f(v))
   }
 
+  /// Add a new sdf primitive function.
   pub fn insert_sdf_domain(&mut self, domain: Rect<_Float, WorldSpace>, f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>) -> bool {
     let change_exists = AtomicBool::new(false);
 
@@ -197,19 +201,20 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
       };
 
       // max tree depth is reached, just append the primitive
-      if node.depth == node.max_depth {
+      if node.depth == node.max_depth || node.data.len() < BUCKET_SIZE {
 
         node.data.push(f.clone());
         //node.data = prune(node.data.as_slice(), node.rect);
 
-      } else if node.data.len() < BUCKET_SIZE {
+      } /*else if node.data.len() < BUCKET_SIZE {
 
         //node.data = prune(node.data.as_slice(), node.rect);
         //if !Self::higher_all(f.as_ref(), &node.sdf_vec(), node.rect) {
-          node.data.push(f.clone());
+        //  node.data.push(f.clone());
         //}
 
-      } else { // max bucket size is reached, subdivide
+      }*/
+      else { // max bucket size is reached, subdivide
 
         let mut g = node.data.clone();
         g.push(f.clone());
@@ -230,6 +235,8 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
     change_exists.load(Ordering::SeqCst)
   }
 
+  /// # Safety
+  /// Nobody is safe
   pub unsafe fn as_mut(&self) -> &mut Self {
     let ptr = self as *const _ as usize;
     &mut *(ptr as *const Self as *mut _)

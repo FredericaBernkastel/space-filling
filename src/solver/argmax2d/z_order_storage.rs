@@ -73,8 +73,7 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
 
   pub fn chunks(&self) -> impl Iterator<Item = Chunk<T>> {
     let chunk_count = (self.resolution / self.chunk_size).pow(2);
-    (0..chunk_count).into_iter()
-      .map(move |id| self.get_chunk(id))
+    (0..chunk_count).map(move |id| self.get_chunk(id))
   }
 
   pub fn pixel(&self, xy: Point2D<u64, PixelSpace>) -> T {

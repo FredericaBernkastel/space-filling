@@ -16,7 +16,7 @@ impl <S, P: Float> SDF<P> for Translation<S, P>
   where S: Shape<P>,
         P: Clone + Sub<Output = P>  {
   fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
-    self.shape.sdf(pixel - self.offset.clone())
+    self.shape.sdf(pixel - self.offset)
   }
 }
 

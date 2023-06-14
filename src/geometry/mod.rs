@@ -4,9 +4,9 @@
 //! interval `[-1, 1]`, and center in the origin.
 
 use {
-  std::ops::{Add, Mul},
-  euclid::{Point2D, Box2D, Vector2D as V2, Size2D, Rotation2D, Angle},
-  num_traits::{NumCast, Float},
+  std::ops::Add,
+  euclid::{Point2D, Box2D, Vector2D as V2, Rotation2D, Angle},
+  num_traits::Float,
   crate::sdf::{SDF, Union, Subtraction, Intersection, SmoothMin}
 };
 
@@ -116,32 +116,6 @@ impl <T, S> BoundingBox<T> for Scale<S, T>
       .scale(self.scale, self.scale)
       .translate(c)
   }
-}
-
-pub fn to_world_space<T, U>(
-  point: Point2D<T, PixelSpace>,
-  resolution: Size2D<T, PixelSpace>
-) -> Point2D<U, WorldSpace>
-  where T: NumCast + Copy,
-        U: NumCast + Copy + std::ops::Div<Output = U>
-{
-  point.cast::<U>().to_vector()
-    .component_div(resolution.cast::<U>().to_vector())
-    .cast_unit()
-    .to_point()
-}
-
-pub fn to_pixel_space<T, U>(
-  point: Point2D<T, WorldSpace>,
-  resolution: Size2D<U, PixelSpace>
-) -> Point2D<U, PixelSpace>
-  where T: NumCast + Copy + Mul<Output = T>,
-        U: NumCast + Copy
-{
-  point.to_vector().component_mul(resolution.to_vector().cast().cast_unit())
-    .cast_unit()
-    .to_point()
-    .cast::<U>()
 }
 
 fn update_bounding_box<T>(
