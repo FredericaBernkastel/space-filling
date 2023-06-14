@@ -1,6 +1,6 @@
 [package]
 name = "space-filling"
-version = "0.3.1"
+version = "0.4.0"
 description = "Generalized 2D space filling"
 readme = "readme.md"
 authors = ["Frederica Bernkastel <bernkastel.frederica@protonmail.com>"]
@@ -8,8 +8,8 @@ repository = "https://github.com/FredericaBernkastel/space-filling"
 documentation = "https://docs.rs/space-filling/"
 categories = ["science"]
 keywords = ["generative-art"]
-license = "GPL-3.0-only"
-edition = "2018"
+license = "GPL-3.0"
+edition = "2021"
 exclude = ["LICENCE", "doc/*", "src/legacy/*"]
 
 [lib]
@@ -17,49 +17,59 @@ name = "space_filling"
 path = "src/lib.rs"
 
 [dependencies]
-error-chain = "0.12"
-image = { version = "0.23", default_features = false, features = ["png", "jpeg"], optional = true }
-rand = { version = "0.8", default-features = false, optional = true }
-rand_pcg = { version = "0.3", optional = true }
+anyhow = "1.0"
+image = { version = "0.24", default_features = false, features = ["png", "jpeg"], optional = true }
+rand = { version = "0.8", default-features = false }
+rand_pcg = { version = "0.3" }
 rayon = "1.5"
 euclid = "0.22"
 num-traits = "0.2"
 itertools = "0.10"
+humansize = "1.1"
 
 [dev-dependencies]
 regex = "1.4"
 open = "1.4"
 walkdir = "2.3"
 lexical-sort = "0.3"
+num-complex = "0.4"
 
 [features]
 default = []
-drawing = ["image", "rand", "rand_pcg"]
+drawing = ["image"]
 
 [profile.release]
-lto = true
-opt-level = 3
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "doc"]
 
 [[example]]
-name = "fractal_distribution"
+name = "01_fractal_distribution"
 required-features = ["drawing"]
+path = "examples/argmax2d/01_fractal_distribution.rs"
 
 [[example]]
-name = "random_distribution"
+name = "02_random_distribution"
 required-features = ["drawing"]
+path = "examples/gd_adf/02_random_distribution.rs"
 
 [[example]]
-name = "embedded"
+name = "03_embedded"
 required-features = ["drawing"]
+path = "examples/argmax2d/03_embedded.rs"
 
 [[example]]
-name = "polymorphic"
+name = "04_polymorphic"
 required-features = ["drawing"]
+path = "examples/gd_adf/04_polymorphic.rs"
 
 [[example]]
-name = "image_dataset"
+name = "05_image_dataset"
 required-features = ["drawing"]
+path = "examples/argmax2d/05_image_dataset.rs"
+
+[[example]]
+name = "06_custom_primitive"
+required-features = ["drawing"]
+path = "examples/gd_adf/06_custom_primitive.rs"

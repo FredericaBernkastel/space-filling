@@ -1,21 +1,27 @@
 #![allow(non_snake_case)]
+
+use num_traits::Float;
 use {
-  std::{thread, sync::Arc, ops::Fn},
-  euclid::{Point2D, Rect, Size2D},
+  std::{sync::Arc, ops::Fn},
+  euclid::{Point2D, Rect, Size2D, Box2D},
   image::{
     DynamicImage, GenericImageView, Pixel, Rgba, RgbaImage,
     imageops::FilterType
   },
+  num_traits::{NumCast, AsPrimitive},
   crate::{
-    drawing::{Draw, DrawSync, Shape, Texture, rescale_bounding_box},
-    error::Result,
+    drawing::{Draw, Shape, Texture, rescale_bounding_box},
     geometry::{BoundingBox, PixelSpace, WorldSpace},
     sdf::SDF
   }
 };
 
-impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
-  where Cutie: Shape + Clone
+impl<Ty, P> SDF<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P { self.as_ref().sdf(pixel) } }
+impl<Ty, P> BoundingBox<P> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn bounding_box(&self) -> Box2D<P, WorldSpace> { self.as_ref().bounding_box() } }
+
+impl <Cutie, P: Float> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
+  where Cutie: Shape<P> + Clone,
+        P: NumCast + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     self.shape.clone()
@@ -24,60 +30,63 @@ impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Rgba<u8>>
   }
 }
 
-impl <'a, Cutie> Draw<RgbaImage> for Texture<Cutie, &'a DynamicImage>
-  where Cutie: Shape
+impl <'a, Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, &'a DynamicImage>
+  where Cutie: Shape<P>,
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
-    let (bounding_box, offset, min_side) = rescale_bounding_box(self.shape.bounding_box(), resolution);
+    let (bounding_box, offset, min_side) =
+      rescale_bounding_box(self.shape.bounding_box().to_f64(), resolution);
     let bounding_box = match bounding_box {
       Some(x) => x,
       None => return
     };
     let Δp = 1.0 / min_side;
-    let tex = rescale_texture(self.texture, bounding_box.size());
+    let tex = rescale_texture(self.texture, bounding_box.size().to_u32());
 
     itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
       .map(|(y, x)| Point2D::<_, PixelSpace>::from([x, y]))
       .for_each(|pixel| {
-        let pixel_world = ((pixel.to_f32() - offset).to_vector() / min_side)
+        let pixel_world = ((pixel.to_f64() - offset).to_vector() / min_side)
           .cast_unit().to_point();
         let tex_px = pixel - bounding_box.min.to_vector();
         let tex_px = tex.get_pixel(tex_px.x, tex_px.y);
 
-        let sdf = self.sdf(pixel_world);
+        let sdf = self.sdf(pixel_world.cast::<P>()).as_();
         let pixel = image.get_pixel_mut(pixel.x, pixel.y);
         *pixel = sdf_overlay_aa(sdf, Δp, *pixel, tex_px);
       });
   }
 }
 
-/// F: Fn(pixel: Point2D) -> Rgba<u8>
-/// where pixel is in normalized texture coordinates.
-impl <Cutie, F> Draw<RgbaImage> for Texture<Cutie, F>
-  where Cutie: Shape,
-        F: Fn(Point2D<f32, WorldSpace>) -> Rgba<u8>
+/// `F: Fn(v: Point2D) -> Rgba<u8>`
+/// where `v` is in normalized texture coordinates.
+impl <Cutie, F, P> Draw<P, RgbaImage> for Texture<Cutie, F>
+  where Cutie: Shape<P>,
+        F: Fn(Point2D<P, WorldSpace>) -> Rgba<u8>,
+        P: Float + AsPrimitive<f64>
 {
   fn draw(&self, image: &mut RgbaImage) {
     let resolution: Size2D<_, PixelSpace> = image.dimensions().into();
-    let (bounding_box, offset, min_side) = rescale_bounding_box(self.bounding_box(), resolution);
+    let (bounding_box, offset, min_side) =
+      rescale_bounding_box(self.bounding_box().to_f64(), resolution);
     let bounding_box = match bounding_box {
       Some(x) => x,
       None => return // bounding box has no intersection with screen at all
     };
     let Δp = 1.0 / min_side;
-    let tex_scale = bounding_box.size().width.min(bounding_box.size().height) as f32;
+    let tex_scale = bounding_box.size().width.min(bounding_box.size().height) as f64;
 
     itertools::iproduct!(bounding_box.y_range(), bounding_box.x_range())
       .map(|(y, x)| Point2D::<_, PixelSpace>::from([x, y]))
       .for_each(|pixel| {
-        let pixel_world = ((pixel.to_f32() - offset).to_vector() / min_side)
+        let pixel_world = ((pixel.to_f64() - offset).to_vector() / min_side)
           .cast_unit().to_point();
-        let sdf = self.sdf(pixel_world);
+        let sdf = self.sdf(pixel_world.cast::<P>()).as_();
 
-        let tex_px = ((pixel - bounding_box.min.to_vector())
-          .to_f32() / tex_scale).cast_unit();
-        let tex_px = (self.texture)(tex_px);
+        let tex_px = ((pixel - bounding_box.min.to_vector()).to_f64() / tex_scale).cast_unit();
+        let tex_px = (self.texture)(tex_px.cast::<P>());
 
         let pixel = image.get_pixel_mut(pixel.x, pixel.y);
         *pixel = sdf_overlay_aa(sdf, Δp, *pixel, tex_px);
@@ -85,8 +94,10 @@ impl <Cutie, F> Draw<RgbaImage> for Texture<Cutie, F>
   }
 }
 
-impl <Cutie> Draw<RgbaImage> for Texture<Cutie, DynamicImage>
-  where Cutie: Shape + Clone {
+impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, DynamicImage>
+  where Cutie: Shape<P> + Clone,
+        P: Float + AsPrimitive<f64>
+{
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
       shape: self.shape.clone(),
@@ -95,8 +106,10 @@ impl <Cutie> Draw<RgbaImage> for Texture<Cutie, DynamicImage>
   }
 }
 
-impl <Cutie> Draw<RgbaImage> for Texture<Cutie, Arc<DynamicImage>>
-  where Cutie: Shape + Clone {
+impl <Cutie, P> Draw<P, RgbaImage> for Texture<Cutie, Arc<DynamicImage>>
+  where Cutie: Shape<P> + Clone,
+        P: Float + AsPrimitive<f64>
+{
   fn draw(&self, image: &mut RgbaImage) {
     Texture {
       shape: self.shape.clone(),
@@ -125,68 +138,12 @@ fn rescale_texture(texture: &DynamicImage, size: Size2D<u32, PixelSpace>) -> Dyn
   ).resize_exact(size.width, size.height, FilterType::Triangle)
 }
 
-fn sdf_overlay_aa(sdf: f32, Δp: f32, mut col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
+fn sdf_overlay_aa(sdf: f64, Δp: f64, mut col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
   let Δf = (0.5 * Δp - sdf) // antialias
     .clamp(0.0, Δp);
   let alpha = Δf / Δp;
   // overlay blending with premultiplied alpha
-  col2.0[3] = ((col2.0[3] as f32) * alpha) as u8;
+  col2.0[3] = ((col2.0[3] as f64) * alpha) as u8;
   col1.blend(&col2);
   col1
-}
-
-/// Draw shapes, parallel.
-/// Will use `resolution.x * resolution.y * num_threads * 4` bytes of memory.
-pub fn draw_parallel(
-  shapes: impl Iterator<Item = Arc<dyn DrawSync<RgbaImage>>>,
-  resolution: Point2D<u32, PixelSpace>,
-  num_threads: usize
-) -> Result<RgbaImage> {
-  use rand::prelude::*;
-
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-
-  let mut draw_data = shapes
-    .collect::<Vec<_>>();
-  // will distribute the load between threads [statistically] evenly
-  draw_data.shuffle(&mut rng);
-
-  let num_threads = num_threads.min(draw_data.len());
-
-  let draw_data_chunks = draw_data
-    .chunks((draw_data.len() as f32 / num_threads as f32).ceil() as usize)
-    .map(|chunk| chunk.to_vec())
-    .collect::<Vec<_>>();
-
-  if draw_data_chunks.len() != num_threads {
-    error_chain::bail!("chunks are unsatisfied");
-  }
-
-  let partial_buffers = draw_data_chunks.into_iter().map(|chunk| {
-    thread::spawn( move || {
-      let mut framebuffer = RgbaImage::new(resolution.x, resolution.y);
-
-      chunk.into_iter()
-        .for_each(|shape| {
-          shape.draw(&mut framebuffer);
-        });
-
-      framebuffer
-    })
-  }).collect::<Vec<_>>() // thread handles
-    .into_iter()
-    .map(|thread| thread.join().unwrap())
-    .collect::<Vec<_>>();
-
-  let mut final_buffer = partial_buffers[0].clone();
-
-  // merge partial buffers
-  partial_buffers
-    .into_iter()
-    .skip(1)
-    .for_each(|buffer|
-      image::imageops::overlay(&mut final_buffer, &buffer, 0, 0)
-    );
-
-  Ok(final_buffer)
 }
