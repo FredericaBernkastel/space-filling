@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0"
-image = { version = "0.24", default_features = false, features = ["png", "jpeg"], optional = true }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"], optional = true }
 rand = { version = "0.8", default-features = false }
 rand_pcg = { version = "0.3" }
 rayon = "1.5"
@@ -42,7 +42,7 @@ drawing = ["image"]
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "doc"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
 name = "01_fractal_distribution"

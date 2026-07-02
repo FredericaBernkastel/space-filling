@@ -32,8 +32,10 @@ impl Argmax2D {
 
   #[inline]
   fn write_cache(&self, id: u64, dist: DistPoint<f32, f32, WorldSpace>) {
-    let ptr = &self.chunk_argmax[id as usize] as *const _ as usize;
-    unsafe { *(ptr as *const DistPoint<f32, f32, WorldSpace> as *mut _) = dist }
+    // Disjoint parallel writes: each chunk `id` is written once, from its own
+    // rayon task. Derive the `*mut` from the Vec's data pointer (a raw ptr),
+    // not from a `&T` — otherwise `invalid_reference_casting` denies it.
+    unsafe { *(self.chunk_argmax.as_ptr().add(id as usize) as *mut _) = dist }
   }
 
   /// Find global maxima.

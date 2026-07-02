@@ -1,270 +1,226 @@
-#![allow(dead_code)]
+//! Region quadtree over the unit square `[0, 1]²`, backed by a flat arena.
+//!
+//! Every node lives in a single [`Vec`]; a node references its four children by
+//! the arena index of the first child, and the four siblings are always stored
+//! contiguously. Compared to a `Box`-linked tree this keeps siblings adjacent in
+//! memory (cache-local traversal) and turns clone/drop of the whole tree into a
+//! single allocation. It also removes the raw-pointer aliasing the previous
+//! `Box`-per-subtree implementation relied on for parallel refinement.
+
 use {
-  crate::{
-    geometry::WorldSpace
-  },
-  std::{fmt::{Debug, Formatter}},
+  crate::geometry::WorldSpace,
   anyhow::Result,
   euclid::{Point2D, Size2D, Rect},
-  num_traits::Float
+  num_traits::Float,
+  std::num::NonZeroU32,
 };
 
 type Point<T> = Point2D<T, WorldSpace>;
 
+/// A single quadtree node. `Data` is the user-defined payload.
+///
+/// `children` is the arena index of the first of four contiguous children, and
+/// is stored as `Option<NonZeroU32>`: children are always pushed after the root
+/// (index 0), so a first-child index is never 0, which lets the niche shrink the
+/// field to 4 bytes. For `Data = Vec<_>` this keeps the whole node at 64 bytes —
+/// one cache line, and a power-of-two stride so arena indexing is a shift.
 #[derive(Clone)]
-pub struct Quadtree<Data, Float> {
+pub struct Node<Data, Float> {
   pub rect: Rect<Float, WorldSpace>,
-  pub children: Option<Box<[Quadtree<Data, Float>; 4]>>,
   pub depth: u8,
-  pub max_depth: u8,
-  pub data: Data
+  pub data: Data,
+  /// Arena index of the first child (in [`Quadtrant`] order: TL, TR, BL, BR),
+  /// or `None` for a leaf.
+  children: Option<NonZeroU32>,
 }
 
-impl<Data: Debug, _Float: Float + Debug> Debug for Quadtree<Data, _Float> {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Quadtree")
-      .field("rect", &self.rect)
-      .field("children", &if self.children.is_some() { "Some(...)" } else { "None" })
-      .field("depth", &self.depth)
-      .field("data", &self.data)
-      .finish()
+impl<Data, Float> Node<Data, Float> {
+  #[inline]
+  pub fn is_leaf(&self) -> bool {
+    self.children.is_none()
   }
+}
+
+/// A quadtree stored as a flat arena. `nodes[0]` is always the root.
+#[derive(Clone)]
+pub struct Quadtree<Data, Float> {
+  nodes: Vec<Node<Data, Float>>,
+  pub max_depth: u8,
 }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
-/// 4 sections of a rectangle
+/// The four sub-sections of a rectangle.
 pub enum Quadtrant {
   TL = 0,
   TR = 1,
   BL = 2,
-  BR = 3
+  BR = 3,
 }
 
-fn quadrant_origin<_Float: Float>() -> [Point<_Float>; 4] {
-  let half = _Float::one() / (_Float::one() + _Float::one());
+/// Normalized top-left corners of the four quadrants, in [`Quadtrant`] order.
+fn quadrant_origin<F: Float>() -> [Point<F>; 4] {
+  let half = F::one() / (F::one() + F::one());
   [
-    Point::new(_Float::zero(), _Float::zero()),
-    Point::new(half, _Float::zero()),
-    Point::new(_Float::zero(), half),
-    Point::new(half, half)
+    Point::new(F::zero(), F::zero()),
+    Point::new(half, F::zero()),
+    Point::new(F::zero(), half),
+    Point::new(half, half),
   ]
 }
 
 impl Quadtrant {
-  /// determine the section of a rectangle, containing `pt`
-  pub fn get<_Float: Float>(rect: Rect<_Float, WorldSpace>, pt: Point<_Float>) -> Option<Self> {
+  /// The quadrant of `rect` containing `pt`, if any.
+  pub fn get<F: Float>(rect: Rect<F, WorldSpace>, pt: Point<F>) -> Option<Self> {
     use Quadtrant::*;
-    [TL, TR, BL, BR].iter()
-      .find_map(|&quad| {
-        let origin = rect.origin +
-          quadrant_origin()[quad as usize].to_vector()
-            .component_mul(rect.size.to_vector());
-        Rect { origin, size: rect.size / (_Float::one() + _Float::one()) }
-          .contains(pt)
-          .then_some(quad)
-      })
-  }
-
-  pub fn inv(self) -> Self {
-    use Quadtrant::*;
-    match self {
-      TL => BR,
-      BR => TL,
-      TR => BL,
-      BL => TR,
-    }
-  }
-
-  pub fn mirror_x(self) -> Self {
-    use Quadtrant::*;
-    match self {
-      TL => TR,
-      TR => TL,
-      BL => BR,
-      BR => BL,
-    }
-  }
-
-  pub fn mirror_y(self) -> Self {
-    use Quadtrant::*;
-    match self {
-      TL => BL,
-      TR => BR,
-      BL => TL,
-      BR => TR,
-    }
+    [TL, TR, BL, BR].into_iter().find(|&quad| {
+      let origin = rect.origin
+        + quadrant_origin()[quad as usize].to_vector().component_mul(rect.size.to_vector());
+      Rect { origin, size: rect.size / (F::one() + F::one()) }.contains(pt)
+    })
   }
 }
 
-#[derive(PartialEq)]
-pub enum TraverseCommand {
-  Ok,
-  Skip
+/// The four sub-rectangles of `rect`, in [`Quadtrant`] order.
+pub fn child_rects<F: Float>(rect: Rect<F, WorldSpace>) -> [Rect<F, WorldSpace>; 4] {
+  let two = F::one() + F::one();
+  quadrant_origin::<F>().map(|origin| Rect {
+    origin: rect.origin + origin.to_vector().component_mul(rect.size.to_vector()),
+    size: rect.size / two,
+  })
+}
+
+/// The action [`Quadtree::refine_leaves`] should apply to a visited leaf.
+pub enum Refine<Data> {
+  /// Leave the node unchanged.
+  None,
+  /// Replace the leaf's payload.
+  SetData(Data),
+  /// Split the leaf into four children carrying the given payloads
+  /// (in [`Quadtrant`] order: TL, TR, BL, BR).
+  Subdivide([Data; 4]),
 }
 
 impl<Data, _Float: Float> Quadtree<Data, _Float> {
+  /// A tree with a single root node covering the unit square.
   pub fn new(max_depth: u8, init: Data) -> Self {
-    Quadtree {
+    let root = Node {
       rect: Rect::from_size(Size2D::splat(_Float::one())),
-      children: None,
       depth: 0,
-      max_depth,
-      data: init
-    }
+      data: init,
+      children: None,
+    };
+    Quadtree { nodes: vec![root], max_depth }
   }
 
-  /// apply `f` to every node of the tree
-  pub fn traverse(&self, f: &mut dyn FnMut(&Self) -> Result<()>) -> Result<()> {
-    f(self)?;
-    self.traverse_a(f)?;
-    Ok(())
+  /// The root node.
+  #[inline]
+  pub fn root(&self) -> &Node<Data, _Float> {
+    &self.nodes[0]
   }
 
-  fn traverse_a(&self, f: &mut dyn FnMut(&Self) -> Result<()>) -> Result<()> {
-    if let Some(children) = &self.children {
-      for child in children.iter() {
-        f(child)?;
-      }
-      for child in children.iter() {
-        child.traverse_a(f)?;
-      }
+  /// Apply `f` to every node (internal and leaf); order is unspecified. Stops
+  /// early and returns the error if `f` fails.
+  pub fn traverse(&self, f: &mut dyn FnMut(&Node<Data, _Float>) -> Result<()>) -> Result<()> {
+    for node in &self.nodes {
+      f(node)?;
     }
     Ok(())
   }
 
-
-  pub fn traverse_managed(&mut self, f: &mut impl FnMut(&mut Self) -> TraverseCommand) {
-    if f(self) == TraverseCommand::Ok {
-      self.traverse_managed_a(f);
-    }
-  }
-
-  fn traverse_managed_a(&mut self, f: &mut impl FnMut(&mut Self) -> TraverseCommand) {
-    if let Some(children) = &mut self.children {
-      for child in children.iter_mut() {
-        if f(child) == TraverseCommand::Ok {
-          child.traverse_managed_a(f);
-        }
-      }
-    }
-  }
-
-  pub fn traverse_managed_parallel(&mut self, f: impl Fn(&mut Self) -> TraverseCommand + Send + Sync) {
-    if f(self) == TraverseCommand::Ok {
-      self.traverse_managed_parallel_a(&f);
-    }
-  }
-
-  fn traverse_managed_parallel_a(&mut self, f: &(impl Fn(&mut Self) -> TraverseCommand + Send + Sync)) {
-    use rayon::prelude::*;
-
-    if let Some(children) = self.children.as_deref_mut() {
-      let mut children_ptr = [0; 4];
-      for i in 0..4 {
-        children_ptr[i] = &mut children[i] as *mut _ as usize;
-      };
-
-      children_ptr.into_par_iter()
-        .for_each(move |child| {
-          let child = unsafe { &mut *(child as *mut Self) };
-          if f(child) == TraverseCommand::Ok {
-            child.traverse_managed_parallel_a(f);
-          }
-        })
-    }
-  }
-
-  pub fn subdivide(&mut self, f: impl Fn(Rect<_Float, WorldSpace>) -> Data) -> &mut Option<Box<[Quadtree<Data, _Float>; 4]>> {
-    if self.depth < self.max_depth && self.children.is_none() {
-      let rect = self.rect;
-      let children: [Quadtree<Data, _Float>; 4] = [0, 1, 2, 3]
-        .map(|i| {
-          let rect = Rect {
-            origin: rect.origin +
-              quadrant_origin()[i as usize].to_vector()
-                .component_mul(rect.size.to_vector()),
-            size: rect.size / (_Float::one() + _Float::one())
-          };
-          Quadtree {
-            rect,
-            children: None,
-            depth: self.depth + 1,
-            max_depth: self.max_depth,
-            data: f(rect)
-          }
-        });
-      self.children = Some(Box::new(children));
-    }
-    &mut self.children
-  }
-
-  pub fn leaves_planar(&mut self) -> Vec<&mut Quadtree<Data, _Float>> {
-
-    fn nodes_planar_a<Data, Float>(tree: &mut Quadtree<Data, Float>) -> Vec<*mut Quadtree<Data, Float>> {
-      let mut result = vec![];
-      if let Some(children) = tree.children.as_deref_mut() {
-        for child in children.iter_mut() {
-          result.append(&mut nodes_planar_a(child));
-        }
-      } else {
-        result.push(tree)
-      }
-      result
-    }
-
-    nodes_planar_a(self)
-      .into_iter()
-      .map(|x| unsafe { x.as_mut().unwrap() })
-      .collect()
-  }
-
-  /// return all nodes, containing `pt`
-  pub fn path_to_pt(&self, pt: Point<_Float>) -> Vec<&Self> {
-    let mut result = vec![self];
-    if let Some(children) = self.children.as_deref() {
-      if let Some(quad) = Quadtrant::get(self.rect, pt) {
-        result.append(&mut children[quad as usize].path_to_pt(pt));
-      }
-    }
-    result
-  }
-
-  /// find a smallest node containing pt
-  pub fn pt_to_node(&self, pt: Point<_Float>) -> Option<&Self> {
-    let mut node = self;
-    while let Some(children) = node.children.as_deref() {
-      node = &children[Quadtrant::get(node.rect, pt)? as usize]
+  /// The smallest node containing `pt`, or `None` if `pt` falls outside an
+  /// internal node's rectangle.
+  pub fn pt_to_node(&self, pt: Point<_Float>) -> Option<&Node<Data, _Float>> {
+    let mut node = &self.nodes[0];
+    while let Some(first) = node.children {
+      let quad = Quadtrant::get(node.rect, pt)? as usize;
+      node = &self.nodes[first.get() as usize + quad];
     }
     Some(node)
   }
-}
 
-#[cfg(test)] mod tests {
-  use super::*;
+  /// Evaluate every leaf whose rectangle intersects `domain` with `decide`
+  /// (read-only), then apply the returned actions to the arena. A leaf that
+  /// returns [`Refine::Subdivide`] is split; its fresh children are *not*
+  /// revisited during the same call. Returns whether any node changed.
+  ///
+  /// `decide` — the expensive per-leaf optimization — runs during a recursive
+  /// descent that forks the four children of each internal node onto the rayon
+  /// pool, so independent subtrees are evaluated in parallel. Because `decide`
+  /// is read-only this needs no aliasing tricks (shared `&Node` access is safe);
+  /// the mutation is applied afterwards, sequentially, since growing the arena
+  /// needs `&mut`. Subtrees whose rectangle misses `domain` are pruned wholesale
+  /// — a child's rectangle is contained in its parent's — so the descent stays
+  /// proportional to the nodes near `domain`.
+  pub fn refine_leaves<F>(&mut self, domain: Rect<_Float, WorldSpace>, decide: F) -> bool
+  where
+    F: Fn(&Node<Data, _Float>) -> Refine<Data> + Send + Sync,
+    Data: Send + Sync,
+    _Float: Sync,
+  {
+    let actions = self.collect_actions(0, &domain, &decide);
 
-  impl<Data, _Float: Float> Quadtree<Data, _Float> {
-
-    /// prints amount of total nodes in the tree, max subdivisions, and memory usage
-    pub fn print_stats(&self) {
-      use humansize::{FileSize, file_size_opts as options};
-
-      let mut total_nodes = 0u64;
-      let mut max_depth = 0u8;
-      self.traverse(&mut |node| {
-        total_nodes += 1;
-        max_depth = (max_depth).max(node.depth);
-        Ok(())
-      }).ok();
-      println!(
-        "total nodes: {}\n\
-      max subdivisions: {}\n\
-      mem::size_of::<Quadtree<T>(): {}",
-        total_nodes,
-        max_depth,
-        (std::mem::size_of::<Quadtree<Data, _Float>>() * total_nodes as usize)
-          .file_size(options::BINARY).unwrap()
-      );
+    let mut changed = false;
+    for (i, action) in actions {
+      match action {
+        Refine::None => {}
+        Refine::SetData(data) => {
+          self.nodes[i].data = data;
+          changed = true;
+        }
+        Refine::Subdivide(data) => {
+          self.subdivide(i, data);
+          changed = true;
+        }
+      }
     }
+    changed
+  }
+
+  /// Recursively evaluate the subtree rooted at `idx`, forking the four children
+  /// of each internal node across the rayon pool, and return the non-trivial
+  /// `(index, action)` pairs. Read-only over the arena.
+  fn collect_actions<F>(
+    &self,
+    idx: usize,
+    domain: &Rect<_Float, WorldSpace>,
+    decide: &F,
+  ) -> Vec<(usize, Refine<Data>)>
+  where
+    F: Fn(&Node<Data, _Float>) -> Refine<Data> + Sync,
+    Data: Send + Sync,
+    _Float: Sync,
+  {
+    use rayon::prelude::*;
+
+    let node = &self.nodes[idx];
+    if !node.rect.intersects(domain) {
+      return Vec::new();
+    }
+    match node.children {
+      None => match decide(node) {
+        Refine::None => Vec::new(),
+        action => vec![(idx, action)],
+      },
+      Some(first) => {
+        let first = first.get() as usize;
+        (first..first + 4).into_par_iter()
+          .flat_map_iter(|child| self.collect_actions(child, domain, decide))
+          .collect()
+      }
+    }
+  }
+
+  /// Append four children (with the given payloads) to the arena and link them
+  /// under `parent`. Children rectangles match [`child_rects`].
+  fn subdivide(&mut self, parent: usize, data: [Data; 4]) {
+    let rects = child_rects(self.nodes[parent].rect);
+    let child_depth = self.nodes[parent].depth + 1;
+    // Children are pushed after the root, so `first` is always >= 1.
+    let first = NonZeroU32::new(self.nodes.len() as u32).expect("root occupies index 0");
+    for (rect, data) in rects.into_iter().zip(data) {
+      self.nodes.push(Node { rect, depth: child_depth, data, children: None });
+    }
+    self.nodes[parent].children = Some(first);
   }
 }

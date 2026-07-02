@@ -56,7 +56,7 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
     })
   }
 
-  pub fn get_chunk(&self, id: u64) -> Chunk<T> {
+  pub fn get_chunk(&self, id: u64) -> Chunk<'_, T> {
     let chunk_area = self.chunk_size.pow(2);
     Chunk {
       slice: &self.data[(chunk_area * id) as usize .. (chunk_area * (id + 1)) as usize],
@@ -67,11 +67,11 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
     }
   }
 
-  pub fn get_chunk_xy(&self, xy: Point2D<u64, PixelSpace>) -> Chunk<T> {
+  pub fn get_chunk_xy(&self, xy: Point2D<u64, PixelSpace>) -> Chunk<'_, T> {
     self.get_chunk(xy_to_offset(xy, self.resolution / self.chunk_size))
   }
 
-  pub fn chunks(&self) -> impl Iterator<Item = Chunk<T>> {
+  pub fn chunks(&self) -> impl Iterator<Item = Chunk<'_, T>> {
     let chunk_count = (self.resolution / self.chunk_size).pow(2);
     (0..chunk_count).map(move |id| self.get_chunk(id))
   }
@@ -96,7 +96,7 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
 }
 
 impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
-  pub fn chunks_par_iter(&self) -> impl ParallelIterator<Item = Chunk<T>> {
+  pub fn chunks_par_iter(&self) -> impl ParallelIterator<Item = Chunk<'_, T>> {
     use rayon::prelude::*;
 
     let chunk_count = (self.resolution / self.chunk_size).pow(2);

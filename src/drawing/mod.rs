@@ -126,7 +126,7 @@ impl <Data, _Float: Float> Quadtree<Data, _Float> {
 
     let px = 1.0 / image.width() as f64;
     self.traverse(&mut |node| {
-      if node.children.is_some() { return Ok(()) };
+      if !node.is_leaf() { return Ok(()) };
 
       let rect = node.rect.cast();
       let lines = [
@@ -154,7 +154,7 @@ impl <Data, _Float: Float> Quadtree<Data, _Float> {
 
   pub fn draw_bounding(&self, domain: euclid::Rect<_Float, WorldSpace>, image: &mut RgbaImage) -> &Self {
     self.traverse(&mut |node| {
-      if node.children.is_none() && node.rect.intersects(&domain) {
+      if node.is_leaf() && node.rect.intersects(&domain) {
         let rect = node.rect.cast();
         geometry::Rect {
           size: rect.size.to_vector().to_point()
@@ -175,7 +175,7 @@ impl <_Float: Float + Signed + AsPrimitive<f64>> ADF<_Float> {
   }
   pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
     self.tree.traverse(&mut |node| {
-      if node.children.is_none() {
+      if node.is_leaf() {
         let rect = node.rect;
         let alpha = (((node.data.len() - 1) as f64 / 3.0).powf(1.75)
           * 0.33 * 255.0) as u8;

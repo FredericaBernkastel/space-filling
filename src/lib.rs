@@ -162,7 +162,7 @@
 
 #![allow(clippy::type_complexity)]
 
-#![cfg_attr(doc, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod util;
@@ -170,5 +170,5 @@ pub mod sdf;
 pub mod solver;
 pub mod geometry;
 #[cfg(feature = "drawing")]
-#[cfg_attr(doc, doc(cfg(feature = "drawing")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "drawing")))]
 pub mod drawing;

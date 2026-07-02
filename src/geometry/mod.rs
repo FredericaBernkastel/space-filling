@@ -59,7 +59,7 @@ pub trait Shape<T>: SDF<T> + BoundingBox<T> {
     SmoothMin { s1: self, s2: other, k }
   }
   #[cfg(feature = "drawing")]
-  #[cfg_attr(doc, doc(cfg(feature = "drawing")))]
+  #[cfg_attr(docsrs, doc(cfg(feature = "drawing")))]
   fn texture<Tex>(self, texture: Tex) -> crate::drawing::Texture<Self, Tex> where Self: Sized {
     crate::drawing::Texture { shape: self, texture }
   }

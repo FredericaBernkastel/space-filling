@@ -9,12 +9,10 @@ use {
     sdf::SDF,
   },
   quadtree::{
-    Quadtree, TraverseCommand
+    Quadtree, Refine, child_rects
   },
   std::{
-    sync::{
-      Arc, atomic::{AtomicBool, Ordering}
-    },
+    sync::Arc,
     fmt::{Debug, Formatter}
   },
   euclid::{Point2D, Box2D, Rect},
@@ -26,17 +24,14 @@ pub(crate) mod quadtree;
 
 #[derive(Clone)]
 pub struct ADF<Float> {
-  pub tree: Quadtree<Vec<Arc<dyn Fn(P2<Float>) -> Float>>, Float>,
+  pub tree: Quadtree<Vec<Arc<dyn Fn(P2<Float>) -> Float + Send + Sync>>, Float>,
   /// Gradient Descent lattice density, N^2
   /// higher values improve precision
   ipm_gd_lattice_density: u32,
   ipm_line_config: LineSearch<Float>
 }
 
-unsafe impl<Float> Send for ADF<Float> {}
-unsafe impl<Float> Sync for ADF<Float> {}
-
-impl <_Float: Float> SDF<_Float> for &[Arc<dyn Fn(P2<_Float>) -> _Float>] {
+impl <_Float: Float> SDF<_Float> for &[Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>] {
   fn sdf(&self, pixel: P2<_Float>) -> _Float {
     self.iter()
       .map(|f| f(pixel))
@@ -77,7 +72,7 @@ fn sdf_partialord<_Float: Float + Signed>(
 impl <_Float: Float + Signed + Sync> ADF<_Float> {
   /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
   /// `init` specifies initial sdf primitives.
-  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(P2<_Float>) -> _Float>>) -> Self {
+  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>>) -> Self {
     Self {
       tree: Quadtree::new(max_depth, init),
       ipm_gd_lattice_density: 1,
@@ -135,111 +130,83 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
   }
 
   /// Add a new sdf primitive function.
-  pub fn insert_sdf_domain(&mut self, domain: Rect<_Float, WorldSpace>, f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>) -> bool {
-    let change_exists = AtomicBool::new(false);
+  pub fn insert_sdf_domain(
+    &mut self,
+    domain: Rect<_Float, WorldSpace>,
+    f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>
+  ) -> bool {
+    const BUCKET_SIZE: usize = 3;
+    // Copied out so the parallel `decide` closure captures plain values instead
+    // of borrowing `self` (which `refine_leaves` already borrows via `tree`).
+    let lattice_density = self.ipm_gd_lattice_density;
+    let line_config = self.ipm_line_config;
+    let max_depth = self.tree.max_depth;
 
-    self.tree.traverse_managed_parallel(|node| {
-      // no intersection with domain
-      if !node.rect.intersects(&domain) {
-        return TraverseCommand::Skip;
-      }
-
-      // not a leaf node
-      if node.children.is_some() {
-        return TraverseCommand::Ok;
-      }
-
-      // f(v) > g(v) forall v e D, no refinement is required
+    // Only leaves intersecting `domain` are visited; each yields an independent
+    // decision, evaluated in parallel and applied afterwards. Previously divided
+    // nodes' fresh children are not revisited within a single call — same as the
+    // old `Skip`-after-`subdivide` behaviour.
+    self.tree.refine_leaves(domain, |node| {
+      // f(v) > g(v) forall v e D — the new primitive never lowers the field here.
       if sdf_partialord(
         f.as_ref(),
         |p| node.data.as_slice().sdf(p),
         node.rect,
-        self.ipm_gd_lattice_density,
-        self.ipm_line_config
+        lattice_density,
+        line_config
       ) {
-        return TraverseCommand::Skip;
+        return Refine::None;
       }
 
-      // f(v) <= g(v) forall v e D, a minor optimization
+      // f(v) <= g(v) forall v e D — f dominates the whole node, replace it.
       if sdf_partialord(
         |p| node.data.as_slice().sdf(p),
         f.as_ref(),
         node.rect,
-        self.ipm_gd_lattice_density,
-        self.ipm_line_config
+        lattice_density,
+        line_config
       ) {
-        node.data = vec![f.clone()];
-        change_exists.store(true, Ordering::Relaxed);
-        return TraverseCommand::Skip;
-      };
+        return Refine::SetData(vec![f.clone()]);
+      }
 
-      change_exists.store(true, Ordering::Relaxed);
-      const BUCKET_SIZE: usize = 3;
-
-      // remove SDF primitives, that do not affect the field within `D`
-      let prune = |data: &[Arc<dyn Fn(P2<_Float>) -> _Float>], rect| {
+      // remove SDF primitives that do not affect the field within `rect`
+      let prune = |data: &[Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>], rect| {
         let mut g = vec![];
         for (i, f) in data.iter().enumerate() {
           let sdf_old = |p|
             data.iter().enumerate()
-              .filter_map(|(j, f)| if i != j {
-                Some(f(p))
-              } else { None })
+              .filter_map(|(j, f)| if i != j { Some(f(p)) } else { None })
               .fold(_Float::max_value() / (_Float::one() + _Float::one()), |a, b| a.min(b));
-          // there exists v e D, such that f(v) < g(v)
-          if !sdf_partialord(
-            f.as_ref(),
-            sdf_old,
-            rect,
-            self.ipm_gd_lattice_density,
-            self.ipm_line_config
-          ) {
+          // there exists v e D such that f(v) < sdf_old(v)
+          if !sdf_partialord(f.as_ref(), sdf_old, rect, lattice_density, line_config) {
             g.push(f.clone())
           }
-        };
+        }
         g
       };
 
-      // max tree depth is reached, just append the primitive
-      if node.depth == node.max_depth || node.data.len() < BUCKET_SIZE {
-
-        node.data.push(f.clone());
-        //node.data = prune(node.data.as_slice(), node.rect);
-
-      } /*else if node.data.len() < BUCKET_SIZE {
-
-        //node.data = prune(node.data.as_slice(), node.rect);
-        //if !Self::higher_all(f.as_ref(), &node.sdf_vec(), node.rect) {
-        //  node.data.push(f.clone());
-        //}
-
-      }*/
-      else { // max bucket size is reached, subdivide
-
-        let mut g = node.data.clone();
-        g.push(f.clone());
-
-        node.subdivide(|rect_ch| prune(g.as_slice(), rect_ch));
-        /*node.subdivide(|rect_ch| prune(&g, rect_ch))
-          .as_deref_mut()
-          .unwrap()
-          .into_iter()
-          .for_each(|child| {
-            child.insert_sdf_domain(domain, f.clone());
-          });*/
+      if node.depth == max_depth || node.data.len() < BUCKET_SIZE {
+        // max depth reached, or the bucket still has room: append the primitive
+        let mut data = node.data.clone();
+        data.push(f.clone());
+        Refine::SetData(data)
+      } else {
+        // max bucket size reached: subdivide, pruning the combined set per child
+        let mut combined = node.data.clone();
+        combined.push(f.clone());
+        Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect)))
       }
-      //TODO: despite issuing Skip, newly divided node continues to be explored. Rework Traverse API
-      TraverseCommand::Skip
-    });
-
-    change_exists.load(Ordering::SeqCst)
+    })
   }
 
   /// # Safety
   /// Nobody is safe
+  // This intentionally launders `&self` into `&mut Self` — inherently UB per the
+  // `invalid_reference_casting` deny lint, which is the whole point of the escape
+  // hatch. Explicitly opt out rather than dodge the lint.
+  #[allow(invalid_reference_casting)]
   pub unsafe fn as_mut(&self) -> &mut Self {
-    let ptr = self as *const _ as usize;
-    &mut *(ptr as *const Self as *mut _)
+    &mut *(self as *const Self).cast_mut()
   }
 }
 
@@ -247,7 +214,7 @@ impl <_Float: Float> SDF<_Float> for ADF<_Float> {
   fn sdf(&self, pixel: P2<_Float>) -> _Float {
     match self.tree.pt_to_node(pixel) {
       Some(node) => node.data.as_slice().sdf(pixel),
-      None => self.tree.data.as_slice().sdf(pixel),
+      None => self.tree.root().data.as_slice().sdf(pixel),
     }}}
 
 impl <_Float: Float> BoundingBox<_Float> for ADF<_Float> {
