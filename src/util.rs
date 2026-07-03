@@ -8,6 +8,34 @@ use {
   }
 };
 
+/// The insertion domain for a primitive placed at the **global maximum** `p`
+/// of the field.
+///
+/// For `S ⊆ B̄(x₀, d)`: `f(v) ≥ |v − x₀| − d`, while globality gives
+/// `g(v) ≤ d` everywhere — so `f(v) < g(v)` forces `|v − x₀| < 2d`. The update
+/// region is contained in the disc `B(x₀, 2d)`, whose minimal axis-aligned
+/// cover is the square of side `4d`. The bound is attained (two tangent
+/// maximal balls), hence the constant `4` is optimal.
+///
+/// For **local** maxima no `c·d` square is sound; use
+/// [`ADF::update_domain`](crate::solver::ADF::update_domain) instead.
+pub fn domain_global_max<P: Float>(p: DistPoint<P, P, WorldSpace>) -> Rect<P, WorldSpace> {
+  let size = p.distance * P::from(4.0).unwrap();
+  Rect {
+    origin: (p.point.to_vector() - V2::splat(size) / (P::one() + P::one())).to_point(),
+    size: Size2D::splat(size)
+  }
+}
+
+/// The historical insertion domain: a square of side `4·√2·d`, found by trial
+/// and error.
+///
+/// It is *oversized* for global maxima (see [`domain_global_max`]: side `4d`
+/// suffices and is optimal) and *unsound* for local maxima — the update region
+/// of an insertion is not bounded by any multiple of `d` (see
+/// [`ADF::update_domain`](crate::solver::ADF::update_domain)) — so it survives
+/// only as a cheap heuristic.
+#[deprecated(note = "use `domain_global_max` for global maxima, or `ADF::update_domain` for local maxima")]
 pub fn domain_empirical<P: Float + FloatConst>(p: DistPoint<P, P, WorldSpace>) -> Rect<P, WorldSpace> {
   let size = p.distance * P::from(4.0).unwrap() * P::SQRT_2();
   Rect {

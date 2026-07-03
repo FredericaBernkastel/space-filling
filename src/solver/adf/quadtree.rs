@@ -128,6 +128,26 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
     Ok(())
   }
 
+  /// Depth-first visit of the leaves. `prune` is consulted for every node
+  /// (internal and leaf); returning `true` skips that node's whole subtree.
+  pub fn visit_leaves(
+    &self,
+    mut prune: impl FnMut(&Node<Data, _Float>) -> bool,
+    mut visit: impl FnMut(&Node<Data, _Float>),
+  ) {
+    let mut stack = vec![0usize];
+    while let Some(idx) = stack.pop() {
+      let node = &self.nodes[idx];
+      if prune(node) {
+        continue;
+      }
+      match node.children {
+        Some(first) => stack.extend(first.get() as usize..first.get() as usize + 4),
+        None => visit(node),
+      }
+    }
+  }
+
   /// The smallest node containing `pt`, or `None` if `pt` falls outside an
   /// internal node's rectangle.
   pub fn pt_to_node(&self, pt: Point<_Float>) -> Option<&Node<Data, _Float>> {
@@ -139,26 +159,29 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
     Some(node)
   }
 
-  /// Evaluate every leaf whose rectangle intersects `domain` with `decide`
+  /// Evaluate every leaf of the subtrees admitted by `keep` with `decide`
   /// (read-only), then apply the returned actions to the arena. A leaf that
   /// returns [`Refine::Subdivide`] is split; its fresh children are *not*
   /// revisited during the same call. Returns whether any node changed.
+  ///
+  /// `keep` is consulted for every node (internal and leaf); returning `false`
+  /// skips that node's whole subtree — a child's rectangle is contained in its
+  /// parent's, so a geometric (or field-bound) predicate prunes soundly.
   ///
   /// `decide` — the expensive per-leaf optimization — runs during a recursive
   /// descent that forks the four children of each internal node onto the rayon
   /// pool, so independent subtrees are evaluated in parallel. Because `decide`
   /// is read-only this needs no aliasing tricks (shared `&Node` access is safe);
   /// the mutation is applied afterwards, sequentially, since growing the arena
-  /// needs `&mut`. Subtrees whose rectangle misses `domain` are pruned wholesale
-  /// — a child's rectangle is contained in its parent's — so the descent stays
-  /// proportional to the nodes near `domain`.
-  pub fn refine_leaves<F>(&mut self, domain: Rect<_Float, WorldSpace>, decide: F) -> bool
+  /// needs `&mut`.
+  pub fn refine_leaves<K, F>(&mut self, keep: K, decide: F) -> bool
   where
+    K: Fn(&Node<Data, _Float>) -> bool + Sync,
     F: Fn(&Node<Data, _Float>) -> Refine<Data> + Send + Sync,
     Data: Send + Sync,
     _Float: Sync,
   {
-    let actions = self.collect_actions(0, &domain, &decide);
+    let actions = self.collect_actions(0, &keep, &decide);
 
     let mut changed = false;
     for (i, action) in actions {
@@ -180,13 +203,14 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
   /// Recursively evaluate the subtree rooted at `idx`, forking the four children
   /// of each internal node across the rayon pool, and return the non-trivial
   /// `(index, action)` pairs. Read-only over the arena.
-  fn collect_actions<F>(
+  fn collect_actions<K, F>(
     &self,
     idx: usize,
-    domain: &Rect<_Float, WorldSpace>,
+    keep: &K,
     decide: &F,
   ) -> Vec<(usize, Refine<Data>)>
   where
+    K: Fn(&Node<Data, _Float>) -> bool + Sync,
     F: Fn(&Node<Data, _Float>) -> Refine<Data> + Sync,
     Data: Send + Sync,
     _Float: Sync,
@@ -194,7 +218,7 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
     use rayon::prelude::*;
 
     let node = &self.nodes[idx];
-    if !node.rect.intersects(domain) {
+    if !keep(node) {
       return Vec::new();
     }
     match node.children {
@@ -205,7 +229,7 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
       Some(first) => {
         let first = first.get() as usize;
         (first..first + 4).into_par_iter()
-          .flat_map_iter(|child| self.collect_actions(child, domain, decide))
+          .flat_map_iter(|child| self.collect_actions(child, keep, decide))
           .collect()
       }
     }

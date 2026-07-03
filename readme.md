@@ -107,6 +107,33 @@ only when *provably* redundant on the node: the stored field never deviates from
 primitives (pruning errs toward keeping, never toward corrupting). The return value reports whether the tree
 changed.
 
+#### Insertion domains
+
+An insertion at a maximum `x₀` with `d = g(x₀)` places `S ⊆ B̄(x₀, d)`, hence `f(v) ≥ |v − x₀| − d`, and the
+field can change only inside
+
+```
+D* = { v : g(v) > |v − x₀| − d }
+```
+
+— a tight bound: every `v ∈ D*` is reached by some admissible `S`. Two regimes follow:
+
+- `x₀` a **global** maximum: `g ≤ d` everywhere gives `D* ⊆ B(x₀, 2d)`, whose minimal axis-aligned cover is
+  the square of side `4d`, attained by two tangent maximal balls (`util::domain_global_max`). The historical
+  side of `4·√2·d` was sound here, but twice oversized in area.
+- `x₀` a **local** maximum: *no* square of side `c·d` is sound, for any constant `c`. Three contact points
+  with angular gaps `< π` admit an escape ray `w` along which `g(x₀ + R·w) = √(R² − 2Rd·cos(γ/2) + d²) > R − d`
+  for every `R` — the update region is unbounded in units of `d`
+  (`solver::adf::tests::insertion_domain` constructs a concrete field corruption for the `4·√2` rule).
+  `ADF::insert_at_maximum` therefore prunes during the tree walk itself, discarding a subtree `R` once
+
+  ```
+  ĝ(c_R) + L_B·h(R)  ≤  dist(R, x₀) − d,
+  ```
+
+  where `ĝ` is the node's own bucket field — exact at leaves, and at internal nodes a pre-subdivision
+  snapshot, a valid upper bound of `g` since insertions only ever lower the field.
+
 ## Examples
 
 Run an example with:

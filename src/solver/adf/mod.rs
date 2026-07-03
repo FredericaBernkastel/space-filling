@@ -4,11 +4,11 @@
 #![allow(clippy::mut_from_ref)]
 use {
   crate::{
-    geometry::{P2, WorldSpace, BoundingBox},
+    geometry::{P2, WorldSpace, BoundingBox, DistPoint},
     sdf::SDF,
   },
   quadtree::{
-    Quadtree, Refine, child_rects
+    Quadtree, Node, Refine, child_rects
   },
   std::{
     sync::Arc,
@@ -56,6 +56,10 @@ pub struct ADF<Float> {
   /// primitive is pruned only when provably redundant to within ~`node/2^n`),
   /// at more work in near-tangent regions.
   prune_subdiv: u32,
+  /// Largest Lipschitz constant ever declared by an inserted primitive; the
+  /// whole field is `lipschitz_max`-Lipschitz (monotone over-approximation:
+  /// primitives pruned later do not lower it).
+  lipschitz_max: Float,
 }
 
 impl <_Float: Float> SDF<_Float> for &[Primitive<_Float>] {
@@ -126,9 +130,11 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
   /// `init` specifies initial sdf primitives.
   pub fn new(max_depth: u8, init: Vec<Primitive<_Float>>) -> Self {
+    let lipschitz_max = bucket_lipschitz(&init);
     Self {
       tree: Quadtree::new(max_depth, init),
       prune_subdiv: 8,
+      lipschitz_max,
     }
   }
   /// Controls precision of primitive pruning in a bucket: the redundancy test may
@@ -193,17 +199,73 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
     domain: Rect<_Float, WorldSpace>,
     prim: Primitive<_Float>
   ) -> bool {
+    self.insert_where(move |node| node.rect.intersects(&domain), prim)
+  }
+
+  /// Insert a primitive placed at a **maximum** `p` of the field (any placement
+  /// with `S ⊆ B̄(x₀, d)`), without an explicit domain: the walk itself visits
+  /// exactly the subtrees that can meet the update region
+  ///
+  /// ```text
+  /// D* = { v : g(v) > |v − x₀| − d }.
+  /// ```
+  ///
+  /// A subtree `R` is skipped once `ĝ(c_R) + L_B·h(R) ≤ dist(R, x₀) − d`, where
+  /// `ĝ` is the node's own bucket field and `L_B` that bucket's Lipschitz
+  /// constant: exact at leaves; at internal nodes the bucket is its
+  /// pre-subdivision snapshot, which is a valid *upper* bound of `g` since
+  /// insertions only ever lower the field. This is the sound replacement for
+  /// the `4√2·d` heuristic rectangle, which no constant can make correct
+  /// (see `solver::adf::tests::insertion_domain`).
+  pub fn insert_at_maximum(
+    &mut self,
+    p: DistPoint<_Float, _Float, WorldSpace>,
+    prim: Primitive<_Float>
+  ) -> bool {
+    self.insert_within(p.point, p.distance, prim)
+  }
+
+  /// Like [`Self::insert_at_maximum`], with an explicit containment radius:
+  /// the primitive must satisfy `S ⊆ B̄(center, radius)`. A caller placing a
+  /// shape much smaller than the free ball (e.g. scaled to `d/4`) can pass its
+  /// actual reach, shrinking the visited region `D*` accordingly.
+  pub fn insert_within(
+    &mut self,
+    center: P2<_Float>,
+    radius: _Float,
+    prim: Primitive<_Float>
+  ) -> bool {
+    let two = _Float::one() + _Float::one();
+    self.insert_where(move |node| {
+      let r = node.rect.to_box2d();
+      let q = Point2D::new(
+        center.x.max(r.min.x).min(r.max.x),
+        center.y.max(r.min.y).min(r.max.y),
+      );
+      let dist = (center - q).length();
+      let half_diag = node.rect.size.to_vector().length() / two;
+      node.data.as_slice().sdf(node.rect.center())
+        + bucket_lipschitz(&node.data) * half_diag > dist - radius
+    }, prim)
+  }
+
+  fn insert_where(
+    &mut self,
+    keep: impl Fn(&Node<Vec<Primitive<_Float>>, _Float>) -> bool + Sync,
+    prim: Primitive<_Float>
+  ) -> bool {
     const BUCKET_SIZE: usize = 3;
+    self.lipschitz_max = self.lipschitz_max.max(prim.lipschitz);
     // Copied out so the parallel `decide` closure captures plain values instead
     // of borrowing `self` (which `refine_leaves` already borrows via `tree`).
     let subdiv = self.prune_subdiv;
     let max_depth = self.tree.max_depth;
 
-    // Only leaves intersecting `domain` are visited; each yields an independent
+    // Only leaves admitted by `keep` are visited; each yields an independent
     // decision, evaluated in parallel and applied afterwards. Previously divided
     // nodes' fresh children are not revisited within a single call — same as the
     // old `Skip`-after-`subdivide` behaviour.
-    self.tree.refine_leaves(domain, |node| {
+    self.tree.refine_leaves(keep, |node| {
       let f = &prim.f;
       let l_bucket = bucket_lipschitz(&node.data);
 
@@ -257,6 +319,58 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
         Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect)))
       }
     })
+  }
+
+  /// The insertion domain for a primitive placed at a **local maximum** `p` of
+  /// the field — a sound replacement for [`crate::util::domain_empirical`].
+  ///
+  /// Any primitive `S ⊆ B̄(x₀, d)` (which all `offset = d − r` style placements
+  /// satisfy) obeys `f(v) ≥ |v − x₀| − d`, so it can only lower the field inside
+  ///
+  /// ```text
+  /// D* = { v : g(v) > |v − x₀| − d },
+  /// ```
+  ///
+  /// and `D*` is tight: every `v ∈ D*` is updated by *some* admissible `S`.
+  /// `D*` is not bounded by any multiple of `d` (an escape ray between contact
+  /// points can extend it arbitrarily), so no constant-sized rectangle is
+  /// correct in general — this method instead covers `D*` by tree leaves,
+  /// discarding a subtree `R` once
+  ///
+  /// ```text
+  /// g(c_R) + L·h(R)  ≤  dist(R, x₀) − d      ⟹      D* ∩ R = ∅
+  /// ```
+  ///
+  /// (`g(v) ≤ g(c_R) + L·h(R)` by `L`-Lipschitz continuity of the whole field),
+  /// and returns the bounding rectangle of the surviving leaves.
+  pub fn update_domain(&self, p: DistPoint<_Float, _Float, WorldSpace>) -> Rect<_Float, WorldSpace> {
+    let (x0, d) = (p.point, p.distance);
+    let two = _Float::one() + _Float::one();
+    let l = self.lipschitz_max;
+
+    let mut bounds: Option<Box2D<_Float, WorldSpace>> = None;
+    self.tree.visit_leaves(
+      |node| {
+        let r = node.rect.to_box2d();
+        let half_diag = node.rect.size.to_vector().length() / two;
+        // distance from x0 to the rectangle
+        let q = Point2D::new(
+          x0.x.max(r.min.x).min(r.max.x),
+          x0.y.max(r.min.y).min(r.max.y),
+        );
+        let dist = (x0 - q).length();
+        self.sdf(node.rect.center()) + l * half_diag <= dist - d
+      },
+      |leaf| {
+        let r = leaf.rect.to_box2d();
+        bounds = Some(match bounds {
+          Some(b) => b.union(&r),
+          None => r,
+        });
+      },
+    );
+    // The leaf containing x0 always qualifies, so `bounds` is non-empty.
+    bounds.unwrap().to_rect()
   }
 
   /// # Safety

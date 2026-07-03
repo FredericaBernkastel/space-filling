@@ -22,7 +22,7 @@ fn fractal_distribution(representation: &mut Argmax2D, image: &mut RgbaImage) {
       .translate(global_max.point.to_vector())
       .scale(global_max.distance / 4.0);
     representation.insert_sdf_domain(
-      util::domain_empirical(global_max),
+      util::domain_global_max(global_max),
       |v| circle.sdf(v)
     );
     circle

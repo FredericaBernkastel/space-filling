@@ -52,7 +52,7 @@
     //!    * max_dist * 4.0 * sqrt(2.0), which made possible achieving
     //!    * greater speed of computation. **/
     //!   representation.insert_sdf_domain(
-    //!     util::domain_empirical(global_max),
+    //!     util::domain_global_max(global_max),
     //!     |v| circle.sdf(v)
     //!   );
     //!   circle
@@ -94,11 +94,11 @@
     //!   let circle = Circle
     //!     .translate(local_max.point.to_vector())
     //!     .scale(local_max.distance / 4.0);
-    //!   // Update distance field. Since the precision is not perfect, sometimes update may fail -
-    //!   // thus Option is returned
-    //!   representation.write().unwrap().insert_sdf_domain(
-    //!     util::domain_empirical(local_max),
-    //!     Arc::new(move |p| circle.sdf(p))
+    //!   // Update the distance field. An insertion which does not lower the field
+    //!   // anywhere reports `false` - thus Option is returned
+    //!   representation.write().unwrap().insert_at_maximum(
+    //!     local_max,
+    //!     Primitive::new(move |p| circle.sdf(p))
     //!   ).then(|| circle)
     //! }).take(1000) // stop, once 1000 circles were successfully added
     //!   .for_each(|shape| shape

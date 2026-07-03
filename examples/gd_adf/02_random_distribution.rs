@@ -13,7 +13,7 @@ use {
   image::{Luma, Pixel},
   anyhow::Result,
   rand::prelude::*,
-  std::sync::{Arc, RwLock}
+  std::sync::RwLock
 };
 
 type AffineT<T> = Scale<Translation<T, f64>, f64>;
@@ -39,9 +39,9 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
       Circle.translate(local_max.point - offset)
         .scale(r)
     };
-    representation.write().unwrap().insert_sdf_domain(
-      util::domain_empirical(local_max),
-      Arc::new(move |p| circle.sdf(p))
+    representation.write().unwrap().insert_at_maximum(
+      local_max,
+      Primitive::new(move |p| circle.sdf(p))
     ).then(|| circle)
   })
 }

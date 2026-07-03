@@ -69,9 +69,9 @@ use crate::geometry::DistPoint;
           .scale(r)
       };
       // alternately use safe RwLock<ADF> for 1.5x slowdown
-      unsafe { representation.as_mut() }.insert_sdf_domain(
-        util::domain_empirical(local_max),
-        Arc::new(move |p| circle.sdf(p))
+      unsafe { representation.as_mut() }.insert_at_maximum(
+        local_max,
+        Primitive::new(move |p| circle.sdf(p))
       ).then(|| circle)
     })
     .enumerate()
@@ -163,7 +163,7 @@ use crate::geometry::DistPoint;
       Circle.translate(local_max.point - offset)
         .scale(r)
     };
-    let domain = util::domain_empirical(local_max);
+    let domain = representation.update_domain(local_max);
 
     circle.texture(Rgba([0x45, 0x8F, 0xF5, 0xFF]))
       .draw(&mut image);
@@ -181,9 +181,9 @@ use crate::geometry::DistPoint;
     representation.tree.draw_bounding(domain, &mut image);
     image.save(format!("test/anim/#{}_4.png", i))?;
 
-    representation.insert_sdf_domain(
-      domain,
-      Arc::new(move |p| circle.sdf(p))
+    representation.insert_at_maximum(
+      local_max,
+      Primitive::new(move |p| circle.sdf(p))
     ).then(|| {
       circles.push(circle);
       i += 1;
@@ -193,6 +193,58 @@ use crate::geometry::DistPoint;
   println!("{representation:#?}");
 
   Ok(())
+}
+
+// Constructive proof that no constant-sized insertion domain is sound for
+// local maxima. Three point-like obstacles at 90°, 210°, 330° around x0 form a
+// strict local maximum (contact gaps 120° < 180°). Along the escape bisector
+// w = 270°, the field grows as g(x0 + R·w) = √(R² − R·d + d²) ≈ R − d/2, while
+// a primitive confined to B̄(x0, d) reaches f(v) ≥ R − d — strictly below g for
+// every R (until the outer boundary caps it). Hence the update region extends
+// arbitrarily many multiples of d, and the historical 4√2·d square provably
+// leaves stale field behind; `ADF::update_domain` covers it exactly.
+#[test] fn insertion_domain() {
+  let x0 = P2::new(0.5, 0.75);
+  let d = 0.05;
+  let full = Rect::from_size(Size2D::splat(1.0));
+
+  let mut adf = ADF::new(7, vec![Primitive::new(sdf::boundary_rect)]);
+  for angle in [90f64, 210., 330.] {
+    let (s, c) = angle.to_radians().sin_cos();
+    let obstacle = Circle.scale(1e-4).translate(x0.to_vector() + Vector2D::new(c, s) * d);
+    adf.insert_sdf_domain(full, Arc::new(move |p| obstacle.sdf(p)));
+  }
+
+  let local_max = DistPoint { point: x0, distance: adf.sdf(x0) };
+  // pipeline-style placement: a circle inside the maximal ball, pushed toward w
+  let r = 0.01;
+  let circle = Circle.scale(r)
+    .translate(x0.to_vector() + Vector2D::new(0.0, -1.0) * (local_max.distance - r));
+  let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
+
+  let probe = P2::new(0.48, 0.45); // R = 6·d down the escape ray
+  let truth = f(probe).min(adf.sdf(probe));
+  assert!(f(probe) < adf.sdf(probe), "the insertion must lower the field at the probe");
+
+  { // the 4√2·d rectangle misses the probe's leaf → stale field
+    let mut adf = adf.clone();
+    #[allow(deprecated)]
+    adf.insert_sdf_domain(util::domain_empirical(local_max), f.clone());
+    assert!(adf.sdf(probe) - truth > 0.02,
+      "expected the historical constant domain to corrupt the field");
+  }
+
+  { // the adaptive domain covers D* → exact field
+    let mut adf = adf.clone();
+    adf.insert_sdf_domain(adf.update_domain(local_max), f.clone());
+    assert!((adf.sdf(probe) - truth).abs() < 1e-12);
+  }
+
+  { // the fused D*-pruned walk is exact as well
+    let mut adf = adf.clone();
+    adf.insert_at_maximum(local_max, Primitive { f: f.clone(), lipschitz: 1.0 });
+    assert!((adf.sdf(probe) - truth).abs() < 1e-12);
+  }
 }
 
 // Counts how often `insert_sdf_domain` returns `false` (the quadtree was not
@@ -228,9 +280,8 @@ use crate::geometry::DistPoint;
           let offset = P2::from([angle.cos(), angle.sin()]) * delta;
           Circle.translate(m.point - offset).scale(r)
         };
-        let domain = util::domain_empirical(m);
         attempts += 1;
-        if !adf.insert_sdf_domain(domain, Arc::new(move |p| circle.sdf(p))) {
+        if !adf.insert_at_maximum(m, Primitive::new(move |p| circle.sdf(p))) {
           failures += 1;
         }
       }
@@ -290,10 +341,9 @@ use crate::geometry::DistPoint;
         let offset = P2::from([angle.cos(), angle.sin()]) * delta;
         Circle.translate(m.point - offset).scale(r)
       };
-      let domain = util::domain_empirical(m);
       let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
       attempts += 1;
-      if adf.insert_sdf_domain(domain, f.clone()) {
+      if adf.insert_at_maximum(m, Primitive { f: f.clone(), lipschitz: 1.0 }) {
         all_prims.push(f);
       } else {
         failures += 1;

@@ -251,8 +251,11 @@ fn main() -> Result<()> {
       .translate(local_max.point.to_vector())
       .scale(local_max.distance / 4.0);
 
-    unsafe { representation.as_mut() }.insert_primitive_domain(
-      util::domain_empirical(local_max),
+    // the shape is scaled to d/4; its bounding-box half-diagonal is ~1.31,
+    // so it reaches at most ~0.33·d from the maximum
+    unsafe { representation.as_mut() }.insert_within(
+      local_max.point,
+      local_max.distance * 0.33,
       Primitive::new(move |p| primitive.sdf(p)).with_lipschitz(L_BAKED)
     ).then_some(())
   }).enumerate()

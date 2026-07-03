@@ -52,9 +52,9 @@ fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
           )))
 
       };
-      representation.write().unwrap().insert_sdf_domain(
-        util::domain_empirical(local_max),
-        Arc::new({
+      representation.write().unwrap().insert_at_maximum(
+        local_max,
+        Primitive::new({
           let shape = shape.clone();
           move |v| shape.sdf(v)
         })

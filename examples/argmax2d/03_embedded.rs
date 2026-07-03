@@ -48,7 +48,7 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
           .scale(r)
       };
       representation.insert_sdf_domain(
-        util::domain_empirical(global_max),
+        util::domain_global_max(global_max),
         |v| circle.sdf(v)
       );
     });
@@ -64,7 +64,7 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
       .scale(global_max.distance / 3.0);
 
     representation.insert_sdf_domain(
-      util::domain_empirical(global_max),
+      util::domain_global_max(global_max),
       |v| circle.sdf(v)
     );
 
