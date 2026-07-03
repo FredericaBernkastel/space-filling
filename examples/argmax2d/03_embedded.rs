@@ -1,3 +1,4 @@
+use std::time::Instant;
 /// Unlike ADF, Argmax2D supports cheap sign inversion, thus it is easy to
 /// embed one distribution inside another.
 
@@ -72,7 +73,8 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
   })
 }
 
-// profile: 119.2s, Δ = 2^-14
+// profile, Δ = 2^-14: 119.2s, 
+// profile (rayon disjoint parallel writes), Δ = 2^-14: 68.8s
 fn main() -> Result<()> {
   let path = "out.png";
   let mut image = RgbaImage::new(16384, 16384);

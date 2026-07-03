@@ -203,7 +203,7 @@ fn dt1d(f: &[f64], d: &mut [f64], v: &mut [usize], z: &mut [f64]) {
   }
 }
 
-// profile, 06 analytic estimator (Lipschitz B&B pruning): 19.2s
+// profile, 06 analytic estimator (Lipschitz B&B pruning): 10.1s
 fn main() -> Result<()> {
   let start_time = Instant::now();
   let path = "out.png";

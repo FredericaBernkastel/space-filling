@@ -73,11 +73,10 @@ fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
     .scale(T::one() / T::from(1.5).unwrap())
 }
 
+// profile (GD pruning), safe, 20k primitives, adf_subdiv = 7, gd_lattice = 3: 165.1s
 // profile (GD pruning), safe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 51.8s,
 // profile (GD pruning), unsafe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 34.3s
-// profile (GD pruning), unsafe, 20k primitives, adf_subdiv = 7, gd_lattice = 3: 165.1s
-// profile (Lipschitz B&B pruning, per-primitive bounds), unsafe: 19.2s
-// profile (Lipschitz B&B pruning, per-primitive bounds, sound insertion domains via D*-pruned walk), unsafe: 22.6s
+// profile (Lipschitz B&B pruning, per-primitive bounds, sound insertion domains via D*-pruned walk), 20k primitives, unsafe: 12.2s
 fn main() -> Result<()> {
   let start_time = Instant::now();
 
