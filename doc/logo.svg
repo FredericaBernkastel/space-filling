@@ -24,8 +24,6 @@
     </marker>
   </defs>
 
-  <rect rx="0" ry="0" width="480" height="480" fill="#17181A"/>
-
   <!-- coordinate grid: the (constrained) search space -->
   <path fill="none" stroke="#3f5b66" stroke-opacity="0.16" stroke-width="1"
     d="M40 0V480 M80 0V480 M120 0V480 M160 0V480 M200 0V480 M240 0V480 M280 0V480

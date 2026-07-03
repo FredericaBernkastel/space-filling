@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="doc/logo.svg" alt="space-filling" width="200" height="200">
+<img src="doc/logo.svg" alt="space-filling" width="300" height="300">
 
 # space-filling
 
