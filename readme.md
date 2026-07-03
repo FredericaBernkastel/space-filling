@@ -145,7 +145,7 @@ Run with `cargo run --release --features "drawing" --example 05_image_dataset --
 
 [`06_custom_primitive`](examples/gd_adf/06_custom_primitive.rs)  
 A user-defined primitive — here a Mandelbrot distance estimator, which is *not* 1-Lipschitz and so declares a
-larger Lipschitz bound to keep pruning sound.
+larger Lipschitz bound to keep pruning sound.  
 ![](doc/custom_primitive.png)
 
 [`07_baked_sdf`](examples/gd_adf/07_baked_sdf.rs)  
