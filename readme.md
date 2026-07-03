@@ -44,14 +44,21 @@ search over the node (see [Implementation](#implementation)). Because `ADF` itse
 field composed of millions of primitives can be sampled in logarithmic time, rather than evaluated directly at
 quadratic cost.
 
-Once the representation is built, an optimizer takes over. For practical purposes we use gradient descent with
-exponential step decay, which makes GD-ADF a **local-maximum** method:
+Once the representation is built, an optimizer takes over — an adaptive gradient ascent, which makes GD-ADF a
+**local-maximum** method. A candidate step of length `h` along the sampled ascent direction is taken only when it
+improves the field, so the iterate is monotone; `h` grows on acceptance and shrinks on rejection, and the previous
+accepted direction is blended into the next (momentum), cancelling the across-ridge zigzag at the kink maxima of
+distance fields (which lie on the medial axis, where `g` is not differentiable):
 
-![](doc/eq2.svg)
+```
+d_k     =  normalize( ∇g(p_k)/|∇g(p_k)| + d_{k-1} )
+p_{k+1} =  p_k + h_k·d_k        if g improves, else p_k;      h ← h·growth | h·decay
+```
 
 Since a distance field has unit-magnitude gradient almost everywhere, only the *direction* of the gradient is
 used — sidestepping several issues common to GD and interior-point methods, and freeing the step schedule from
-any dependence on the field magnitude.
+any dependence on the field magnitude. A vanishing sampled gradient (a flat region, e.g. the clamped interior of
+a distance estimator) terminates the ascent immediately rather than wasting the iteration budget.
 
 Relative to Argmax2D, GD-ADF offers a 10–100× memory reduction and a continuous, exact field, with several
 speed/precision trade-offs, in both single and double precision.
