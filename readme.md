@@ -1,82 +1,172 @@
+<div align="center">
+
+<img src="doc/logo.svg" alt="space-filling" width="200" height="200">
+
+# space-filling
+
+*Generalized random space filling of the plane, driven by signed distance fields.*
+
 [<img alt="crates.io" src="https://img.shields.io/crates/v/space-filling.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/space-filling)
-[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-space--filling-66c2a5?style=for-the-badge&labelColor=555555&logoColor=white&logo=data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDUxMiA1MTIiPjxwYXRoIGZpbGw9IiNmNWY1ZjUiIGQ9Ik00ODguNiAyNTAuMkwzOTIgMjE0VjEwNS41YzAtMTUtOS4zLTI4LjQtMjMuNC0zMy43bC0xMDAtMzcuNWMtOC4xLTMuMS0xNy4xLTMuMS0yNS4zIDBsLTEwMCAzNy41Yy0xNC4xIDUuMy0yMy40IDE4LjctMjMuNCAzMy43VjIxNGwtOTYuNiAzNi4yQzkuMyAyNTUuNSAwIDI2OC45IDAgMjgzLjlWMzk0YzAgMTMuNiA3LjcgMjYuMSAxOS45IDMyLjJsMTAwIDUwYzEwLjEgNS4xIDIyLjEgNS4xIDMyLjIgMGwxMDMuOS01MiAxMDMuOSA1MmMxMC4xIDUuMSAyMi4xIDUuMSAzMi4yIDBsMTAwLTUwYzEyLjItNi4xIDE5LjktMTguNiAxOS45LTMyLjJWMjgzLjljMC0xNS05LjMtMjguNC0yMy40LTMzLjd6TTM1OCAyMTQuOGwtODUgMzEuOXYtNjguMmw4NS0zN3Y3My4zek0xNTQgMTA0LjFsMTAyLTM4LjIgMTAyIDM4LjJ2LjZsLTEwMiA0MS40LTEwMi00MS40di0uNnptODQgMjkxLjFsLTg1IDQyLjV2LTc5LjFsODUtMzguOHY3NS40em0wLTExMmwtMTAyIDQxLjQtMTAyLTQxLjR2LS42bDEwMi0zOC4yIDEwMiAzOC4ydi42em0yNDAgMTEybC04NSA0Mi41di03OS4xbDg1LTM4Ljh2NzUuNHptMC0xMTJsLTEwMiA0MS40LTEwMi00MS40di0uNmwxMDItMzguMiAxMDIgMzguMnYuNnoiPjwvcGF0aD48L3N2Zz4K" height="20">](https://docs.rs/space-filling)
+[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-space--filling-66c2a5?style=for-the-badge&labelColor=555555&logo=docsdotrs&logoColor=white" height="20">](https://docs.rs/space-filling)
+[<img alt="license" src="https://img.shields.io/crates/l/space-filling.svg?style=for-the-badge&color=8da0cb" height="20">](./LICENCE)
 
-Note: this is a subject of ongoing research, no stability guarantees are made.  
+</div>
 
-You can read this paper for introduction: 
-[Paul Bourke - Random space filling of the plane (2011)](http://paulbourke.net/fractals/randomtile/).  
-However, the provided search algorithm for the next location is inefficient, 
-and offers very limited control over the distribution<sup>[[1]](#footnote_1)</sup>.
-In this work, I present two solvers for the following equation:   
-![](doc/eq1.svg)  
-**sdf<sub>n</sub>** are signed distance functions (primitives), by aggregate minima forming together a complex distance field - further denoted **"SDF"**.
+> **Note.** This is a subject of ongoing research; no stability guarantees are made.
 
-The goal of algorithm lies in finding a safe domain, guaranteed to not intersect with any shapes.
-A generic and parallel interface was implemented. Currently supported:
-- User-defined distributions (including fractal and random)
-- Any shapes which can be represented with SDF: curves, regular polygons, non-convex and disjoint areas, fractals or any sets with non-integer hausdorff dimension (as long as the distance can be approximated).
+For an introduction, see [Paul Bourke — *Random space filling of the plane* (2011)](http://paulbourke.net/fractals/randomtile/).
+There, however, the search for the next location is inefficient and offers very limited control over the
+resulting distribution<sup>[[1]](#footnote_1)</sup>. This work presents two solvers for the following problem:
+
+![](doc/eq1.svg)
+
+The **sdf<sub>n</sub>** are signed distance functions (*primitives*) whose aggregate pointwise minimum forms a
+compound distance field, denoted **SDF** hereafter. The task is to locate a *safe domain* — a region guaranteed
+not to intersect any shape — and to place the next primitive there. The interface is generic and parallel, and
+supports:
+
+- user-defined distributions (fractal, random, or otherwise);
+- any shape expressible as an SDF: curves, regular polygons, non-convex and disjoint regions, and fractals or
+  other sets of non-integer Hausdorff dimension (as long as the distance can be approximated).
 
 ### Argmax2D
-SDF is stored as a discrete bitmap, with memory layout reminiscent of z-order curve. Solver is guaranteed to always find **global maxima**, but increasing precision requires quadratic memory.
+
+The SDF is stored as a discrete bitmap whose memory layout follows a Z-order curve. The solver is guaranteed to
+find the **global maximum**, but raising precision costs quadratic memory.
 
 ### GD-ADF
-A paper "Adaptively Sampled Distance Fields" (doi:[10.1145/344779.344899](https://dl.acm.org/doi/10.1145/344779.344899)) offered an idea of reducing memory consumption, however it was very elaborate to not include _any_ hints for a practical implementation. The only one being - using polynomial approximations for every node of the k-d tree; however, current work takes a different path - by storing function primitives themselves in each node (bucket). Redundant primitive elimination within a bucket was performed using [interior-point method](https://en.wikipedia.org/wiki/Interior-point_method).  
-ADF itself implements SDF trait, allowing for complex fields composed of millions of primitives to be sampled efficiently — as opposed to computing it directly — with quadratic complexity in nature.  
-However, primitive elimination is not yet perfect. An elimination algorithm which is both precise and fast enough will be a subject of further theoretical research.
 
-Once the representation is obtained, the role of optimizer takes place. For practical purposes, gradient descent with exponential convergence has been chosen — making GD-ADF a **local maxima** algorithm; as described by following equation:  
-![](doc/eq2.svg)  
-Since by definition, first order derivative of distance field is constant, only direction of the gradient is considered — eliminating a number of issues with both GD/IPM; and as a bonus, rendering them to be no longer dependent on the field magnitude directly.
+A paper *Adaptively Sampled Distance Fields* (doi:[10.1145/344779.344899](https://dl.acm.org/doi/10.1145/344779.344899))
+proposes reducing memory by approximating the field per node of a k-d tree, yet gives little guidance for a
+practical implementation beyond fitting a polynomial in each node. Current work takes a different route: each node
+(*bucket*) stores the primitives themselves, and redundant primitives are eliminated from a bucket by a bounded
+search over the node (see [Implementation](#implementation)). Because `ADF` itself implements the `SDF` trait, a
+field composed of millions of primitives can be sampled in logarithmic time, rather than evaluated directly at
+quadratic cost.
 
-Unlike Argmax2D, GD-ADF offers 10-100x memory reduction, as well as  continuous, exact field representation. Various speed tradeoffs are provided, including both single and double float precision.
+Once the representation is built, an optimizer takes over. For practical purposes we use gradient descent with
+exponential step decay, which makes GD-ADF a **local-maximum** method:
+
+![](doc/eq2.svg)
+
+Since a distance field has unit-magnitude gradient almost everywhere, only the *direction* of the gradient is
+used — sidestepping several issues common to GD and interior-point methods, and freeing the step schedule from
+any dependence on the field magnitude.
+
+Relative to Argmax2D, GD-ADF offers a 10–100× memory reduction and a continuous, exact field, with several
+speed/precision trade-offs, in both single and double precision.
+
+## Implementation
+
+Let a *primitive* be a pair `(f, L)` of a field `f` and a declared Lipschitz constant `L` (`L = 1` is exact for a
+true SDF; approximate estimators declare a larger bound). A bucket `B = {(fᵢ, Lᵢ)}` represents the field
+`g_B = min_i fᵢ`, which is `max_i Lᵢ`-Lipschitz.
+
+#### `sdf_geq_everywhere(f, g, Ω, L_f, L_g, k) → bool`
+
+Decides `f ≥ g` **everywhere on** the rectangle `Ω`. As `f`, `g` are Lipschitz, `f − g` is
+`(L_f + L_g)`-Lipschitz, so over any rectangle `R` of centre `c` and half-diagonal `h(R)`:
+
+```
+∀ v ∈ R :  (f − g)(v)  ≥  (f − g)(c) − (L_f + L_g)·h(R)
+```
+
+This drives a branch-and-bound over a stack of rectangles, initialised with `Ω`, at depth `d`:
+
+```
+δ ← (f − g)(c_R)
+  δ < 0                    ⟹  return false            ∃ witness v : f(v) < g(v)
+  δ ≥ (L_f + L_g)·h(R)     ⟹  discard R                f ≥ g proven on all of R
+  d ≥ k                    ⟹  return false            undecided within budget (conservative)
+  otherwise                ⟹  push the 4 quadrants of R at depth d+1
+stack empties              ⟹  return true             f ≥ g on Ω
+```
+
+The test is **sound**: it returns `true` only when `f ≥ g` holds on all of `Ω`, never the converse — so it can
+be trusted to drop or skip a primitive without corrupting the field. It is *conservative*: it may answer `false`
+when it cannot prove the bound within `k` refinements. Cost is adaptive — well-separated fields settle at the
+root, and a real witness is reached by descent rather than by a fixed grid.
+
+#### `insert_primitive_domain(Ω, (f, L_f)) → bool`
+
+Inserts `f` over the domain `Ω`. Every leaf `n` (rectangle `Rₙ`, bucket `Bₙ`) meeting `Ω` is refined
+independently and in parallel, with `β` the bucket size and `D` the maximum depth:
+
+```
+f ≥ g_Bₙ  on Rₙ                   ⟹  no-op            f never lowers the field on Rₙ
+g_Bₙ ≥ f  on Rₙ                   ⟹  Bₙ ← {f}         f dominates the node
+depth(n) = D  ∨  |Bₙ| < β         ⟹  Bₙ ← Bₙ ∪ {f}   append
+otherwise                         ⟹  subdivide n;  B_c ← prune(Bₙ ∪ {f}, R_c)  for each child c
+```
+```
+prune(B, R)  =  { (fᵢ, Lᵢ) ∈ B  :  ¬ ( fᵢ ≥ min_{j ≠ i} fⱼ  on R ) }
+```
+
+Every `≥ on R` predicate is decided by `sdf_geq_everywhere`. Consequently a primitive is skipped or eliminated
+only when *provably* redundant on the node: the stored field never deviates from `min` over all inserted
+primitives (pruning errs toward keeping, never toward corrupting). The return value reports whether the tree
+changed.
 
 ## Examples
-You can run examples with following command:  
-`cargo run --release --features "drawing" --example <example name>`  
-You can add `-- -C target-cpu=native` at the command end to further improve the speed.
+
+Run an example with:
+
+```
+cargo run --release --features "drawing" --example <example name>
+```
+
+Append `-- -C target-cpu=native` to improve throughput further.
 
 [`01_fractal_distribution`](examples/argmax2d/01_fractal_distribution.rs)  
-Each subsequent circle is inserted at the maxima of distance field.  
+Each successive circle is placed at the maximum of the distance field.  
 ![](doc/fractal_distribution.png)
 
 [`02_random_distribution`](examples/gd_adf/02_random_distribution.rs)  
-Given `(xy, magnitude)` of the maxima, a new random circle is inserted within a domain of radius `magnitude` and center `xy`.     
+Given a maximum `(xy, magnitude)`, a random circle is inserted within the disc of radius `magnitude` centred at `xy`.  
 ![](doc/random_distribution.png)
 
-[`03_embedded`](examples/argmax2d/03_embedded.rs)   
-A distribution embedded in a distribution.  
-<img src="doc/embedded.jpg" width="256"> 
+[`03_embedded`](examples/argmax2d/03_embedded.rs)  
+A distribution embedded within a distribution.  
+<img src="doc/embedded.jpg" width="256">
 
 [`04_polymorphic`](examples/gd_adf/04_polymorphic.rs)  
 Showcasing:
-- Dynamic dispatch interface;
-- Random distribution of mixed shapes;
-- Random color and texture fill style;
-- Parallel generation and drawing.
+- a dynamic-dispatch interface;
+- a random distribution of mixed shapes;
+- random colour and texture fill styles;
+- parallel generation and drawing.
 
 <img src="doc/polymorphic.jpg" width="256">
 
 [`05_image_dataset`](examples/argmax2d/05_image_dataset.rs)  
-Display over 100'000 images.  
-Run with `cargo run --release --features "drawing" --example image_dataset -- "<image folder>" -C target-cpu=native`  
+Displays over 100 000 images.  
+Run with `cargo run --release --features "drawing" --example 05_image_dataset -- "<image folder>" -C target-cpu=native`
 ![](doc/image_dataset.gif)
 
 [`06_custom_primitive`](examples/gd_adf/06_custom_primitive.rs)  
-A user-defined primitive.  
+A user-defined primitive — here a Mandelbrot distance estimator, which is *not* 1-Lipschitz and so declares a
+larger Lipschitz bound to keep pruning sound.
 ![](doc/custom_primitive.png)
 
+[`07_baked_sdf`](examples/gd_adf/07_baked_sdf.rs)  
+Bakes that same fractal estimator into a discrete field once — rasterize a mask, take its exact signed Euclidean
+distance transform, then sample bilinearly. This replaces a 256-iteration evaluation with a single lookup and
+recovers a *certified* Lipschitz bound (`1 + √2`), at the cost of detail below the grid pitch.
 
 ## Past work
-In `src/legacy` you can find numeruos algorithms which are worth re-exploring, including quadtree and GPU implementations. 
+
+`src/legacy` holds several algorithms worth revisiting, including quadtree and GPU implementations.
 
 ## Future work
-- [x] Add more sample SDFs, and generic draw trait
-- [x] Extend to support precision below 2<sup>-16</sup> (gigapixel resolution)
-- [x] Rework traits
+
+- [x] Add more sample SDFs, and a generic draw trait
+- [x] Extend precision below 2<sup>-16</sup> (gigapixel resolution)
+- [x] Rework the traits
 - [ ] Generalize to N dimensions
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
 
 #### Footnotes
-<a id="footnote_1">[1]</a>: J. Shier, "A Million-Circle Fractal": [https://www.d.umn.edu/~ddunham/circlepat.html](https://www.d.umn.edu/~ddunham/circlepat.html)  
+
+<a id="footnote_1">[1]</a>: J. Shier, "A Million-Circle Fractal": [https://www.d.umn.edu/~ddunham/circlepat.html](https://www.d.umn.edu/~ddunham/circlepat.html)
 &laquo;...Run time was 14.7 hours.&raquo;

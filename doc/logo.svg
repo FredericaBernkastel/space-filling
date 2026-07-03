@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480" role="img" aria-label="space-filling">
+  <defs>
+    <!-- distance field: hot (large distance) in the interior, cool at the zero level set -->
+    <radialGradient id="field" cx="240" cy="248" r="182" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"  stop-color="#ffb27a"/>
+      <stop offset="52%" stop-color="#fc8d62"/>
+      <stop offset="100%" stop-color="#66c2a5"/>
+    </radialGradient>
+    <radialGradient id="peak" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Ω : a non-convex domain (union of primitives) -->
+    <path id="omega" d="M240 92
+      C 322 78 402 150 392 236
+      C 384 300 350 300 322 330
+      C 300 354 300 408 232 406
+      C 150 404 92 340 92 250
+      C 92 158 160 106 240 92 Z"/>
+    <!-- direction of the constrained gradient step -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5"
+            markerWidth="7.5" markerHeight="7.5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 L3 5 Z" fill="#243b45"/>
+    </marker>
+  </defs>
+
+  <!-- coordinate grid: the (constrained) search space -->
+  <path fill="none" stroke="#3f5b66" stroke-opacity="0.16" stroke-width="1"
+    d="M40 0V480 M80 0V480 M120 0V480 M160 0V480 M200 0V480 M240 0V480 M280 0V480
+       M320 0V480 M360 0V480 M400 0V480 M440 0V480
+       M0 40H480 M0 80H480 M0 120H480 M0 160H480 M0 200H480 M0 240H480 M0 280H480
+       M0 320H480 M0 360H480 M0 400H480 M0 440H480"/>
+
+  <!-- ambient packing: neighbouring domains (space filling) -->
+  <g fill="none" stroke="#66c2a5" stroke-opacity="0.22" stroke-width="2">
+    <circle cx="52"  cy="70"  r="26"/>
+    <circle cx="425" cy="86"  r="34"/>
+    <circle cx="70"  cy="418" r="30"/>
+    <circle cx="430" cy="410" r="22"/>
+    <circle cx="446" cy="250" r="15"/>
+    <circle cx="40"  cy="250" r="18"/>
+    <circle cx="300" cy="46"  r="13"/>
+  </g>
+
+  <!-- exterior level set  { sdf = -c } : the barrier constraint keeps the search inside Ω -->
+  <use href="#omega" fill="none" stroke="#66c2a5" stroke-opacity="0.5"
+       stroke-width="2" stroke-dasharray="5 7"
+       transform="translate(240 248) scale(1.14) translate(-240 -248)"/>
+
+  <!-- the field over Ω -->
+  <use href="#omega" fill="url(#field)"/>
+
+  <!-- interior level sets  { sdf = c } -->
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.38" stroke-width="1.6">
+    <use href="#omega" transform="translate(240 248) scale(0.76) translate(-240 -248)"/>
+    <use href="#omega" transform="translate(240 248) scale(0.54) translate(-240 -248)"/>
+    <use href="#omega" transform="translate(240 248) scale(0.33) translate(-240 -248)"/>
+  </g>
+
+  <!-- zero level set  { sdf = 0 } : ∂Ω, the feasible boundary -->
+  <use href="#omega" fill="none" stroke="#2f5d52" stroke-width="3.5"/>
+
+  <!-- interior-point central path: a curved ascent from the constraint ∂Ω that
+       bends inward toward the interior maximum; arrows give the constrained
+       gradient-step direction -->
+  <path fill="none" stroke="#243b45" stroke-width="2.6" stroke-linecap="round"
+        marker-mid="url(#arrow)"
+        d="M120 155
+           C 122 190 130 214 150 232
+           C 176 254 196 256 214 252
+           C 226 250 236 250 240 248"/>
+  <circle cx="120" cy="155" r="4.5" fill="none" stroke="#243b45" stroke-width="2.4"/>
+
+  <!-- argmax : deepest interior point (global/local maximum of the field) -->
+  <circle cx="240" cy="248" r="26" fill="url(#peak)"/>
+  <circle cx="240" cy="248" r="6.5" fill="#243b45"/>
+  <circle cx="240" cy="248" r="2.6" fill="#ffffff"/>
+</svg>
