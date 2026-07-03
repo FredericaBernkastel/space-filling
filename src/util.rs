@@ -72,8 +72,14 @@ pub fn find_max_parallel<_Float>(f: impl Fn(P2<_Float>) -> _Float + Send + Sync,
   let mut points1 = vec![];
   points.into_iter()
     .for_each(|pn| {
+      // The whole batch is measured against one field snapshot, and each
+      // insertion invalidates that snapshot for the rest of the batch. Keeping
+      // `pn` only when its free ball is disjoint from every kept ball
+      // (`|p − pn| > d_p + d_pn`) makes the batch's placements provably
+      // non-intersecting regardless of insertion order — a shape placed at a
+      // maximum stays inside that maximum's ball.
       points1.iter()
-        .all(|p: &DistPoint<_, _, _>| p.point.distance_to(pn.point) > pn.distance * _Float::from(2.0).unwrap())
+        .all(|p: &DistPoint<_, _, _>| p.point.distance_to(pn.point) > p.distance + pn.distance)
         .then(|| points1.push(pn));
     });
   points1

@@ -48,14 +48,14 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
 
 fn main() -> Result<()> {
   let start_time = Instant::now();
-  let path = "out1.png";
+  let path = "out.png";
   let representation = RwLock::new(
     ADF::new(7, vec![Primitive::new(sdf::boundary_rect)])
       .with_prune_subdiv(8)); // pruning precision
-  let mut image = image::RgbaImage::new(4096, 4096);
+  let mut image = image::RgbaImage::new(2048, 2048);
 
   random_distribution(&representation)
-    .take(100000)
+    .take(1000)
     .for_each(|shape| shape
       .texture(Luma([255u8]).to_rgba())
       .draw(&mut image));

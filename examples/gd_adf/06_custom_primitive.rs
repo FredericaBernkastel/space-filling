@@ -96,7 +96,7 @@ fn main() -> Result<()> {
     Box::new(|p| representation.sdf(p)),
     32,
     0,
-    LineSearch { Δ: 1.0 / 1024.0, ..Default::default() }
+    LineSearch::default()
   ).filter_map(|local_max| {
     // sample gradient of the distance field at local_max
     let gradient = LineSearch::default().grad(|p| main_de.sdf(p), local_max.point);

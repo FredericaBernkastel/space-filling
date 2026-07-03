@@ -141,7 +141,7 @@ fn rescale_texture(texture: &DynamicImage, size: Size2D<u32, PixelSpace>) -> Dyn
 fn sdf_overlay_aa(sdf: f64, Δp: f64, mut col1: Rgba<u8>, mut col2: Rgba<u8>) -> Rgba<u8> {
   let Δf = (0.5 * Δp - sdf) // antialias
     .clamp(0.0, Δp);
-  let alpha = Δf / Δp;
+  let alpha = if sdf == 0.0 { 1.0 } else { Δf / Δp };
   // overlay blending with premultiplied alpha
   col2.0[3] = ((col2.0[3] as f64) * alpha) as u8;
   col1.blend(&col2);

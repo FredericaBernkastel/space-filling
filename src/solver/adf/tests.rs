@@ -195,6 +195,69 @@ use crate::geometry::DistPoint;
   Ok(())
 }
 
+// Mirrors `02_random_distribution`'s insertion loop at small scale, then
+// counts pairwise circle intersections exactly, in O(n²). Every circle is
+// placed inside the free ball of a local maximum, so no two should intersect —
+// but with `batch` > 1, the later maxima of a round were measured against a
+// field snapshot that the round's earlier insertions have already invalidated,
+// and a stale insertion still "succeeds" (it does lower the field — while
+// overlapping the batch-mate that got there first). `batch = 1` cannot go
+// stale: any intersection there would indicate genuine field corruption.
+#[test] #[ignore] fn bench_circle_intersections() {
+  use rand::prelude::*;
+  use std::f64::consts::PI;
+
+  use {rayon::prelude::*, std::sync::RwLock};
+
+  for (batch, target) in [(32u64, 1000usize), (1, 1000), (32, 100_000)] {
+    let representation = RwLock::new(
+      ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)]));
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+    let t0 = std::time::Instant::now();
+
+    let circles: Vec<(P2<f64>, f64)> = util::local_maxima_iter(
+      Box::new(|p| representation.read().unwrap().sdf(p)),
+      batch, 0, LineSearch::default()
+    ).filter_map(|local_max| {
+      let angle = rng.gen_range(-PI..=PI);
+      let r = (rng.gen_range(0f64..1.0) * local_max.distance).min(1.0 / 6.0);
+      let delta = local_max.distance - r;
+      let offset = P2::from([angle.cos(), angle.sin()]) * delta;
+      let circle = Circle.translate(local_max.point - offset).scale(r);
+      representation.write().unwrap().insert_at_maximum(
+        local_max,
+        Primitive::from_shape(circle)
+      ).then(|| ((local_max.point - offset).to_point(), r))
+    }).take(target).collect();
+    let build = t0.elapsed();
+
+    let (intersecting, worst, worst_rel) = (0..circles.len()).into_par_iter()
+      .map(|i| {
+        let (mut n, mut w, mut wr) = (0u64, 0f64, 0f64);
+        let (c1, r1) = circles[i];
+        for &(c2, r2) in &circles[i + 1..] {
+          let penetration = (r1 + r2) - (c1 - c2).length();
+          if penetration > 1e-12 {
+            n += 1;
+            w = w.max(penetration);
+            wr = wr.max(penetration / r1.min(r2));
+          }
+        }
+        (n, w, wr)
+      })
+      .reduce(|| (0, 0.0, 0.0), |a, b| (a.0 + b.0, a.1.max(b.1), a.2.max(b.2)));
+    let sub_pixel = circles.iter().filter(|&&(_, r)| r < 1.0 / 4096.0).count();
+    println!(
+      "batch={batch} n={}: {} intersecting pairs, worst penetration {:.3e} ({:.1}% of smaller radius), {} sub-pixel radii, built in {build:?}",
+      circles.len(), intersecting, worst, worst_rel * 100.0, sub_pixel
+    );
+    // Regression guard: with disjoint-ball batch dedup (see
+    // `util::find_max_parallel`), batch staleness cannot produce overlaps.
+    // Before that fix, batch=32 produced a pair at 72.8% penetration.
+    assert_eq!(intersecting, 0, "intersecting circle pairs found");
+  }
+}
+
 // Constructive proof that no constant-sized insertion domain is sound for
 // local maxima. Three point-like obstacles at 90°, 210°, 330° around x0 form a
 // strict local maximum (contact gaps 120° < 180°). Along the escape bisector
