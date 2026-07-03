@@ -16,7 +16,7 @@
 
 use {
   space_filling::{
-    sdf::{self, SDF},
+    sdf::{self, SDF, Lipschitz},
     solver::{ADF, LineSearch, Primitive},
     drawing::Draw,
     geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation, P2},
@@ -144,6 +144,15 @@ impl BoundingBox<f64> for Baked {
   fn bounding_box(&self) -> Box2D<f64, WorldSpace> { self.0.bbox }
 }
 
+/// Certified: an exact EDT is 1-Lipschitz, bilinear interpolation of it √2,
+/// and the outside-the-window extension adds at most 1. Declared once here,
+/// the bound propagates through every combinator chain automatically.
+const L_BAKED: f64 = 2.415;
+
+impl Lipschitz<f64> for Baked {
+  fn lipschitz(&self) -> f64 { L_BAKED }
+}
+
 /// Exact squared Euclidean distance transform (Felzenszwalb & Huttenlocher):
 /// per-pixel squared distance to the nearest `mask == !invert` pixel, in pixels.
 fn edt_squared(mask: &[bool], res: usize, invert: bool) -> Vec<f64> {
@@ -200,11 +209,9 @@ fn main() -> Result<()> {
   let path = "out.png";
 
   // --- bake once ---
+  // (The field is exact for the *rasterized* set; detail below one grid cell
+  // is gone.)
   const RES: usize = 2048;
-  // Certified: exact EDT is 1-Lipschitz, bilinear interpolation √2, window
-  // extension +1. (The field is exact for the *rasterized* set; detail below
-  // one grid cell is gone.)
-  const L_BAKED: f64 = 2.415;
 
   let analytic = mandel_de_norm::<f64>();
   let bbox = analytic.bounding_box();
@@ -230,10 +237,8 @@ fn main() -> Result<()> {
   let mut image = RgbaImage::new(2048, 2048);
   let representation = ADF::new(7, vec![
     Primitive::new(sdf::boundary_rect),
-    {
-      let main_de = main_de.clone();
-      Primitive::new(move |p| main_de.sdf(p)).with_lipschitz(L_BAKED)
-    },
+    // the Lipschitz bound is picked up from the `Lipschitz` impl automatically
+    Primitive::from_shape(main_de.clone()),
   ]);
 
   util::local_maxima_iter(
@@ -256,7 +261,7 @@ fn main() -> Result<()> {
     unsafe { representation.as_mut() }.insert_within(
       local_max.point,
       local_max.distance * 0.33,
-      Primitive::new(move |p| primitive.sdf(p)).with_lipschitz(L_BAKED)
+      Primitive::from_shape(primitive)
     ).then_some(())
   }).enumerate()
     .take(20000)

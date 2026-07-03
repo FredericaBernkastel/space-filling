@@ -5,7 +5,7 @@
 use {
   crate::{
     geometry::{P2, WorldSpace, BoundingBox, DistPoint},
-    sdf::SDF,
+    sdf::{SDF, Lipschitz},
   },
   quadtree::{
     Quadtree, Node, Refine, child_rects
@@ -37,7 +37,8 @@ pub struct Primitive<Float> {
 }
 
 impl<_Float: Float> Primitive<_Float> {
-  /// A primitive assumed to be a true SDF (`lipschitz = 1`).
+  /// A primitive assumed to be a true SDF (`lipschitz = 1`). For a shape type,
+  /// prefer [`Self::from_shape`], which derives the bound automatically.
   pub fn new(f: impl Fn(P2<_Float>) -> _Float + Send + Sync + 'static) -> Self {
     Self { f: Arc::new(f), lipschitz: _Float::one() }
   }
@@ -45,6 +46,17 @@ impl<_Float: Float> Primitive<_Float> {
   pub fn with_lipschitz(mut self, lipschitz: _Float) -> Self {
     self.lipschitz = lipschitz;
     self
+  }
+  /// Wrap a shape, deriving both the field and its Lipschitz bound from the
+  /// [`SDF`] and [`Lipschitz`] impls — no manual constant. Combinator chains
+  /// (translate/rotate/scale/booleans) propagate the bound of their operands,
+  /// so a custom estimator declares its constant once, on the type.
+  pub fn from_shape<S>(shape: S) -> Self
+  where
+    S: SDF<_Float> + Lipschitz<_Float> + Send + Sync + 'static,
+  {
+    let lipschitz = shape.lipschitz();
+    Self { f: Arc::new(move |p| shape.sdf(p)), lipschitz }
   }
 }
 

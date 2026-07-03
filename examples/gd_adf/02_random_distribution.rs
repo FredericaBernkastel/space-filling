@@ -41,7 +41,7 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
     };
     representation.write().unwrap().insert_at_maximum(
       local_max,
-      Primitive::new(move |p| circle.sdf(p))
+      Primitive::from_shape(circle)
     ).then(|| circle)
   })
 }

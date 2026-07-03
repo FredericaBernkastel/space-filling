@@ -60,7 +60,9 @@ speed/precision trade-offs, in both single and double precision.
 
 Let a *primitive* be a pair `(f, L)` of a field `f` and a declared Lipschitz constant `L` (`L = 1` is exact for a
 true SDF; approximate estimators declare a larger bound). A bucket `B = {(fᵢ, Lᵢ)}` represents the field
-`g_B = min_i fᵢ`, which is `max_i Lᵢ`-Lipschitz.
+`g_B = min_i fᵢ`, which is `max_i Lᵢ`-Lipschitz. Shape types declare their bound through the `Lipschitz` trait —
+built-in shapes return `1`, estimators their own constant, and combinators propagate the maximum over their
+operands — so `Primitive::from_shape` derives `L` automatically.
 
 #### `sdf_geq_everywhere(f, g, Ω, L_f, L_g, k) → bool`
 

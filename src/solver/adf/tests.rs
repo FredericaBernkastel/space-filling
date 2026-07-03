@@ -71,7 +71,7 @@ use crate::geometry::DistPoint;
       // alternately use safe RwLock<ADF> for 1.5x slowdown
       unsafe { representation.as_mut() }.insert_at_maximum(
         local_max,
-        Primitive::new(move |p| circle.sdf(p))
+        Primitive::from_shape(circle)
       ).then(|| circle)
     })
     .enumerate()
@@ -183,7 +183,7 @@ use crate::geometry::DistPoint;
 
     representation.insert_at_maximum(
       local_max,
-      Primitive::new(move |p| circle.sdf(p))
+      Primitive::from_shape(circle)
     ).then(|| {
       circles.push(circle);
       i += 1;
@@ -281,7 +281,7 @@ use crate::geometry::DistPoint;
           Circle.translate(m.point - offset).scale(r)
         };
         attempts += 1;
-        if !adf.insert_at_maximum(m, Primitive::new(move |p| circle.sdf(p))) {
+        if !adf.insert_at_maximum(m, Primitive::from_shape(circle)) {
           failures += 1;
         }
       }

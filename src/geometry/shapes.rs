@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 use {
   super::{Shape, BoundingBox, WorldSpace, Translation},
-  crate::sdf::{SDF, Union},
+  crate::sdf::{SDF, Lipschitz, Union},
   euclid::{Box2D, Point2D, Vector2D as V2},
   num_traits::{Float, Signed, FloatConst},
   std::marker::PhantomData
@@ -13,7 +13,9 @@ fn clamp<T: Float>(mut x: T, min: T, max: T) -> T {
   x
 }
 
-/// Unit circle
+/// Unit circle.
+///
+/// `sdf(p) = |p| - 1` — the exact signed distance, hence 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
 pub struct Circle;
 
@@ -30,7 +32,10 @@ impl <T: Float> SDF<T> for Circle {
   }
 }
 
-/// Rectangle with center at `[0, 0]`
+/// Rectangle with center at `[0, 0]`.
+///
+/// With `q = |p| - size/2` (componentwise): `sdf(p) = |max(q, 0)| + min(max(q.x, q.y), 0)`
+/// — the exact signed distance to the box, hence 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
 pub struct Rect<T, S> {
   pub size: Point2D<T, S>
@@ -59,6 +64,11 @@ impl<T> SDF<T> for Rect<T, WorldSpace>
     outside_dist + inside_dist
   }}
 
+/// Line segment from `a` to `b` with round caps (a capsule).
+///
+/// `sdf(p) = dist(p, [a, b]) - thickness/2`, where `dist` projects `p` onto the
+/// segment with a clamped parameter — the exact signed distance, hence
+/// 1-Lipschitz. Degenerate for `a = b` (0/0).
 #[derive(Debug, Copy, Clone)]
 pub struct Line<T> {
   pub a: Point2D<T, WorldSpace>,
@@ -84,6 +94,12 @@ impl<T: Float> SDF<T> for Line<T> {
 }
 
 /// Regular polygon with N sides, inscribed in a unit circle. Partially evaluated at compile-time.
+///
+/// `sdf(p) = max_i (p · n_i) - cos(π/N)` over the `N` edge normals — the field of
+/// the intersection of half-planes: exact inside and beside the edges, an
+/// *underestimate* beyond the vertices (distance to the edge line, not to the
+/// vertex). A max of unit-gradient linear fields, hence 1-Lipschitz.
+/// Degenerate for `N < 3`.
 #[derive(Debug, Copy, Clone)]
 pub struct NGonC<const N: usize>;
 
@@ -106,6 +122,9 @@ impl<T: Float + FloatConst, const N: usize> SDF<T> for NGonC<N> {
 }
 
 /// Regular polygon with N sides, inscribed in a unit circle. Evaluated at runtime.
+///
+/// Same field as [`NGonC`]: `max_i (p · n_i) - cos(π/n)` — exact inside,
+/// underestimates beyond the vertices; 1-Lipschitz. Degenerate for `n < 3`.
 #[derive(Debug, Copy, Clone)]
 pub struct NGonR {
   pub n: u64
@@ -129,8 +148,12 @@ impl<T: Float + FloatConst> SDF<T> for NGonR {
   }
 }
 
-/// N-pointed regular star polygon, inscibed in a unit circle.
-/// `m` is density, must be between `2..=n`
+/// N-pointed regular star polygon, inscribed in a unit circle.
+/// `m` is density, must be between `2..=n`.
+///
+/// `p` is folded into one angular sector (a piecewise isometry, continuous by
+/// the shape's symmetry), then measured against that sector's edge segment:
+/// `sdf(p) = ±|p' - proj(p')|` — the exact signed distance, hence 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
 pub struct Star<T> {
   pub n: u64,
@@ -162,7 +185,13 @@ impl<T: Float + FloatConst> SDF<T> for Star<T> {
   }
 }
 
-/// `phase` in `-1..=1`.
+/// Crescent moon; `phase` in `-1..=1`.
+///
+/// A unit circle minus a unit circle offset by `d = 2·phase`. Near the cusps
+/// the field is the distance to the corner point; elsewhere
+/// `sdf(p) = max(|p| - 1, 1 - |p - (d, 0)|)` — together the exact signed
+/// distance, hence 1-Lipschitz. At `phase = 0` the crescent degenerates to its
+/// boundary circle (`sdf = ||p| - 1|`, an empty-interior shape).
 #[derive(Debug, Copy, Clone)]
 pub struct Moon<T> {
   pub phase: T
@@ -180,7 +209,8 @@ impl<T: Float> SDF<T> for Moon<T> {
     let two = T::one() + T::one();
     let pixel = V2::<_, WorldSpace>::new(pixel.x, pixel.y.abs());
     let d = self.phase * two;
-    let a = (d * d) / (two * d);
+    // algebraically d²/2d; written directly to avoid 0/0 at phase = 0
+    let a = d / two;
     let b = (T::one() - a * a).max(T::zero()).sqrt();
 
     if d * (pixel.x * b - pixel.y * a) > d * d * (b - pixel.y).max(T::zero()) {
@@ -193,6 +223,11 @@ impl<T: Float> SDF<T> for Moon<T> {
   }
 }
 
+/// A shard: rhombus with half-diagonals `(width, 1)`.
+///
+/// `p` is folded into the first quadrant, then measured against the single
+/// edge segment, signed by the side of the edge line:
+/// `sdf(p) = ±|q - proj(q)|` — the exact signed distance, hence 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
 pub struct Kakera<T> {
   pub width: T
@@ -218,6 +253,12 @@ impl<T: Float + Signed> SDF<T> for Kakera<T> {
   }
 }
 
+/// Axis-aligned cross: arm half-length 1, arm half-width `thickness`.
+///
+/// `p` is folded into the octant `y ≤ x` of the first quadrant, reducing the
+/// shape to one L-corner measured exactly (outside: distance to the corner
+/// box edge; inside: negative distance to the nearest arm side):
+/// exact signed distance, hence 1-Lipschitz. Assumes `thickness ≤ 1`.
 #[derive(Debug, Copy, Clone)]
 pub struct Cross<T> {
   pub thickness: T
@@ -241,6 +282,11 @@ impl<T: Float + Signed> SDF<T> for Cross<T>  {
   }
 }
 
+/// Annulus: unit circle with a concentric hole of radius `inner_r`.
+///
+/// `sdf(p) = max(|p| - 1, inner_r - |p|)` — the boolean subtraction of two
+/// concentric circles, which for an annulus happens to be the exact signed
+/// distance everywhere; 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
 pub struct Ring<T> {
   pub inner_r: T
@@ -260,6 +306,12 @@ impl<T: Float> SDF<T> for Ring<T>  {
   }
 }
 
+/// Arbitrary simple polygon given by its vertices.
+///
+/// `sdf(p) = s · min_i dist(p, e_i)` — the minimum of exact distances to the
+/// edge segments, signed by winding-crossing parity: the exact signed distance
+/// for simple polygons, hence 1-Lipschitz. An empty vertex list yields the
+/// constant "no shape" field (`L = 0`).
 #[derive(Debug, Copy, Clone)]
 pub struct Polygon<T> {
   pub vertices: T
@@ -302,7 +354,7 @@ impl<T, U> SDF<T> for Polygon<U>
   }
 }
 
-/// `= Rect { size: [2.0, 2.0] }`
+/// `= Rect { size: [2.0, 2.0] }` — exact SDF, 1-Lipschitz (see [`Rect`]).
 #[derive(Debug, Copy, Clone)]
 pub struct Square;
 
@@ -318,7 +370,7 @@ impl<T> SDF<T> for Square
     Rect { size: Point2D::splat(two) }.sdf(pixel)
   }}
 
-/// `= Star { n: 5, m: 10.0 / 3.0 }`
+/// `= Star { n: 5, m: 10.0 / 3.0 }` — exact SDF, 1-Lipschitz (see [`Star`]).
 #[derive(Debug, Copy, Clone)]
 pub struct Pentagram;
 
@@ -338,7 +390,7 @@ impl<T> SDF<T> for Pentagram
     Star { n: 5, m: ten / three }.sdf(pixel)
   }}
 
-/// `= Star { n: 6, m: 3.0 }`
+/// `= Star { n: 6, m: 3.0 }` — exact SDF, 1-Lipschitz (see [`Star`]).
 #[derive(Debug, Copy, Clone)]
 pub struct Hexagram;
 
@@ -369,6 +421,11 @@ pub type Heptagon = NGonC<7>;
 /// `= NGonC::<8>`
 pub type Octagon = NGonC<8>;
 
+/// Latin cross: the union of two rectangles.
+///
+/// `min` of two exact box fields — exact in free space, underestimates the
+/// interior depth where the rectangles overlap; 1-Lipschitz (see
+/// [`Shape::union`]).
 pub static HolyCross: Union <
   Rect<f64, WorldSpace> ,
   Translation < Rect<f64, WorldSpace>, f64 >
@@ -379,3 +436,124 @@ pub static HolyCross: Union <
     offset: V2 { x: 0.0, y: -0.3, _unit: PhantomData::<WorldSpace> }
   }
 };
+
+// Every shape above is either an exact SDF or a 1-Lipschitz underestimate
+// assembled from unit-gradient pieces (see each shape's doc), so the honest
+// bound is `1`. Combinators propagate these automatically; see
+// [`crate::sdf::Lipschitz`].
+impl<T: Float> Lipschitz<T> for Circle { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Rect<T, WorldSpace> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Line<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, const N: usize> Lipschitz<T> for NGonC<N> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for NGonR { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Star<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Moon<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Kakera<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Cross<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Ring<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, U> Lipschitz<T> for Polygon<U> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Square { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Pentagram { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Hexagram { fn lipschitz(&self) -> T { T::one() } }
+
+#[cfg(test)]
+mod tests {
+  use {
+    super::*,
+    crate::sdf,
+    euclid::Angle,
+    rand::prelude::*,
+  };
+
+  /// Numerically verify `|f(p) − f(q)| ≤ L·|p − q|` over random global and
+  /// tightly-spaced point pairs (the latter stress the local gradient), plus
+  /// finiteness everywhere. Every stored primitive relies on an honest
+  /// Lipschitz bound: the redundancy test certifies with it (`sdf_geq_everywhere`),
+  /// and the D*-pruned insertion walk skips subtrees with it.
+  fn check_lipschitz(name: &str, l: f64, f: impl Fn(Point2D<f64, WorldSpace>) -> f64) {
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+    let span = 2.5;
+    for i in 0..20000 {
+      let p = Point2D::<f64, WorldSpace>::new(
+        rng.gen_range(-span..span), rng.gen_range(-span..span));
+      let q = if i % 2 == 0 {
+        Point2D::new(rng.gen_range(-span..span), rng.gen_range(-span..span))
+      } else {
+        // short-range pair: within 1e-4..1e-2 of p
+        let angle = rng.gen_range(0.0..std::f64::consts::TAU);
+        let r = 10f64.powf(rng.gen_range(-4.0..-2.0));
+        p + V2::new(angle.cos(), angle.sin()) * r
+      };
+      let (fp, fq) = (f(p), f(q));
+      assert!(fp.is_finite() && fq.is_finite(), "{name}: non-finite field at {p:?} / {q:?}");
+      let dist = (p - q).length();
+      assert!(
+        (fp - fq).abs() <= l * dist * (1.0 + 1e-9) + 1e-12,
+        "{name}: Lipschitz bound {l} violated: |f({p:?}) − f({q:?})| = {} > {l}·{dist}",
+        (fp - fq).abs()
+      );
+    }
+  }
+
+  #[test] fn lipschitz_shapes() {
+    check_lipschitz("Circle", 1.0, |p| Circle.sdf(p));
+    check_lipschitz("Rect", 1.0, |p| Rect { size: Point2D::new(1.5, 0.8) }.sdf(p));
+    check_lipschitz("Square", 1.0, |p| Square.sdf(p));
+    check_lipschitz("Line", 1.0, |p| Line
+      { a: Point2D::new(-0.8, -0.3), b: Point2D::new(0.6, 0.9), thickness: 0.2 }.sdf(p));
+    check_lipschitz("Triangle", 1.0, |p| NGonC::<3>.sdf(p));
+    check_lipschitz("Pentagon", 1.0, |p| NGonC::<5>.sdf(p));
+    check_lipschitz("Heptagon", 1.0, |p| NGonC::<7>.sdf(p));
+    check_lipschitz("NGonR(5)", 1.0, |p| NGonR { n: 5 }.sdf(p));
+    check_lipschitz("Star(5, 10/3)", 1.0, |p| Star { n: 5, m: 10.0 / 3.0 }.sdf(p));
+    check_lipschitz("Star(7, 3)", 1.0, |p| Star { n: 7, m: 3.0 }.sdf(p));
+    check_lipschitz("Pentagram", 1.0, |p| Pentagram.sdf(p));
+    check_lipschitz("Hexagram", 1.0, |p| Hexagram.sdf(p));
+    for phase in [-1.0, -0.7, 0.0, 0.3, 1.0] {
+      check_lipschitz(&format!("Moon({phase})"), 1.0, |p| Moon { phase }.sdf(p));
+    }
+    check_lipschitz("Kakera", 1.0, |p| Kakera { width: 0.5 }.sdf(p));
+    check_lipschitz("Cross", 1.0, |p| Cross { thickness: 0.3 }.sdf(p));
+    check_lipschitz("Ring", 1.0, |p| Ring { inner_r: 0.5 }.sdf(p));
+    check_lipschitz("Polygon", 1.0, |p| Polygon { vertices: [
+      Point2D::new(-0.9, -0.5), Point2D::new(0.8, -0.7),
+      Point2D::new(0.5, 0.9), Point2D::new(-0.3, 0.4),
+    ]}.sdf(p));
+    check_lipschitz("HolyCross", 1.0, |p| HolyCross.sdf(p));
+    check_lipschitz("boundary_rect", 1.0, sdf::boundary_rect);
+  }
+
+  #[test] fn lipschitz_combinators() {
+    let star = || Star { n: 5, m: 10.0 / 3.0 };
+    // translate / rotate / scale: precomposition with an isometry (or a
+    // similarity whose value re-scale cancels the coordinate re-scale)
+    // preserves the constant exactly
+    check_lipschitz("translate", 1.0, |p| star().translate(V2::new(0.3, -0.2)).sdf(p));
+    check_lipschitz("rotate", 1.0, |p| star().rotate(Angle::degrees(37.0)).sdf(p));
+    check_lipschitz("scale(0.35)", 1.0, |p| star().scale(0.35).sdf(p));
+    check_lipschitz("scale(2.5)", 1.0, |p| star().scale(2.5).sdf(p));
+    // boolean ops: min/max of L-Lipschitz fields is max(L₁, L₂)-Lipschitz
+    check_lipschitz("union", 1.0, |p| Circle.translate(V2::new(0.4, 0.0))
+      .union(Square.scale(0.6)).sdf(p));
+    check_lipschitz("subtraction", 1.0, |p| Shape::<f64>::subtraction(
+      Square, Circle.scale(0.7).translate(V2::new(0.5, 0.5))).sdf(p));
+    check_lipschitz("intersection", 1.0, |p| Shape::<f64>::intersection(
+      Circle, Square.rotate(Angle::degrees(20.0))).sdf(p));
+    // smooth_min: ∇ = w·∇f + (1−w)·∇g with w ∈ (0, 1) — a convex combination
+    check_lipschitz("smooth_min", 1.0, |p| Circle.translate(V2::new(-0.4, 0.1))
+      .smooth_min(Square.scale(0.5).translate(V2::new(0.5, 0.0)), 32.0).sdf(p));
+  }
+
+  // the trait-derived constants agree with the numerically-verified bounds
+  #[test] fn lipschitz_trait() {
+    assert_eq!(Lipschitz::<f64>::lipschitz(&Circle), 1.0);
+    assert_eq!(Lipschitz::<f64>::lipschitz(&HolyCross), 1.0);
+    let chain = Star { n: 5, m: 10.0 / 3.0 }
+      .scale(0.35)
+      .rotate(Angle::degrees(37.0))
+      .translate(V2::new(0.3, -0.2));
+    assert_eq!(chain.lipschitz(), 1.0);
+    let boolean = Shape::<f64>::union(Circle, Shape::<f64>::subtraction(Square, Ring { inner_r: 0.5 }));
+    assert_eq!(boolean.lipschitz(), 1.0);
+  }
+}

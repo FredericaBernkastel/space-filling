@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    sdf::{self, SDF},
+    sdf::{self, SDF, Lipschitz},
     solver::{ADF, LineSearch, Primitive},
     drawing::Draw,
     geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation},
@@ -54,20 +54,24 @@ impl<T: Float> BoundingBox<T> for MandlelDE {
       Point2D::new(T::from(0.5).unwrap(), T::from(1.25).unwrap())
     )}}
 
+// MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
+// bounded by 1. Declaring a larger Lipschitz constant keeps the redundancy test
+// conservative for it (nothing contributing is ever dropped or skipped), while
+// still letting it be pruned from buckets far away from the set. Declared once
+// here, the bound propagates through every combinator chain below —
+// rotation, translation and scaling all preserve the Lipschitz constant.
+const L_MANDEL: f64 = 4.0;
+
+impl Lipschitz<f64> for MandlelDE {
+  fn lipschitz(&self) -> f64 { L_MANDEL }
+}
+
 /// scaled to a box [-1, 1]
 fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
   MandlelDE
     .translate(V2::new(T::from(1.0).unwrap(), T::zero()))
     .scale(T::one() / T::from(1.5).unwrap())
 }
-
-// MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
-// bounded by 1. Declaring a larger Lipschitz constant keeps the redundancy test
-// conservative for it (nothing contributing is ever dropped or skipped), while
-// still letting it be pruned from buckets far away from the set. The same bound
-// applies to every packed copy below — rotation, translation and scaling all
-// preserve the Lipschitz constant.
-const L_MANDEL: f64 = 4.0;
 
 // profile (GD pruning), safe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 51.8s,
 // profile (GD pruning), unsafe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 34.3s
@@ -84,7 +88,8 @@ fn main() -> Result<()> {
   let mut image = RgbaImage::new(2048, 2048);
   let representation = ADF::new(7, vec![
     Primitive::new(sdf::boundary_rect),
-    Primitive::new(move |p| main_de.sdf(p)).with_lipschitz(L_MANDEL),
+    // the Lipschitz bound is picked up from the `Lipschitz` impl automatically
+    Primitive::from_shape(main_de),
   ]);
 
   util::local_maxima_iter(
@@ -109,7 +114,7 @@ fn main() -> Result<()> {
     unsafe { representation.as_mut() }.insert_within(
       local_max.point,
       local_max.distance * 0.33,
-      Primitive::new(move |p| primitive.sdf(p)).with_lipschitz(L_MANDEL)
+      Primitive::from_shape(primitive)
     ).then(|| primitive)
   }).enumerate()
     .take(20000)

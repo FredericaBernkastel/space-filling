@@ -98,7 +98,8 @@
     //!   // anywhere reports `false` - thus Option is returned
     //!   representation.write().unwrap().insert_at_maximum(
     //!     local_max,
-    //!     Primitive::new(move |p| circle.sdf(p))
+    //!     // field and Lipschitz bound both derived from the shape
+    //!     Primitive::from_shape(circle)
     //!   ).then(|| circle)
     //! }).take(1000) // stop, once 1000 circles were successfully added
     //!   .for_each(|shape| shape

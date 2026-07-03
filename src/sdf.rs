@@ -12,6 +12,22 @@ pub trait SDF<T> {
   fn sdf(&self, p: Point2D<T, WorldSpace>) -> T;
 }
 
+/// An upper bound of the field's Lipschitz constant:
+/// `|sdf(p) - sdf(q)| ≤ lipschitz() · |p - q|` for all `p`, `q`.
+///
+/// The ADF redundancy test certifies with this bound
+/// ([`sdf_geq_everywhere`](crate::solver::adf)), and the `D*`-pruned insertion
+/// walk skips subtrees with it — so it must be *honest*: an understated
+/// constant can corrupt the field, an overstated one merely costs pruning
+/// power. Exact SDFs return `1`; distance *estimators* declare their own
+/// bound; combinators propagate `max` over their operands.
+///
+/// [`Primitive::from_shape`](crate::solver::Primitive::from_shape) derives the
+/// stored bound from this trait automatically.
+pub trait Lipschitz<T> {
+  fn lipschitz(&self) -> T;
+}
+
 impl <S, P: Float> SDF<P> for Translation<S, P>
   where S: Shape<P>,
         P: Clone + Sub<Output = P>  {
@@ -44,7 +60,10 @@ impl <S, P> SDF<P> for Scale<S, P>
   }
 }
 
-/// Distance to the edges of image.
+/// Distance to the edges of the image (the unit square), positive inside.
+///
+/// The negation of the exact unit-square SDF: `sdf(p) = -sdf_rect(p - 0.5)`.
+/// Negation preserves the constant — 1-Lipschitz.
 pub fn boundary_rect<T: Float + Signed>(pixel: Point2D<T, WorldSpace>) -> T {
   let p5 = T::one() / (T::one() + T::one());
   -geometry::Rect { size: Point2D::splat(T::one()) }
@@ -52,7 +71,8 @@ pub fn boundary_rect<T: Float + Signed>(pixel: Point2D<T, WorldSpace>) -> T {
     .sdf(pixel)
 }
 
-/// Union of two SDFs.
+/// Union of two SDFs: `min(s1, s2)`.
+/// See [`Shape::union`]; `max(L₁, L₂)`-Lipschitz.
 #[derive(Clone, Copy, Debug)]
 pub struct Union<S1, S2> {
   pub s1: S1,
@@ -75,8 +95,17 @@ impl<T, S1, S2> BoundingBox<T> for Union<S1, S2>
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
 
-/// Subtracion of two SDFs. Note that this operation is *not* commutative,
-/// i.e. `Subtraction {a, b} =/= Subtraction {b, a}`.
+impl<T, S1, S2> Lipschitz<T> for Union<S1, S2>
+  where T: Float,
+        S1: Lipschitz<T>,
+        S2: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.s1.lipschitz().max(self.s2.lipschitz())
+  }}
+
+/// Subtraction of two SDFs: `max(s1, -s2)`. Note that this operation is *not*
+/// commutative, i.e. `Subtraction {a, b} =/= Subtraction {b, a}`.
+/// See [`Shape::subtraction`]; `max(L₁, L₂)`-Lipschitz.
 #[derive(Clone, Copy, Debug)]
 pub struct Subtraction<S1, S2> {
   pub s1: S1,
@@ -99,7 +128,16 @@ impl<T, S1, S2> BoundingBox<T> for Subtraction<S1, S2>
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
 
-/// Intersection of two SDFs.
+impl<T, S1, S2> Lipschitz<T> for Subtraction<S1, S2>
+  where T: Float,
+        S1: Lipschitz<T>,
+        S2: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.s1.lipschitz().max(self.s2.lipschitz())
+  }}
+
+/// Intersection of two SDFs: `max(s1, s2)`.
+/// See [`Shape::intersection`]; `max(L₁, L₂)`-Lipschitz.
 #[derive(Clone, Copy, Debug)]
 pub struct Intersection<S1, S2> {
   pub s1: S1,
@@ -127,9 +165,19 @@ impl<T, S1, S2> BoundingBox<T> for Intersection<S1, S2>
       })
   }}
 
+impl<T, S1, S2> Lipschitz<T> for Intersection<S1, S2>
+  where T: Float,
+        S1: Lipschitz<T>,
+        S2: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.s1.lipschitz().max(self.s2.lipschitz())
+  }}
+
 /// Takes the minimum of two SDFs, smoothing between them when they are close.
 ///
 /// `k` controls the radius/distance of the smoothing. 32 is a good default value.
+/// See [`Shape::smooth_min`]; `max(L₁, L₂)`-Lipschitz (its gradient is a
+/// convex combination of the operands' gradients).
 #[derive(Clone, Copy, Debug)]
 pub struct SmoothMin<T, S1, S2> {
   pub s1: S1,
@@ -153,4 +201,12 @@ impl<T, S1, S2> BoundingBox<T> for SmoothMin<T, S1, S2>
         S2: BoundingBox<T> {
   fn bounding_box(&self) -> Box2D<T, WorldSpace> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
+  }}
+
+impl<T, S1, S2> Lipschitz<T> for SmoothMin<T, S1, S2>
+  where T: Float,
+        S1: Lipschitz<T>,
+        S2: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.s1.lipschitz().max(self.s2.lipschitz())
   }}
