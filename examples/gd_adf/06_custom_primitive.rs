@@ -61,10 +61,19 @@ fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
     .scale(T::one() / T::from(1.5).unwrap())
 }
 
-// profile (GD pruning), safe: 51.8s, 20k primitives, adf_subdiv = 7, gd_lattice = 1
-// unsafe: 34.3s
-// unsafe, gd_lattice = 3: 165.1s
+// MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
+// bounded by 1. Declaring a larger Lipschitz constant keeps the redundancy test
+// conservative for it (nothing contributing is ever dropped or skipped), while
+// still letting it be pruned from buckets far away from the set. The same bound
+// applies to every packed copy below — rotation, translation and scaling all
+// preserve the Lipschitz constant.
+const L_MANDEL: f64 = 4.0;
+
+// profile (GD pruning), safe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 51.8s,
+// profile (GD pruning), unsafe, 20k primitives, adf_subdiv = 7, gd_lattice = 1: 34.3s
+// profile (GD pruning), unsafe, 20k primitives, adf_subdiv = 7, gd_lattice = 3: 165.1s
 // profile (Lipschitz B&B pruning, per-primitive bounds), unsafe: 19.2s
+// profile (Lipschitz B&B pruning, per-primitive bounds, sound insertion domains via D*-pruned walk), unsafe: 22.6s
 fn main() -> Result<()> {
   let start_time = Instant::now();
 
@@ -75,12 +84,7 @@ fn main() -> Result<()> {
   let mut image = RgbaImage::new(2048, 2048);
   let representation = ADF::new(7, vec![
     Primitive::new(sdf::boundary_rect),
-    // MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
-    // bounded by 1. Declaring a larger Lipschitz constant keeps the redundancy
-    // test conservative for this primitive (nothing contributing is ever
-    // dropped), while still letting it be pruned from buckets far away from the
-    // set — and circle-vs-circle pruning retains its exact `L = 1` bound.
-    Primitive::new(move |p| main_de.sdf(p)).with_lipschitz(4.0),
+    Primitive::new(move |p| main_de.sdf(p)).with_lipschitz(L_MANDEL),
   ]);
 
   util::local_maxima_iter(
@@ -105,7 +109,7 @@ fn main() -> Result<()> {
     unsafe { representation.as_mut() }.insert_within(
       local_max.point,
       local_max.distance * 0.33,
-      Primitive::new(move |p| primitive.sdf(p))
+      Primitive::new(move |p| primitive.sdf(p)).with_lipschitz(L_MANDEL)
     ).then(|| primitive)
   }).enumerate()
     .take(20000)
