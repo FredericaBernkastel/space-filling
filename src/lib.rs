@@ -69,7 +69,7 @@
 //! #   space_filling::{
 //! #     geometry::{Shape, Circle, Translation, Scale, P2},
 //! #     sdf::{self, SDF},
-//! #     solver::{line_search::LineSearch, adf::ADF},
+//! #     solver::{line_search::LineSearch, adf::{ADF, Primitive}},
 //! #     drawing::Draw,
 //! #     util
 //! #   },
@@ -81,7 +81,7 @@
 //! #
 //! # fn main() -> Result<()> {
     //! let path = "out.png";
-    //! let mut representation = RwLock::new(ADF::<f64>::new(5, vec![Arc::new(sdf::boundary_rect)]));
+    //! let mut representation = RwLock::new(ADF::<f64>::new(5, vec![Primitive::new(sdf::boundary_rect)]));
     //! let mut image = image::RgbaImage::new(2048, 2048);
     //! // In case of GD-ADF, it is adviced to use `util::local_maxima_iter`,
     //! // as it is capable of finding multiple local maxima in parallel.

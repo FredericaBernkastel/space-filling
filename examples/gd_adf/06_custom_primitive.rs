@@ -1,10 +1,11 @@
+use std::time::Instant;
 /// An example of user-defined shape.
 /// Unsafe lock-free ADF access is used for additional 50% speedup.
 
 use {
   space_filling::{
     sdf::{self, SDF},
-    solver::{ADF, LineSearch},
+    solver::{ADF, LineSearch, Primitive},
     drawing::Draw,
     geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation},
     util
@@ -37,11 +38,13 @@ impl <T: Float> SDF<T> for MandlelDE {
         break;
       }
     }
-    let mut result = z.norm() * z.norm().ln() / dz.norm();
     if is_inside {
-      result = -result - T::from(128.0).unwrap();
+      // The exterior estimate tends to 0 approaching the boundary, so 0 in the
+      // interior keeps the field continuous (discontinuities would
+      // make the Lipschitz-based redundancy test unusable).
+      return T::zero();
     }
-    result
+    z.norm() * z.norm().ln() / dz.norm()
   }
 }
 
@@ -59,19 +62,27 @@ fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
     .scale(T::one() / T::from(1.5).unwrap())
 }
 
-// profile, safe: 51.8s, 20k primitives, adf_subdiv = 7, gd_lattice = 1
+// profile (GD pruning), safe: 51.8s, 20k primitives, adf_subdiv = 7, gd_lattice = 1
 // unsafe: 34.3s
 // unsafe, gd_lattice = 3: 165.1s
+// profile (Lipschitz B&B pruning, per-primitive bounds), unsafe: 19.2s
 fn main() -> Result<()> {
+  let start_time = Instant::now();
+
   let path = "out.png";
   let main_de = mandel_de_norm()
     .translate(V2::new(0.4, 0.5))
     .scale(0.5);
   let mut image = RgbaImage::new(2048, 2048);
   let representation = ADF::new(7, vec![
-    Arc::new(sdf::boundary_rect),
-    Arc::new(move |p| main_de.sdf(p))
-  ]).with_gd_lattice_density(1);
+    Primitive::new(sdf::boundary_rect),
+    // MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
+    // bounded by 1. Declaring a larger Lipschitz constant keeps the redundancy
+    // test conservative for this primitive (nothing contributing is ever
+    // dropped), while still letting it be pruned from buckets far away from the
+    // set — and circle-vs-circle pruning retains its exact `L = 1` bound.
+    Primitive::new(move |p| main_de.sdf(p)).with_lipschitz(4.0),
+  ]);
 
   util::local_maxima_iter(
     Box::new(|p| representation.sdf(p)),
@@ -105,6 +116,9 @@ fn main() -> Result<()> {
   representation
     .texture(Luma([255]).to_rgba())
     .draw(&mut image);
+
+  let elapsed = start_time.elapsed();
+  println!("Task completed in: {:?}", elapsed);
 
   image.save(path)?;
   open::that(path)?;

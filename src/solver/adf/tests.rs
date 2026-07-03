@@ -16,7 +16,7 @@ use crate::geometry::DistPoint;
 
 #[test] fn draw_layout() -> Result<()> {
   let mut image = RgbaImage::new(512, 512);
-  let mut adf = ADF::new(8, vec![Arc::new(|_| f64::MAX / 2.0)]);
+  let mut adf = ADF::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
   let domain = Rect::from_size(Size2D::splat(1.0));
 
   let t0 = std::time::Instant::now();
@@ -43,7 +43,7 @@ use crate::geometry::DistPoint;
   use rand::prelude::*;
 
   let mut image = RgbaImage::new(1024, 1024);
-  let representation = ADF::<f64>::new(7, vec![Arc::new(sdf::boundary_rect)]);
+  let representation = ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
   let mut primitives = vec![];
   let trials = Cell::new(0u64);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -108,7 +108,7 @@ use crate::geometry::DistPoint;
 
   std::fs::create_dir("test\\anim").ok();
 
-  let mut representation = ADF::new(11, vec![Arc::new(sdf::boundary_rect)]);
+  let mut representation = ADF::new(11, vec![Primitive::new(sdf::boundary_rect)]);
   let mut circles = vec![];
   let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 
@@ -193,4 +193,187 @@ use crate::geometry::DistPoint;
   println!("{representation:#?}");
 
   Ok(())
+}
+
+// Counts how often `insert_sdf_domain` returns `false` (the quadtree was not
+// changed) under realistic circle-packing insertion. A `false` means the
+// redundancy test judged the new primitive to be `>= g` everywhere in its
+// domain, so it was discarded. With the sound `sdf_geq_everywhere` this can only
+// happen when the primitive genuinely does not lower the field.
+//
+// `batch`  — maxima found per search round; >1 means later circles in a round
+//            are placed against a stale field (an earlier insert may already
+//            cover them), a genuine source of "failure".
+// `subdiv` — redundancy-test subdivision budget; higher = finer proofs.
+#[test] #[ignore] fn bench_insert_failures() {
+  use rand::prelude::*;
+  use std::f64::consts::PI;
+
+  fn run(batch: u64, subdiv: u32, target: u64, seed: u64) -> (u64, u64) {
+    let mut adf = ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)])
+      .with_prune_subdiv(subdiv);
+    let ls = LineSearch::default();
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(seed);
+    let (mut attempts, mut failures) = (0u64, 0u64);
+
+    while attempts < target {
+      let maxima = util::find_max_parallel(|p| adf.sdf(p), batch, &mut rng, ls);
+      if maxima.is_empty() { continue; }
+      for m in maxima {
+        if attempts >= target { break; }
+        let circle = {
+          let angle = rng.gen_range(-PI..=PI);
+          let r = (rng.gen_range(1e-6..1.0).powf(5.0) * m.distance).min(1.0 / 6.0);
+          let delta = m.distance - r;
+          let offset = P2::from([angle.cos(), angle.sin()]) * delta;
+          Circle.translate(m.point - offset).scale(r)
+        };
+        let domain = util::domain_empirical(m);
+        attempts += 1;
+        if !adf.insert_sdf_domain(domain, Arc::new(move |p| circle.sdf(p))) {
+          failures += 1;
+        }
+      }
+    }
+    (attempts, failures)
+  }
+
+  println!("{:>5} {:>6} | {:>8} {:>8} {:>8}", "batch", "subdiv", "attempts", "failures", "rate");
+  for &(batch, subdiv, target) in &[
+    (32u64, 8u32, 20000u64), // realistic (batch staleness present)
+    (1,     8,    20000),    // fresh local max each insert
+    (1,     4,    20000),    // coarser proofs
+    (1,     12,   20000),    // finer proofs
+  ] {
+    let t = std::time::Instant::now();
+    let (a, f) = run(batch, subdiv, target, 0);
+    println!("{:>5} {:>6} | {:>8} {:>8} {:>7.3}%  ({}ms)",
+             batch, subdiv, a, f, f as f64 / a as f64 * 100.0, t.elapsed().as_millis());
+  }
+}
+
+// Measures pruning quality under the hard case: shallow tree (large nodes)
+// packed with many small primitives.
+//
+// Ground truth `B` = the exact field of *every* successfully-inserted primitive
+// (no pruning). The pruned tree `A` stores a subset of them per leaf, so
+// `g_A(v) >= g_B(v)` always; any point where `g_A(v) > g_B(v)` proves pruning
+// discarded a primitive that actually defined the field there — a false
+// positive that corrupts the output. Also reports node crowding and the count
+// of provably-redundant primitives left unpruned.
+#[test] #[ignore] fn bench_pruning_audit() {
+  use rand::prelude::*;
+  use rayon::prelude::*;
+  use std::f64::consts::PI;
+
+  let subdiv = 8u32;
+  let mut adf = ADF::<f64>::new(6, vec![Primitive::new(sdf::boundary_rect)])
+    .with_prune_subdiv(subdiv);
+  let ls = LineSearch::default();
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+
+  // Every primitive whose insert succeeded, plus the initial boundary = ground
+  // truth field with no pruning.
+  let mut all_prims: Vec<Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync>> =
+    vec![Arc::new(sdf::boundary_rect)];
+
+  let (mut attempts, mut failures) = (0u64, 0u64);
+  while attempts < 50000 {
+    let maxima = util::find_max_parallel(|p| adf.sdf(p), 32, &mut rng, ls);
+    if maxima.is_empty() { continue; }
+    for m in maxima {
+      if attempts >= 50000 { break; }
+      let circle = {
+        let angle = rng.gen_range(-PI..=PI);
+        let r = (rng.gen_range(0f64..1.0).powf(1.0) * m.distance).min(1.0 / 6.0);
+        let delta = m.distance - r;
+        let offset = P2::from([angle.cos(), angle.sin()]) * delta;
+        Circle.translate(m.point - offset).scale(r)
+      };
+      let domain = util::domain_empirical(m);
+      let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
+      attempts += 1;
+      if adf.insert_sdf_domain(domain, f.clone()) {
+        all_prims.push(f);
+      } else {
+        failures += 1;
+      }
+    }
+  }
+
+  // --- collect leaves (rect + bucket) ---
+  let mut leaves_v: Vec<(Rect<f64, WorldSpace>, Vec<Primitive<f64>>)> = vec![];
+  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect, n.data.clone())); } Ok(()) }).ok();
+
+  let sizes: Vec<usize> = leaves_v.iter().map(|(_, b)| b.len()).collect();
+  let leaves = sizes.len();
+  let sum: usize = sizes.iter().sum();
+  let max_bucket = *sizes.iter().max().unwrap_or(&0);
+  let mut hist = std::collections::BTreeMap::<usize, u64>::new();
+  for &s in &sizes { *hist.entry(s / 10 * 10).or_default() += 1; } // 10-wide bins
+
+  println!("=== build: max_depth=6, {} attempts, uniform radius, subdiv={} ===", attempts, subdiv);
+  println!("inserted={}  failed={} ({:.3}%)  leaves={}  mean_bucket={:.2}  max_bucket={}",
+    all_prims.len() - 1, failures, failures as f64 / attempts as f64 * 100.0,
+    leaves, sum as f64 / leaves as f64, max_bucket);
+  println!("bucket size bin -> #leaves:");
+  for (s, c) in &hist {
+    println!("  {:>3}..{:<3}: {:>6}", s, s + 9, c);
+  }
+
+  // --- redundant-but-kept (FN): primitives the pruning failed to remove ---
+  // Sound (conservative) via 1-Lipschitz SDFs: within a grid cell each `f` moves
+  // by <= s, so `f_k - min(others)` (2-Lipschitz) moves by <= s*sqrt2. If it stays
+  // >= that margin at every grid node, `f_k >= others` everywhere => f_k never
+  // defines the field => provably redundant, so pruning should have dropped it.
+  const GL: usize = 96;
+  let redundant: u64 = leaves_v.par_iter().map(|(rect, bucket)| {
+    let n = bucket.len();
+    if n < 2 { return 0u64; }
+    let s = rect.size.width / (GL as f64 - 1.0);
+    let margin = s * std::f64::consts::SQRT_2;
+    let mut min_diff = vec![f64::MAX; n];
+    let mut vals = vec![0.0f64; n];
+    for iy in 0..GL {
+      for ix in 0..GL {
+        let v = P2::new(rect.origin.x + ix as f64 * s, rect.origin.y + iy as f64 * s);
+        for (i, p) in bucket.iter().enumerate() { vals[i] = (p.f)(v); }
+        let (mut min1, mut min2, mut arg1) = (f64::MAX, f64::MAX, 0usize);
+        for (i, &val) in vals.iter().enumerate() {
+          if val < min1 { min2 = min1; min1 = val; arg1 = i; }
+          else if val < min2 { min2 = val; }
+        }
+        for k in 0..n {
+          let others = if k == arg1 { min2 } else { min1 };
+          min_diff[k] = min_diff[k].min(vals[k] - others);
+        }
+      }
+    }
+    (0..n).filter(|&k| min_diff[k] >= margin).count() as u64
+  }).sum();
+
+  println!("=== redundant-but-kept (provable, Lipschitz grid {}^2 / leaf) ===", GL);
+  println!("provably-redundant primitives still stored: {} / {} ({:.1}% of stored are dead weight)",
+    redundant, sum, redundant as f64 / sum as f64 * 100.0);
+
+  // --- pruning corruption: g_pruned(A) vs g_all(B) on a grid ---
+  const G: usize = 256;
+  let tol = 1e-6;
+  let (corrupt_pts, max_err, sum_err) = (0..G).into_par_iter().map(|iy| {
+    let y = (iy as f64 + 0.5) / G as f64;
+    let (mut n, mut maxd, mut sumd) = (0u64, 0.0f64, 0.0f64);
+    for ix in 0..G {
+      let v = P2::new((ix as f64 + 0.5) / G as f64, y);
+      let ga = adf.sdf(v);
+      let gb = all_prims.iter().map(|f| f(v)).fold(f64::MAX, f64::min);
+      let d = ga - gb; // >= 0; > 0 == pruning dropped a relevant primitive
+      if d > tol { n += 1; maxd = maxd.max(d); sumd += d; }
+    }
+    (n, maxd, sumd)
+  }).reduce(|| (0, 0.0, 0.0), |a, b| (a.0 + b.0, a.1.max(b.1), a.2 + b.2));
+
+  println!("=== pruning corruption (field g_pruned vs g_all, {0}x{0} grid) ===", G);
+  println!("corrupted points: {}/{} ({:.4}%)", corrupt_pts, G * G, corrupt_pts as f64 / (G * G) as f64 * 100.0);
+  println!("max field error: {:.4e}   mean error over corrupted pts: {:.4e}",
+    max_err, if corrupt_pts > 0 { sum_err / corrupt_pts as f64 } else { 0.0 });
 }

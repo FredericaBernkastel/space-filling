@@ -5,5 +5,5 @@ pub mod line_search;
 pub use line_search::LineSearch;
 
 pub mod adf;
-pub use adf::ADF;
+pub use adf::{ADF, Primitive};
 

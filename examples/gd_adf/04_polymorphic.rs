@@ -3,7 +3,7 @@ use {
   space_filling::{
     geometry::{Shape, Ring, Square},
     sdf::{self, SDF},
-    solver::{ADF, LineSearch},
+    solver::{ADF, LineSearch, Primitive},
     drawing::{self, Draw},
     util
   },
@@ -67,8 +67,8 @@ fn main() -> Result<()> {
 
   let path = "out.png";
   let mut representation = RwLock::new(
-    ADF::new(5, vec![Arc::new(sdf::boundary_rect)])
-      .with_gd_lattice_density(2)
+    ADF::new(5, vec![Primitive::new(sdf::boundary_rect)])
+      .with_prune_subdiv(8)
   );
   let texture = Arc::new(image::open("doc/fractal_distribution.png")?);
   let shapes = polymorphic(&mut representation, texture)

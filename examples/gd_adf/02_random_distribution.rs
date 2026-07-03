@@ -1,3 +1,4 @@
+use std::time::Instant;
 /// Generate a random distribution using ADF representation.
 /// Iterator code style is shown, which is lazy evaluated; fully parallel.
 
@@ -5,7 +6,7 @@ use {
   space_filling::{
     geometry::{Shape, Circle, Translation, Scale, P2},
     sdf::{self, SDF},
-    solver::{LineSearch, ADF},
+    solver::{LineSearch, ADF, Primitive},
     drawing::Draw,
     util
   },
@@ -46,17 +47,21 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
 }
 
 fn main() -> Result<()> {
-  let path = "out.png";
+  let start_time = Instant::now();
+  let path = "out1.png";
   let representation = RwLock::new(
-    ADF::new(5, vec![Arc::new(sdf::boundary_rect)])
-      .with_gd_lattice_density(3)); // set ADF to a high precision
-  let mut image = image::RgbaImage::new(2048, 2048);
+    ADF::new(7, vec![Primitive::new(sdf::boundary_rect)])
+      .with_prune_subdiv(8)); // pruning precision
+  let mut image = image::RgbaImage::new(4096, 4096);
 
   random_distribution(&representation)
-    .take(1000)
+    .take(100000)
     .for_each(|shape| shape
       .texture(Luma([255u8]).to_rgba())
       .draw(&mut image));
+
+  let elapsed = start_time.elapsed();
+  println!("Task completed in: {:?}", elapsed);
 
   image.save(path)?;
   open::that(path)?;

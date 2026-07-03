@@ -73,3 +73,8 @@ path = "examples/argmax2d/05_image_dataset.rs"
 name = "06_custom_primitive"
 required-features = ["drawing"]
 path = "examples/gd_adf/06_custom_primitive.rs"
+
+[[example]]
+name = "07_baked_sdf"
+required-features = ["drawing"]
+path = "examples/gd_adf/07_baked_sdf.rs"

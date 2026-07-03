@@ -4,8 +4,7 @@
 #![allow(clippy::mut_from_ref)]
 use {
   crate::{
-    solver::LineSearch,
-    geometry::{Shape, shapes, P2, WorldSpace, BoundingBox},
+    geometry::{P2, WorldSpace, BoundingBox},
     sdf::SDF,
   },
   quadtree::{
@@ -22,71 +21,120 @@ use {
 #[cfg(test)] mod tests;
 pub(crate) mod quadtree;
 
+/// An SDF primitive stored in the tree: the field function together with its
+/// declared Lipschitz constant.
+///
+/// `lipschitz = 1` is exact for true signed-distance functions and lets the
+/// redundancy test prune soundly. For a primitive whose gradient exceeds 1 —
+/// e.g. an approximate or fractal distance estimator — declare a larger bound:
+/// the test stays conservative for that primitive (it only ever certifies on a
+/// real proof, so nothing contributing is dropped or skipped; pruning merely
+/// becomes less effective the larger the bound).
 #[derive(Clone)]
-pub struct ADF<Float> {
-  pub tree: Quadtree<Vec<Arc<dyn Fn(P2<Float>) -> Float + Send + Sync>>, Float>,
-  /// Gradient Descent lattice density, N^2
-  /// higher values improve precision
-  ipm_gd_lattice_density: u32,
-  ipm_line_config: LineSearch<Float>
+pub struct Primitive<Float> {
+  pub f: Arc<dyn Fn(P2<Float>) -> Float + Send + Sync>,
+  pub lipschitz: Float,
 }
 
-impl <_Float: Float> SDF<_Float> for &[Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>] {
+impl<_Float: Float> Primitive<_Float> {
+  /// A primitive assumed to be a true SDF (`lipschitz = 1`).
+  pub fn new(f: impl Fn(P2<_Float>) -> _Float + Send + Sync + 'static) -> Self {
+    Self { f: Arc::new(f), lipschitz: _Float::one() }
+  }
+  /// Declare the Lipschitz constant of this primitive's field.
+  pub fn with_lipschitz(mut self, lipschitz: _Float) -> Self {
+    self.lipschitz = lipschitz;
+    self
+  }
+}
+
+#[derive(Clone)]
+pub struct ADF<Float> {
+  pub tree: Quadtree<Vec<Primitive<Float>>, Float>,
+  /// Max quadtree-style subdivisions the redundancy test ([`sdf_geq_everywhere`])
+  /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
+  /// primitive is pruned only when provably redundant to within ~`node/2^n`),
+  /// at more work in near-tangent regions.
+  prune_subdiv: u32,
+}
+
+impl <_Float: Float> SDF<_Float> for &[Primitive<_Float>] {
   fn sdf(&self, pixel: P2<_Float>) -> _Float {
     self.iter()
-      .map(|f| f(pixel))
+      .map(|p| (p.f)(pixel))
       .reduce(|a, b| if a <= b { a } else { b })
       .unwrap_or(_Float::max_value() / (_Float::one() + _Float::one()))
   }
 }
 
-fn sdf_partialord<_Float: Float + Signed>(
-  f: impl Fn(P2<_Float>) -> _Float,
-  g: impl Fn(P2<_Float>) -> _Float,
-  domain: Rect<_Float, WorldSpace>,
-  lattice_density: u32,
-  line_search: LineSearch<_Float>
-) -> bool {
-  let boundary_constraint = |v| shapes::Rect { size: domain.size.to_vector().to_point() }
-    .translate(domain.center().to_vector())
-    .sdf(v); // IPM boundary
-
-  let control_points = |rect: Rect<_, _>| {
-    let p = (0..lattice_density).map(move |x| _Float::from(x).unwrap() / _Float::from(lattice_density - 1).unwrap());
-    itertools::iproduct!(p.clone(), p)
-      .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
-  };
-
-  let test = |v| line_search.optimize_normal(
-    |v| if domain.contains(v) { g(v) - f(v) } else { -boundary_constraint(v) },
-    v
-  );
-
-  !match lattice_density {
-    1 => test(domain.center()),
-    2..=u32::MAX => control_points(domain).any(test),
-    _ => panic!("Invalid perturbation grid density: {lattice_density}")
-  }
+/// The Lipschitz constant of `min` over a bucket: `min` of `L_i`-Lipschitz
+/// functions is `max(L_i)`-Lipschitz.
+fn bucket_lipschitz<_Float: Float>(bucket: &[Primitive<_Float>]) -> _Float {
+  bucket.iter().map(|p| p.lipschitz).fold(_Float::one(), _Float::max)
 }
 
-impl <_Float: Float + Signed + Sync> ADF<_Float> {
-  /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
-  /// `init` specifies initial sdf primitives.
-  pub fn new(max_depth: u8, init: Vec<Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>>) -> Self {
-    Self {
-      tree: Quadtree::new(max_depth, init),
-      ipm_gd_lattice_density: 1,
-      ipm_line_config: LineSearch::default()
+/// Returns `true` only when `f(v) >= g(v)` is *provable* for every `v` in
+/// `domain`. Sound **provided `f` is `l_f`-Lipschitz and `g` is `l_g`-Lipschitz**
+/// (true SDFs are 1-Lipschitz): then `f - g` is `(l_f + l_g)`-Lipschitz, so over
+/// a rectangle of half-diagonal `h` centred at `c`,
+/// `f - g >= (f - g)(c) - (l_f + l_g)·h`. That bound *proves a sub-rectangle
+/// clean* (`(f-g)(c) - (l_f+l_g)·h >= 0`) or discards it toward a witness
+/// (`(f-g)(c) < 0`); undecided sub-rectangles are refined up to `max_subdiv`
+/// levels, beyond which it conservatively answers `false`.
+///
+/// Cost is adaptive: well-separated fields settle at the root and a real witness
+/// is reached by descent — no fixed grid or GD schedule. Larger constants are
+/// conservative: certification just needs deeper refinement, and an overly large
+/// bound degrades into "only a real witness ever decides", never unsoundness.
+fn sdf_geq_everywhere<_Float, F, G>(
+  f: F,
+  g: G,
+  domain: Rect<_Float, WorldSpace>,
+  l_f: _Float,
+  l_g: _Float,
+  max_subdiv: u32,
+) -> bool
+where
+  _Float: Float,
+  F: Fn(P2<_Float>) -> _Float,
+  G: Fn(P2<_Float>) -> _Float,
+{
+  let two = _Float::one() + _Float::one();
+  let l_sum = l_f + l_g;
+  let mut stack = vec![(domain, 0u32)];
+  while let Some((rect, depth)) = stack.pop() {
+    let diff = f(rect.center()) - g(rect.center());
+    if diff < _Float::zero() {
+      return false; // witness: f < g here, so `f >= g everywhere` is false
+    }
+    let size = rect.size.to_vector();
+    let half_diag = (size.x * size.x + size.y * size.y).sqrt() / two;
+    if diff >= l_sum * half_diag {
+      continue; // `f - g >= 0` proved over the whole rectangle
+    }
+    if depth >= max_subdiv {
+      return false; // undecided within budget → conservatively assume a witness
+    }
+    for sub in child_rects(rect) {
+      stack.push((sub, depth + 1));
     }
   }
-  /// Controls precision of primitive pruning in a bucket.
-  pub fn with_gd_lattice_density(mut self, density: u32) -> Self {
-    self.ipm_gd_lattice_density = density;
-    self
+  true
+}
+
+impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
+  /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
+  /// `init` specifies initial sdf primitives.
+  pub fn new(max_depth: u8, init: Vec<Primitive<_Float>>) -> Self {
+    Self {
+      tree: Quadtree::new(max_depth, init),
+      prune_subdiv: 8,
+    }
   }
-  /// Underlying GD settings for the interior point method (a part of primitive pruning).
-  pub fn with_ipm_line_config(mut self, line_config: LineSearch<_Float>) -> Self {
-    self.ipm_line_config = line_config;
+  /// Controls precision of primitive pruning in a bucket: the redundancy test may
+  /// refine a node up to `subdiv` times to prove `f >= g` (see [`sdf_geq_everywhere`]).
+  pub fn with_prune_subdiv(mut self, subdiv: u32) -> Self {
+    self.prune_subdiv = subdiv;
     self
   }
   /*
@@ -129,17 +177,26 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
       .any(|v| g(v) > f(v))
   }
 
-  /// Add a new sdf primitive function.
+  /// Add a new sdf primitive function, assumed to be a true SDF (`lipschitz = 1`).
+  /// See [`Self::insert_primitive_domain`] for approximate fields.
   pub fn insert_sdf_domain(
     &mut self,
     domain: Rect<_Float, WorldSpace>,
     f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>
   ) -> bool {
+    self.insert_primitive_domain(domain, Primitive { f, lipschitz: _Float::one() })
+  }
+
+  /// Add a new sdf primitive with an explicit Lipschitz bound (see [`Primitive`]).
+  pub fn insert_primitive_domain(
+    &mut self,
+    domain: Rect<_Float, WorldSpace>,
+    prim: Primitive<_Float>
+  ) -> bool {
     const BUCKET_SIZE: usize = 3;
     // Copied out so the parallel `decide` closure captures plain values instead
     // of borrowing `self` (which `refine_leaves` already borrows via `tree`).
-    let lattice_density = self.ipm_gd_lattice_density;
-    let line_config = self.ipm_line_config;
+    let subdiv = self.prune_subdiv;
     let max_depth = self.tree.max_depth;
 
     // Only leaves intersecting `domain` are visited; each yields an independent
@@ -147,53 +204,56 @@ impl <_Float: Float + Signed + Sync> ADF<_Float> {
     // nodes' fresh children are not revisited within a single call — same as the
     // old `Skip`-after-`subdivide` behaviour.
     self.tree.refine_leaves(domain, |node| {
-      // f(v) > g(v) forall v e D — the new primitive never lowers the field here.
-      if sdf_partialord(
-        f.as_ref(),
-        |p| node.data.as_slice().sdf(p),
-        node.rect,
-        lattice_density,
-        line_config
+      let f = &prim.f;
+      let l_bucket = bucket_lipschitz(&node.data);
+
+      // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
+      if sdf_geq_everywhere(
+        f.as_ref(), |p| node.data.as_slice().sdf(p),
+        node.rect, prim.lipschitz, l_bucket, subdiv
       ) {
         return Refine::None;
       }
 
-      // f(v) <= g(v) forall v e D — f dominates the whole node, replace it.
-      if sdf_partialord(
-        |p| node.data.as_slice().sdf(p),
-        f.as_ref(),
-        node.rect,
-        lattice_density,
-        line_config
+      // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
+      if sdf_geq_everywhere(
+        |p| node.data.as_slice().sdf(p), f.as_ref(),
+        node.rect, l_bucket, prim.lipschitz, subdiv
       ) {
-        return Refine::SetData(vec![f.clone()]);
+        return Refine::SetData(vec![prim.clone()]);
       }
 
       // remove SDF primitives that do not affect the field within `rect`
-      let prune = |data: &[Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>], rect| {
+      let prune = |data: &[Primitive<_Float>], rect| {
         let mut g = vec![];
-        for (i, f) in data.iter().enumerate() {
+        for (i, p_i) in data.iter().enumerate() {
           let sdf_old = |p|
             data.iter().enumerate()
-              .filter_map(|(j, f)| if i != j { Some(f(p)) } else { None })
+              .filter_map(|(j, p_j)| if i != j { Some((p_j.f)(p)) } else { None })
               .fold(_Float::max_value() / (_Float::one() + _Float::one()), |a, b| a.min(b));
-          // there exists v e D such that f(v) < sdf_old(v)
-          if !sdf_partialord(f.as_ref(), sdf_old, rect, lattice_density, line_config) {
-            g.push(f.clone())
+          let l_old = data.iter().enumerate()
+            .filter_map(|(j, p_j)| (i != j).then_some(p_j.lipschitz))
+            .fold(_Float::one(), _Float::max);
+          // keep `p_i` unless it is provably redundant (>= the rest) within `rect`
+          if !sdf_geq_everywhere((p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
+            g.push(p_i.clone())
           }
         }
         g
       };
 
       if node.depth == max_depth || node.data.len() < BUCKET_SIZE {
-        // max depth reached, or the bucket still has room: append the primitive
+        // Max depth reached (cannot subdivide) or the bucket still has room:
+        // append. Re-pruning the whole bucket on every append would cost O(n^2)
+        // per insert and the audit shows ~94% of a crowded bucket genuinely
+        // contributes, so it is not worth it.
         let mut data = node.data.clone();
-        data.push(f.clone());
+        data.push(prim.clone());
         Refine::SetData(data)
       } else {
-        // max bucket size reached: subdivide, pruning the combined set per child
+        // Max bucket size reached: subdivide, pruning the combined set per child.
         let mut combined = node.data.clone();
-        combined.push(f.clone());
+        combined.push(prim.clone());
         Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect)))
       }
     })
@@ -234,7 +294,7 @@ impl <_Float: Float> Debug for ADF<_Float> {
     self.tree.traverse(&mut |node| {
       total_nodes += 1;
       total_size += std::mem::size_of::<Self>()
-        + node.data.capacity() * std::mem::size_of::<Arc<dyn Fn(P2<f64>) -> f64>>();
+        + node.data.capacity() * std::mem::size_of::<Primitive<_Float>>();
       max_depth = (max_depth).max(node.depth);
       Ok(())
     }).ok();
