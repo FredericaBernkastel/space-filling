@@ -14,7 +14,7 @@ from manim import *
 
 import fields as F
 from theme import (
-    VideoScene, INK, MUTED, ACCENT, BG, TRAIL, FIELD_HI, asset,
+    VideoScene, INK, MUTED, ACCENT, BG, TRAIL, FIELD_HI, asset, mono, rich_text,
     FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
 )
 from video import load_frames, VideoMobject
@@ -83,7 +83,7 @@ class Scene03Bitmap(VideoScene):
         curve = VMobject(stroke_color=MUTED, stroke_width=2).set_points_as_corners(pts)
         zlabel = VGroup(
             Text("Z-order (Morton) curve", font_size=FS_CAPTION, color=INK),
-            Text("→ cache-local", font_size=FS_CHIP, color=MUTED),
+            rich_text("→ cache-local", font_size=FS_CHIP, color=MUTED),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.12)
         zlabel.next_to(cells, RIGHT, buff=0.6).shift(UP * 1.3)
         self.play(Create(curve), run_time=2.2)
@@ -152,14 +152,14 @@ class Scene03Bitmap(VideoScene):
         video = VideoMobject(frames).set_height(4.7)
         vbox = SurroundingRectangle(video, color=MUTED, buff=0.0).set_stroke(width=1.2)
         panel = Group(video, vbox).to_edge(LEFT, buff=1.3).shift(UP * 0.2)
-        cap = Text("01_fractal_distribution.rs", font_size=FS_CHIP, color=MUTED).next_to(vbox, DOWN, buff=0.2)
+        cap = mono("01_fractal_distribution.rs", font_size=FS_CHIP, color=MUTED).next_to(vbox, DOWN, buff=0.2)
 
-        ok = Text("lookup  O(1)   ✓", font_size=FS_CAPTION, color=GREEN)
+        ok = rich_text("lookup  O(1)   ✓", font_size=FS_CAPTION, color=GREEN)
         head = Text("increasing precision costs:", font_size=FS_BODY, color=INK)
-        s_time = Text("time      O(N²)", font_size=FS_BODY, color=ACCENT)
-        s_mem = Text("memory  O(N²)", font_size=FS_BODY, color=ACCENT)
+        s_time = rich_text("time      O(N²)", font_size=FS_BODY, color=ACCENT)
+        s_mem = rich_text("memory  O(N²)", font_size=FS_BODY, color=ACCENT)
         d_grid = Text("4096 × 4096 grid", font_size=FS_CAPTION, color=MUTED)
-        d_err = Text("avg. error  2.44 × 10⁻⁴", font_size=FS_CAPTION, color=MUTED)
+        d_err = rich_text("avg. error  2.44 × 10⁻⁴", font_size=FS_CAPTION, color=MUTED)
         d_mem = Text("64 MB", font_size=FS_CAPTION, color=FIELD_HI)
         stats = VGroup(ok, head, s_time, s_mem, d_grid, d_err, d_mem).arrange(DOWN, aligned_edge=LEFT, buff=0.28)
         stats.to_edge(RIGHT, buff=1.3)

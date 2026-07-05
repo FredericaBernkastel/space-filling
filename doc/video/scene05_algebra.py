@@ -14,7 +14,7 @@ from manim import *
 import fields as F
 from theme import (
     VideoScene, plot_deco, INK, MUTED, ACCENT, COOL, BG, TRAIL, FIELD_HI,
-    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
+    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP, mono_span, rich_text,
 )
 
 GREEN = "#3fb950"
@@ -89,7 +89,7 @@ class Scene05Algebra(VideoScene):
         bt = Text("4 siblings, contiguous", font_size=FS_CHIP, color=MUTED).next_to(brace1, UP, buff=0.05)
 
         notes = VGroup(
-            Text("single allocation; index-based ⇒ lock-free", font_size=FS_CHIP, color=INK),
+            rich_text("single allocation; index-based ⇒ lock-free", font_size=FS_CHIP, color=INK),
             MathTex(r"\texttt{Option<NonZeroU32>} \Rightarrow 64\text{ B} = 1\text{ cache line}", color=INK).scale(0.5),
             Text("None = leaf", font_size=FS_CHIP, color=INK),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.2).to_corner(UR, buff=0.5).shift(DOWN * 0.4)
@@ -283,7 +283,7 @@ class Scene05Algebra(VideoScene):
         g_panel = Group(g_img, g_box, g_lbl, plot_deco(PC["g"], u))
 
         legend = VGroup(
-            Text("green = f ≥ g proven (discard)", font_size=FS_CHIP, color=GREEN),
+            rich_text("green = f ≥ g proven (discard)", font_size=FS_CHIP, color=GREEN),
             Text("amber = undecided (split)", font_size=FS_CHIP, color=ACCENT),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.14).to_edge(DOWN, buff=0.45)
 
@@ -313,7 +313,7 @@ class Scene05Algebra(VideoScene):
         self.wait(0.5)
 
         # f >= g proven everywhere => f is dominated, so prune it: blink and delete f
-        proven = Text("f ≥ g proven ⇒ f redundant, pruned", font_size=FS_CHIP, color=FIELD_HI).move_to(f_img)
+        proven = rich_text("f ≥ g proven ⇒ f redundant, pruned", font_size=FS_CHIP, color=FIELD_HI).move_to(f_img)
         self.play(Indicate(f_panel, color=RED, scale_factor=1.12))
         self.play(FadeOut(f_panel))
         self.play(FadeIn(proven))
@@ -333,7 +333,7 @@ class Scene05Algebra(VideoScene):
             \end{aligned}""",
             color=INK,
         ).scale(0.7)
-        sub = Text("sound: true only when f ≥ g truly holds — else conservative",
+        sub = rich_text("sound: true only when f ≥ g truly holds — else conservative",
                    font_size=FS_CAPTION, color=FIELD_HI).next_to(cases, DOWN, buff=0.5)
         self.play(Write(cases), run_time=2.0)
         self.play(FadeIn(sub))
@@ -440,7 +440,7 @@ class Scene05Algebra(VideoScene):
 
         title = Text("insert f — every overlapping leaf decides independently, in parallel",
                      font_size=FS_H2, color=MUTED).to_edge(UP, buff=0.35)
-        sub = Text("digits = bucket size |Bₙ|", font_size=FS_CHIP, color=MUTED).next_to(title, DOWN, buff=0.12)
+        sub = rich_text("digits = bucket size |Bₙ|", font_size=FS_CHIP, color=MUTED).next_to(title, DOWN, buff=0.12)
 
         def rule_row(col, tex):
             return VGroup(Square(0.16).set_stroke(width=0).set_fill(col, 1.0),
@@ -551,7 +551,7 @@ class Scene05Algebra(VideoScene):
             digits[i] = nd
         commit += [FadeOut(fills[i]) for i in fills]
         commit += [cross.animate.set_stroke(MUTED, 1.3) for cross in split_new]
-        sound = Text("every ≥ on R runs the sound predicate — a primitive is dropped only\n"
+        sound = rich_text("every ≥ on R runs the sound predicate — a primitive is dropped only\n"
                      "when provably redundant; the stored field never deviates from the true min",
                      font_size=FS_CHIP, color=FIELD_HI, line_spacing=0.9
                      ).to_edge(DOWN, buff=0.25).set_x(0.5)
@@ -597,7 +597,7 @@ class Scene05Algebra(VideoScene):
             Text("cover: 4d square", font_size=FS_CHIP, color=ACCENT),
             Text("(4 optimal — two tangent balls)", font_size=FS_CHIP, color=MUTED),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.16).to_edge(RIGHT, buff=0.5).shift(UP * 1.2)
-        chg = Text("insert at x₀: field changes\nonly within D* ⊆ B(x₀, 2d)",
+        chg = rich_text("insert at x₀: field changes\nonly within D* ⊆ B(x₀, 2d)",
                    font_size=FS_CHIP, color=COOL, line_spacing=0.8).to_edge(RIGHT, buff=0.5).shift(DOWN * 0.9)
 
         self.play(FadeIn(fbG), FadeIn(dimG), Create(borderG))
@@ -630,10 +630,12 @@ class Scene05Algebra(VideoScene):
             Text("D* unbounded —", font_size=FS_CHIP, color=TRAIL),
             Text("no c·d square works", font_size=FS_CHIP, color=TRAIL),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.16).to_edge(RIGHT, buff=0.5).shift(UP * 1.1)
-        chgL = Text("insert at x₀: the change\nstreaks out along D*",
+        chgL = rich_text("insert at x₀: the change\nstreaks out along D*",
                     font_size=FS_CHIP, color=COOL, line_spacing=0.8).to_edge(RIGHT, buff=0.5).shift(DOWN * 0.9)
         walk = MathTex(r"\hat g(\vec c_R)+L_B\,h(R)\;\le\;\mathrm{dist}(R,\vec x_0)-d", color=FIELD_HI).scale(0.56)
-        wcap = Text("insert_at_maximum prunes the tree walk, not a fixed box", font_size=FS_CHIP, color=MUTED)
+        wcap = MarkupText(
+            f'{mono_span("insert_at_maximum")} prunes the tree walk, not a fixed box',
+            font_size=FS_CHIP, color=MUTED)
         VGroup(wcap, walk).arrange(DOWN, buff=0.18).to_edge(DOWN, buff=0.35)
 
         self.play(FadeIn(fbL), FadeIn(dimL), Create(borderL))

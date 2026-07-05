@@ -16,7 +16,7 @@ from manim import *
 
 import fields as F
 from theme import (
-    VideoScene, asset, INK, MUTED, ACCENT, COOL, TRAIL, FIELD_HI, BG,
+    VideoScene, asset, INK, MUTED, ACCENT, COOL, TRAIL, FIELD_HI, BG, rich_text,
     FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
 )
 from video import load_frames, VideoMobject
@@ -165,7 +165,7 @@ class Scene08Mandelbrot(VideoScene):
                       color=INK).scale(0.72)
         b1 = VGroup(
             Line(ORIGIN, RIGHT * 0.42, color=RED, stroke_width=3).add_tip(tip_length=0.12, tip_width=0.12),
-            Text("‖∇d‖ unbounded near the filaments", font_size=FS_CHIP, color=RED),
+            rich_text("‖∇d‖ unbounded near the filaments", font_size=FS_CHIP, color=RED),
         ).arrange(RIGHT, buff=0.18)
         b2 = VGroup(
             Dot(radius=0.045, color=MUTED),
@@ -173,9 +173,9 @@ class Scene08Mandelbrot(VideoScene):
         ).arrange(RIGHT, buff=0.18)
         b3 = VGroup(
             Line(ORIGIN, RIGHT * 0.42, color=TRAIL, stroke_width=3).add_tip(tip_length=0.12, tip_width=0.12),
-            Text("‖∇d‖ ≈ 1 in the far field", font_size=FS_CHIP, color=TRAIL),
+            rich_text("‖∇d‖ ≈ 1 in the far field", font_size=FS_CHIP, color=TRAIL),
         ).arrange(RIGHT, buff=0.18)
-        not_sdf = Text("⇒ not a true SDF: L = 1 no longer applies", font_size=FS_CAPTION, color=INK)
+        not_sdf = rich_text("⇒ not a true SDF: L = 1 no longer applies", font_size=FS_CAPTION, color=INK)
 
         ldecl = MathTex(r"L_{\mathrm{MandelDE}} \;=\; 4", color=FIELD_HI).scale(0.8)
         lbox = SurroundingRectangle(ldecl, color=FIELD_HI, buff=0.2, corner_radius=0.1).set_stroke(width=1.5)
@@ -238,7 +238,7 @@ class Scene08Mandelbrot(VideoScene):
 
         # the quoted figures (script-verbatim: "7 seconds, 4.74 MiB, no obvious errors.")
         def stat(value: str, label: str, color=ACCENT) -> VGroup:
-            v = Text(value, font_size=FS_H2, color=color)
+            v = rich_text(value, font_size=FS_H2, color=color)
             l = Text(label, font_size=FS_CHIP, color=MUTED)
             return VGroup(v, l).arrange(RIGHT, buff=0.25)
 

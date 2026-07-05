@@ -16,7 +16,7 @@ from manim import *
 import fields as F
 from theme import (
     VideoScene, plot_deco, INK, MUTED, ACCENT, COOL, BG, TRAIL, FIELD_HI,
-    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
+    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP, mono_span, rich_text,
 )
 
 GREEN = "#3fb950"
@@ -75,8 +75,8 @@ class Scene06Optimizer(VideoScene):
         chips = VGroup(
             Text("lossless — the field is exact, not sampled", font_size=FS_BODY, color=MUTED),
             Text("10–100× less memory than the bitmap", font_size=FS_BODY, color=MUTED),
-            Text("continuous field ⇒ gradient ascent works", font_size=FS_BODY, color=MUTED),
-            Text("⇒ GD-ADF is a local-maximum method", font_size=FS_BODY, color=FIELD_HI),
+            rich_text("continuous field ⇒ gradient ascent works", font_size=FS_BODY, color=MUTED),
+            rich_text("⇒ GD-ADF is a local-maximum method", font_size=FS_BODY, color=FIELD_HI),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.32)
         VGroup(title, chips).arrange(DOWN, buff=0.7).move_to(0.2 * UP)
 
@@ -198,8 +198,8 @@ class Scene06Optimizer(VideoScene):
                         font_size=FS_CHIP, color=color)
         v_raw = verdict(False, RED).next_to(ch_raw[0], DOWN, buff=0.32)
         v_mom = verdict(True, TRAIL).next_to(ch_mom[0], DOWN, buff=0.32)
-        end_note = Text("h < Δ stops the ascent — the kink is refined bisection-style",
-                        font_size=FS_CHIP, color=FIELD_HI).to_edge(DOWN, buff=0.35).set_x(2.2)
+        end_note = rich_text("h < Δ stops the ascent — the kink is refined bisection-style",
+                             font_size=FS_CHIP, color=FIELD_HI).to_edge(DOWN, buff=0.35).set_x(2.2)
 
         self.play(FadeIn(apex_dot, scale=2.0), FadeIn(apex_lbl), FadeIn(v_raw), FadeIn(v_mom))
         self.play(ReplacementTransform(mom_note, end_note))
@@ -247,9 +247,10 @@ class Scene06Optimizer(VideoScene):
         dim = Rectangle(width=PH, height=PH).set_fill(BG, 0.3).set_stroke(width=0).move_to(DC).set_z_index(1)
         border = SurroundingRectangle(img_b, color=MUTED, buff=0.0).set_stroke(width=1.5).set_z_index(2)
         deco = plot_deco(DC, u, grid=False).set_z_index(2)
-        title = Text("find_max_parallel — one snapshot, a whole batch of ascents",
-                     font_size=FS_H2, color=MUTED).to_edge(UP, buff=0.35)
-        chip = self.source_chip("src/util.rs — find_max_parallel")
+        title = MarkupText(
+            f'{mono_span("find_max_parallel")} — one snapshot, a whole batch of ascents',
+            font_size=FS_H2, color=MUTED).to_edge(UP, buff=0.35)
+        chip = self.source_chip("src/util.rs")  # the fn name is already in the title
         rule = MathTex(r"\text{accept } \vec m_j \iff \lVert \vec m_i - \vec m_j\rVert > d_i + d_j"
                        r"\quad \forall\ \text{accepted } i", color=INK).scale(0.6)
         rule.to_edge(RIGHT, buff=0.55).shift(UP * 2.3)
@@ -290,7 +291,7 @@ class Scene06Optimizer(VideoScene):
         self.wait(0.5)
 
         # --- commit: survivors inserted together; next batch reads afresh ---
-        cap3 = Text("disjoint free balls ⇒ the shapes cannot overlap, in any insertion order —\n"
+        cap3 = rich_text("disjoint free balls ⇒ the shapes cannot overlap, in any insertion order —\n"
                     "the batch commits lock-free; the next batch reads the field afresh",
                     font_size=FS_CHIP, color=FIELD_HI, line_spacing=0.9).to_edge(DOWN, buff=0.3).set_x(0.6)
         live = [b for b, ok in zip(balls, kept_flags) if ok]

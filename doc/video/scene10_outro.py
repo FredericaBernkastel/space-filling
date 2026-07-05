@@ -14,7 +14,7 @@ import numpy as np
 from manim import *
 
 from theme import (
-    VideoScene, INK, MUTED, ACCENT, COOL,
+    VideoScene, INK, MUTED, ACCENT, COOL, mono,
     FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
 )
 
@@ -66,7 +66,7 @@ class Scene10Outro(VideoScene):
         name = Text("space-filling", font_size=FS_TITLE, color=INK, weight=BOLD)
         tagline = Text("generalized random space filling of the plane, driven by signed distance fields",
                        font_size=FS_CHIP, color=MUTED)
-        repo = Text("github.com/FredericaBernkastel/space-filling",
+        repo = mono("github.com/FredericaBernkastel/space-filling",
                     font_size=FS_CAPTION, color=COOL)
         card = VGroup(name, tagline, repo).arrange(DOWN, buff=0.32).move_to(UP * 0.15)
         signature = Text("Liserotte", font_size=FS_CAPTION, color=MUTED, slant=ITALIC)

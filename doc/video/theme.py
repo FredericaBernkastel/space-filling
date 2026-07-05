@@ -30,6 +30,73 @@ FS_BODY = 20      # captions read at normal distance
 FS_CAPTION = 17   # secondary captions
 FS_CHIP = 15      # source chips, tile labels
 
+# Faces: Alef for prose, Fira Code for filenames/code/URLs. Pango resolves the
+# CSS-style fallback lists. Ligatures stay enabled (manim's default) — Fira
+# Code's programming ligatures are applied by HarfBuzz automatically.
+FONT_MAIN = "Alef, sans-serif"
+FONT_MONO = "Fira Code, monospace"
+
+Text.set_default(font=FONT_MAIN, disable_ligatures=False)
+MarkupText.set_default(font=FONT_MAIN, disable_ligatures=False)
+
+# Manim's font check doesn't understand Pango's comma-separated fallback lists
+# and would dump the entire installed-font list as a WARNING for every Text.
+# Pango resolves the lists correctly (verified: "Alef, sans-serif" == "Alef"
+# pixel-for-pixel), so drop exactly that warning and keep all others.
+import logging
+
+
+class _FontFallbackListFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not (msg.startswith("Font") and " not in " in msg)
+
+
+logging.getLogger("manim").addFilter(_FontFallbackListFilter())
+
+
+def mono(text: str, **kwargs) -> Text:
+    """Text in the code face — filenames, identifiers, URLs."""
+    return Text(text, font=FONT_MONO, **kwargs)
+
+
+def mono_span(s: str) -> str:
+    """Wrap a fragment for the code face inside a MarkupText string."""
+    return f'<span face="Fira Code">{s}</span>'
+
+
+# Alef's coverage stops at Latin + common punctuation; this Pango build does
+# family fallback but NOT per-glyph fallback, so maths/symbol characters would
+# render as tofu boxes. rich_text() keeps prose in Alef and routes exactly the
+# missing glyphs through DejaVu Sans (full coverage, probe-verified).
+_SYMBOL_FONT = "DejaVu Sans"
+_ALEF_MISSING = set(
+    "⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿⁱ₀₁₂₃₄₅₆₇₈₉"    # super/subscript digits
+    "ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼ"              # subscript letters
+    "≈≠≥≤≫∇‖⊕⊖⊆∈∀∃⇒⇄→ℓ✓"        # maths & marks
+    "ΔΩαβγδθλμπσφω"               # Greek
+)
+
+
+def _pango_escape(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def rich_text(text: str, **kwargs) -> MarkupText:
+    """Prose in the main face, symbols Alef lacks in the fallback face."""
+    parts = []
+    run, missing = [], False
+    for ch in text + "\0":  # sentinel flushes the last run
+        m = ch in _ALEF_MISSING
+        if ch != "\0" and m == missing:
+            run.append(ch)
+            continue
+        if run:
+            chunk = _pango_escape("".join(run))
+            parts.append(f'<span face="{_SYMBOL_FONT}">{chunk}</span>' if missing else chunk)
+        run, missing = [ch], m
+    return MarkupText("".join(parts), **kwargs)
+
 ASSETS = Path(__file__).resolve().parent / "assets"
 
 
@@ -82,7 +149,7 @@ class VideoScene(MovingCameraScene):
         Beats that stand in for a live screen-recording (a web page, the
         rendered README) carry one of these so the source is legible.
         """
-        return Text(label, font_size=FS_CHIP, color=MUTED).to_corner(DL, buff=0.35)
+        return mono(label, font_size=FS_CHIP, color=MUTED).to_corner(DL, buff=0.35)
 
     def eq_number(self, n: int, mob: Mobject) -> MathTex:
         """A right-margin equation number vertically aligned with ``mob``."""

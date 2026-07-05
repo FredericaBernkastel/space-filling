@@ -15,7 +15,7 @@ from manim import *
 
 import fields as F
 from theme import (
-    VideoScene, INK, MUTED, ACCENT, COOL, BG, TRAIL, FIELD_HI, asset,
+    VideoScene, INK, MUTED, ACCENT, COOL, BG, TRAIL, FIELD_HI, asset, rich_text,
     FS_H2, FS_BODY, FS_CAPTION,
 )
 
@@ -95,8 +95,8 @@ class Scene04Quadtree(VideoScene):
         title = Text("adaptive quadtree of buckets", font_size=FS_H2, color=MUTED).to_edge(UP, buff=0.35)
 
         # right-hand info column (revealed progressively)
-        desc_lbl = Text("descend: root → leaf", font_size=FS_CAPTION, color=ACCENT)
-        blabel = Text("bucket B(ℓ): 2 primitives", font_size=FS_CAPTION, color=TRAIL)
+        desc_lbl = rich_text("descend: root → leaf", font_size=FS_CAPTION, color=ACCENT)
+        blabel = rich_text("bucket B(ℓ): 2 primitives", font_size=FS_CAPTION, color=TRAIL)
         formula = MathTex(r"g(\vec v)=\min_{f \in B(\ell(\vec v))} f(\vec v)", color=INK).scale(0.62)
         cost = MathTex(r"O(\mathrm{depth}+\beta)=O(\log N)", color=FIELD_HI).scale(0.62)
         info = VGroup(desc_lbl, blabel, formula, cost).arrange(DOWN, aligned_edge=LEFT, buff=0.55)

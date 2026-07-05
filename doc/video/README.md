@@ -17,13 +17,29 @@ uv run manim checkhealth   # verify the install
 
 ## Rendering
 
+Pre-rendered assets (PDF strips, Rust example footage) are built once with:
+
 ```sh
-uv run manim -ql scene.py Verify     # 480p15, fast preview
-uv run manim -qh scene.py Verify     # 1080p60, final
-uv run manim -qh -p scene.py Verify  # render, then play the result
+uv run python build_assets.py
 ```
 
-Rendered files are written to `media/videos/`.
+Preview a single scene (fast, 480p15):
+
+```sh
+uv run manim -ql scene05_algebra.py Scene05Algebra
+```
+
+Full-quality final (QHD 2560×1440 @ 60 fps, 4 scenes in parallel, caching
+disabled; each scene stays a separate mp4):
+
+```sh
+uv run python render_all.py            # all scenes
+uv run python render_all.py 3 5 8      # a subset
+uv run python render_all.py --list     # show the plan only
+```
+
+Originals land in `media/videos/<scene>/1440p60/`; ordered copies are
+collected in `media/final/NN_SceneName.mp4`, logs in `media/logs/`.
 
 ## LaTeX (for formulas)
 
