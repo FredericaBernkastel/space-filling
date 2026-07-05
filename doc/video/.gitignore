@@ -1,0 +1,14 @@
+# uv / Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Manim render output
+media/
+
+# Derived assets (regenerate with build_assets.py)
+assets/derived/
+
+# Rust render helper build output
+render/target/
+/assets

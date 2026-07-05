@@ -1,0 +1,20 @@
+# Standalone helper crate for the explainer video: renders animation frames from
+# the space-filling library (imported via a local path) and streams them to
+# ffmpeg. Not part of the library — kept out of its examples on purpose.
+[package]
+name = "render"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "fractal_distribution"
+path = "src/bin/fractal_distribution.rs"
+
+[dependencies]
+space-filling = { path = "../../..", features = ["drawing"] }
+image = { version = "0.24", default-features = false, features = ["png"] }
+anyhow = "1.0"
+
+# Own workspace root, so cargo does not try to attach this to the parent crate.
+[workspace]
