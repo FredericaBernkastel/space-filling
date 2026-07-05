@@ -64,9 +64,11 @@ On a balanced tree the depth is logarithmic and the bucket size `β` stays const
 The next section develops the algebraic formalism in its entirety, on which the crucial optimizations rely. If you'd rather see the final results instead, jump to 00:00.
 
 ### Scene 5
+<!-- quadtree arena -->
 {visual: a single contiguous array of nodes; each internal node points to the index of the first of its four children, drawn as an arrow into the packed block; sibling cells adjacent in memory}
 The tree itself lives in a flat arena — every node in one contiguous array. A node names its four children by the index of the first, since the four sit contiguously, rather than through a boxed pointer. Siblings stay cache-adjacent, the whole structure takes a single allocation, and, being purely index-based, it admits lock-free parallel traversal. The child link is an `Option<NonZeroU32>`; the niche fits a node into exactly 64 bytes — one cache line — with `None` marking a leaf.
 
+<!-- Lipzschitz-continuity -->
 {visual: a 1-D slice of the field drawn as a curve; at a sample point c, draw the forward cone of slope ±L; slide c along the axis and show the curve never leaving the swept cone. Inset: two nearby points a, b with the bars |f(a)−f(b)| and L·|a−b|, the first always the shorter}
 The soundness of everything that follows rests on Lipschitz continuity. A function `f` is `L`-Lipschitz when
 {formula: \lvert f(\vec a) - f(\vec b)\rvert \;\le\; L\,\lVert \vec a - \vec b\rVert \qquad \forall\, \vec a, \vec b}
@@ -75,6 +77,7 @@ Geometrically, the graph is confined to a cone of slope `L`, so a single sample 
 
 Now the complete field algebra. A primitive is a pair: a field `f` and its declared Lipschitz constant `L`. A bucket denotes their pointwise minimum, whose constant is the largest among them — and the `Lipschitz` trait propagates it automatically along any combinator chain.
 
+<!-- sdf_geq_everywhere -->
 The core predicate decides whether `f ≥ g` everywhere on a rectangle. Since `f − g` is `(L_f + L_g)`-Lipschitz,
 {formula: (f-g)(\vec v)\;\ge\;(f-g)(\vec c)\;-\;(L_f + L_g)\,h(R)\qquad \forall\, \vec v \in R}
 {read: "for every v in the rectangle R, f minus g at v is at least its value at the centre c, minus the sum of the Lipschitz constants L-f and L-g, times h of R, the half-diagonal of R."}
@@ -89,7 +92,8 @@ d \ge k &\;\Rightarrow\; \textbf{false} && (\text{undecided within budget})\\
 {read: "If delta is negative, return false — a witness where f is below g exists. If delta is at least the Lipschitz sum times the half-diagonal, discard R — f dominates g on all of it. If we've hit the depth budget k, return false, conservatively. Otherwise split R into four quadrants and recurse. If the stack empties, return true."}
 The test is *sound*: it answers true only when `f ≥ g` truly holds, and is otherwise merely *conservative*. Its cost adapts — well-separated fields resolve at the root, while a genuine witness is found by descent rather than by any fixed grid.
 
-{visual: one primitive (a circle) inserted into a live ADF. Leaves overlapping its domain light up; each resolves to one of the four cases with a colour tag — grey no-op, blue replace, green append, amber subdivide. On a subdivision the node splits into four children, and each child runs prune: primitives proven redundant (dominated by the min of the rest) fade out, survivors remain, and the bucket lists visibly shrink}
+<!-- insert_primitive_domain -->
+{visual: a live ADF over the compound field (boundary wall w + three circles c₁..c₃), drawn as a contour plot with the leaf tree overlaid; every leaf shows its bucket size |Bₙ|. The four insertion rules are listed with colour keys. A new circle f (dashed, amber) appears at the field's argmax with radius d = g(x₀); classification ripples outward from f — grey no-op leaves dim out, blue replace (digit → 1), green append (digit + 1, one of them depth-capped), amber subdivide. Subdividing leaves split into four with per-child bucket sizes; one such leaf is magnified beside the plot: its set Bₙ ∪ {f} flows into the four children, each child's prune strikes out the provably redundant members (w, c₂ — or f itself where it never wins), and the surviving lists are visibly shorter. Finally the field commits to min(g, f): tints lift, the split lines join the tree, and the refined ADF sits over the updated field}
 Inserting a primitive `f` over a domain visits every overlapping leaf independently and in parallel, resolving each through that predicate:
 {formula: \begin{aligned}
 f \ge g_{B_n} \text{ on } R_n &\;\Rightarrow\; \text{no-op} && (f \text{ never lowers the field})\\
@@ -102,6 +106,7 @@ g_{B_n} \ge f \text{ on } R_n &\;\Rightarrow\; B_n \leftarrow \{f\} && (f \text{
 {read: "prune of B over R keeps exactly those primitives f-i that are not everywhere dominated by the minimum of the others — that is, that still define the field somewhere in R."}
 Each comparison runs through that same sound predicate, so a primitive is discarded only when provably redundant. The stored field is never corrupted; pruning can err only toward keeping.
 
+<!-- Insertion domains -->
 {visual: two panels. GLOBAL maximum: the free ball B(x₀,d), the enclosing B(x₀,2d) that bounds where the field can still exceed |v−x₀|−d, and the tight axis-aligned 4d square around it; a second ball, tangent, kisses the square's edge — witnessing that the constant 4 cannot be lowered. LOCAL maximum: a maximum pinned by three contact points with gaps under 180°, an escape ray w along which the field stays above f and the update region D* streaks outward without bound; then the insert_at_maximum walk lights up only the subtrees satisfying ĝ(c_R)+L_B·h(R) > dist(R,x₀)−d, hugging D* instead of any fixed box}
 One question remains: where can an insertion actually alter the field? A shape placed at a maximum `x_0` fits inside the free ball of radius `d = g(x_0)`, so `f(v) ≥ ‖v − x_0‖ − d`, and the field can shift only within
 {formula: D^{*}\;=\;\bigl\{\, \vec v \ :\ g(\vec v) > \lVert \vec v - \vec x_0\rVert - d \,\bigr\}}
@@ -113,17 +118,18 @@ For a **local** maximum, no square of side proportional to `d` is sound at all: 
 Here `g-hat` is the node's own bucket field — exact at a leaf, and at an internal node a pre-subdivision snapshot, which stays a valid upper bound because insertions only ever push the field down.
 
 ### Scene 6
+{visual: title card — GD-ADF: lossless, 10–100× less memory than the bitmap, continuous field ⇒ gradient ascent; a local-maximum method}
 Unlike the bitmap approach, this representation is lossless, offering a 10–100× memory reduction, and is continuously differentiable — making it possible to reintroduce an iterative optimizer. For practical purposes, I use an adaptive gradient ascent, which makes GD-ADF a __local-maximum method__.
 
-{visual: a trajectory climbing a distance field; near the medial-axis ridge the raw gradient alternates sides, while the momentum-blended direction runs straight along the ridge; the step grows on accepted moves and halves on rejected ones}
+{visual: the optimize_precision test field (two point obstacles + the walls, mapped to [-2,2]²) as a contour plot, the two update formulas at the right. From one seed the raw-gradient ascent runs step by step — accepted moves solid red, rejected trials dashed and faded — zig-zagging across the medial-axis ridge, while an h-history bar chart (log scale, baseline Δ) grows green on accepts, red on rejects. The momentum ascent then runs from the same seed in cyan, straight along the ridge, its own h-chart below; the kink maximum is marked and each method's live verdict lands: field evaluations and final distance to the apex (raw stalls ~1e-1 away; momentum ends ~5e-3 away on fewer evaluations)}
 A trial step of length `h` is accepted only if it raises the field, so the iterate climbs monotonically. The step lengthens when a move succeeds and contracts when it fails. Crucially, the last accepted direction is folded into the next:
-{formula: \vec d_k \;=\; \widehat{\ \frac{\nabla g(\vec p_k)}{\lVert \nabla g(\vec p_k)\rVert} + \vec d_{k-1}\ }}
+{formula: \vec d_k \;=\; \mathrm{normalize}\!\left(\frac{\nabla g(\vec p_k)}{\lVert \nabla g(\vec p_k)\rVert} + \vec d_{k-1}\right)}
 {read: "d-k is the normalized sum of the unit gradient of g at p-k and the previous direction d-k-minus-one."}
 {formula: \vec p_{k+1} = \begin{cases}\vec p_k + h_k\,\vec d_k & \text{if } g \text{ improves}\\ \vec p_k & \text{otherwise}\end{cases}\qquad h \leftarrow \begin{cases} h\cdot\text{growth}\\ h\cdot\text{decay}\end{cases}}
 {read: "p-k-plus-one is p-k plus h-k times d-k if g improves, else p-k unchanged; and h is multiplied by the growth factor on acceptance, or the decay factor on rejection."}
 The maxima of a distance field lie on the medial axis, where `g` is not differentiable and the raw gradient zig-zags across the ridge. The momentum term cancels the across-ridge components, leaving travel along it. This beats my original fixed exponential-decay schedule on two counts: that schedule burns a constant number of steps regardless of convergence and cannot refine a kink, whereas the adaptive rule stops the moment the step falls below tolerance and bisects onto the exact maximum. On my benchmark it locates the maximum up to 3 orders of magnitude more precisely, in fewer field evaluations. And a vanishing gradient — a flat region such as the clamped interior of an estimator — terminates the ascent immediately, rather than wasting the whole iteration budget.
 
-{visual: `find_max_parallel` — a batch of random seeds ascend independently and in parallel (drawn as simultaneous trajectories); then a sequential pass sweeps the results, drawing each survivor's free ball and rejecting any whose ball overlaps an already-kept one (flash red), keeping the disjoint ones (green); the survivors are inserted together}
+{visual: `find_max_parallel` — a mid-fill field (wall + five circles); ten seeds ascend simultaneously along cyan trajectories to their local maxima, each capped by its free ball, the accept rule shown above. A sequential sweep in batch order flashes each ball green (kept) or red (overlaps an already-kept ball — the two pockets found twice lose their duplicate) and rejected balls fade out. The survivors commit together: the field crossfades to the union with the eight new circles, the free balls settling onto the new white zero contours}
 Full parallelism is delicate: an entire batch of maxima is located against a single snapshot of the field, yet every insertion mutates it. The ascents are read-only, and so embarrassingly parallel; the hazard lies in committing their results, since two maxima from one batch might place overlapping shapes. The batch is therefore deduplicated — a maximum survives only if its free ball is disjoint from every one already kept:
 {formula: \text{accept } \vec m_j \iff \lVert \vec m_i - \vec m_j\rVert > d_i + d_j \quad \forall\ \text{accepted } i}
 {read: "accept m-j if and only if the distance from m-i to m-j exceeds d-i plus d-j, for every already-accepted maximum i."}
@@ -131,8 +137,8 @@ Disjoint free balls guarantee the shapes cannot overlap, whatever the insertion 
 
 ### Scene 7
 So, how long does it take to make "A Million-Circle Fractal"?
-{visual: ../../examples/gd_adf/02_random_distribution.rs, but with 1M circles, adf max depth = 10, gradually filling the space each frame}
-{visual: assets/1M.png (final render), zooming in, panning around}
+{visual: the real run, embedded: render/src/bin/random_distribution.rs — 02_random_distribution verbatim, driven to 1M circles at ADF max depth 10 — pre-rendered to assets/derived/random_distribution.mp4 on a geometric frame schedule (~330 frames from the first 4 circles to the full million, so the fill accelerates smoothly). Beside the footage a live "circles inserted" counter follows the same schedule up to 1 000 000}
+{visual: assets/1M.png (the finished 8192² render), a pre-baked zoom/pan pass (assets/derived/million_zoom.mp4): full view, dive to 6.4×, diagonal pan across, pull back out; then the quoted figures land on a dim strip over the artwork — 49 s / 113 k nodes / 76 MiB}
 49 seconds on a 4-core machine. The resulting ADF tree contains 113k nodes, totalling 76MiB.
 
 ### Scene 8

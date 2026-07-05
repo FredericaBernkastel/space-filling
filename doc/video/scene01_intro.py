@@ -75,42 +75,15 @@ class Scene01Intro(VideoScene):
         )
 
     # ------------------------------------------------------------------ #
-    def _scroll_image(self, path, width, run_time, framed=False, chip_label=None):
-        """Fade in a tall image aligned to the top edge, scroll it up, fade out."""
-        img = ImageMobject(path)
-        img.width = width
-        top_gap = 0.4
-        img.move_to([0, (config.frame_height / 2 - top_gap) - img.height / 2, 0])
-
-        grp = Group(img)
-        if framed:
-            border = SurroundingRectangle(img, color=MUTED, buff=0.0).set_stroke(width=1.5)
-            grp.add(border)
-        chip = self.source_chip(chip_label) if chip_label else None
-
-        intro = [FadeIn(grp)]
-        if chip:
-            intro.append(FadeIn(chip))
-        self.play(*intro, run_time=0.8)
-
-        scroll = max(img.height - config.frame_height + 2 * top_gap, 0.3)
-        self.play(grp.animate.shift(UP * scroll), run_time=run_time, rate_func=linear)
-        self.wait(0.3)
-
-        outro = [FadeOut(grp)]
-        if chip:
-            outro.append(FadeOut(chip))
-        self.play(*outro)
-
     def beat_readme(self) -> None:
         """Scroll the rendered README 'Implementation' section (framed page)."""
-        self._scroll_image(asset("readme.md.png"), width=7.0, run_time=7.5,
-                           framed=True, chip_label="readme.md")
+        self.scroll_image(asset("readme.md.png"), width=7.0, run_time=7.5,
+                          framed=True, chip_label="readme.md")
 
     def beat_bourke_webpage(self) -> None:
         """Scroll Bourke's 2011 page, exported to PDF and rasterized to a strip."""
-        self._scroll_image(asset("derived/bourke_webpage.png"), width=7.6, run_time=8.0,
-                           framed=False, chip_label="paulbourke.net/fractals/randomtile")
+        self.scroll_image(asset("derived/bourke_webpage.png"), width=7.6, run_time=8.0,
+                          framed=False, chip_label="paulbourke.net/fractals/randomtile")
 
     # ------------------------------------------------------------------ #
     def beat_million_circles(self) -> None:

@@ -11,10 +11,17 @@ publish = false
 name = "fractal_distribution"
 path = "src/bin/fractal_distribution.rs"
 
+[[bin]]
+name = "random_distribution"
+path = "src/bin/random_distribution.rs"
+
 [dependencies]
 space-filling = { path = "../../..", features = ["drawing"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
 anyhow = "1.0"
+# same versions as the library, for the example-verbatim circle parameters
+rand = { version = "0.8", default-features = false }
+rand_pcg = "0.3"
 
 # Own workspace root, so cargo does not try to attach this to the parent crate.
 [workspace]
