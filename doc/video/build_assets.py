@@ -153,3 +153,5 @@ if __name__ == "__main__":
     # pre-baked zoom/pan over the final 8192^2 render
     build_stream_mp4("random_distribution", DERIVED / "random_distribution.mp4", size=1024)
     build_kenburns_mp4(ASSETS / "1M.png", DERIVED / "million_zoom.mp4")
+    # Scene 8: 06_custom_primitive — 20k Mandelbrot estimators (L = 4)
+    build_stream_mp4("custom_primitive", DERIVED / "custom_primitive.mp4", size=1024)

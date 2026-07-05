@@ -15,6 +15,10 @@ path = "src/bin/fractal_distribution.rs"
 name = "random_distribution"
 path = "src/bin/random_distribution.rs"
 
+[[bin]]
+name = "custom_primitive"
+path = "src/bin/custom_primitive.rs"
+
 [dependencies]
 space-filling = { path = "../../..", features = ["drawing"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
@@ -22,6 +26,10 @@ anyhow = "1.0"
 # same versions as the library, for the example-verbatim circle parameters
 rand = { version = "0.8", default-features = false }
 rand_pcg = "0.3"
+# example-verbatim Mandelbrot estimator (Scene 8)
+num-traits = "0.2"
+num-complex = "0.4"
+euclid = "0.22"
 
 # Own workspace root, so cargo does not try to attach this to the parent crate.
 [workspace]
