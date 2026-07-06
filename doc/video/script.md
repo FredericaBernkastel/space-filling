@@ -8,24 +8,26 @@ Target audience: graduate level. Terse; no general-audience detours.
 -->
 
 ### Scene 1
-Liserotte here. The story opens with one equation — call it (1):
-{formula: \vec{x}^{*} \;=\; \arg\max_{\vec v \in \Omega}\ \min_{n}\ \mathrm{sdf}_{n}(\vec v)}
+Liserotte here. The story opens with one equation:
+{formula: \vec{x}^{*} \;=\; \arg\max_{\vec v \in \Omega}\ \min_{n}\ \mathrm{sdf}_{n}(\vec v)} (1)
 {read: "x-star equals the arg-max, over the domain omega, of the pointwise minimum over all primitives n of sdf-n of v."}
 Solving it numerically poses no difficulty; solving it in logarithmic time and linear memory is another matter entirely — and chasing that goal drew me into some genuinely fascinating mathematics.
 
 {visual: ../../readme.md, "Implementation" section, scrolling}
-This video presents my paper together with its reference implementation, which I've worked on for the past six years, mostly due to lack of theoretical knowledge on my part.
+This video presents my original paper together with its reference implementation, which I've worked on for the past six years, mostly due to lack of theoretical knowledge on my part.
 
 But let me start earlier still.
 {visual: https://paulbourke.net/fractals/randomtile, scrolling}
-In 2011, Paul Bourke published *Random space filling of the plane*, a note in statistical geometry. It introduced an iterative algorithm for tiling E^n space with non-overlapping shapes. The visuals were stunning; the algorithm behind it, far less so.
+In 2011, Paul Bourke published *Random space filling of the plane*, a note in statistical geometry. This is actually a great read, I encourage you to pause here and check it out in full. 
+It introduced an iterative algorithm for tiling E^n space with non-overlapping shapes. The visuals were indeed stunning; the algorithm behind it, far less so.
 
 {visual: assets/bourke_zoom.png, zooming out}
 Here is *A Million-Circle Fractal*; the quoted generation time was 14.7 hours. Nor did the method grant much control over the resulting distribution. Can we do better?
 
 ### Scene 2
 {visual: densely filled space with shapes. random locations are tried one by one at least 10 times, all rejected due to being inside some shape, marked in red. until one is found to be outside, marked in green}
-The flaw lies entirely in the random sampling. As more and more shapes are added, there is a vanishingly small chance of finding an empty spot. In the limit, it takes an unbounded amount of iterations to insert one more shape.
+The flaw lies entirely in the random sampling. As more and more shapes are added, there is a vanishingly small chance of finding an empty spot. In the limit, it takes an unbounded amount of iterations to insert one more shape.  
+In this visual we see several random samples ending up inside some shape, therefore rejected. Finally one is found to be outside; it is quite close to the edge though, but we have no choice here. A new circle will be added centered at current sample, even though a more optimal solution is clearly available. **This** is what I meant by the lack of control over distribution. 
 
 Consider a different approach: represent every shape by a signed distance function.
 {visual: all distance functions of shapes from `shapes.rs` visualized in a grid, alongside their field notations}
@@ -48,7 +50,7 @@ Problem solved? Not quite. Evaluating that pointwise minimum over N primitives c
 {visual: an N×N grid whose cells are threaded by a Z-order (Morton) curve; the compound field is rasterized onto it as a heatmap; a single linear scan sweeps the cells, tracking the running maximum, which lands on the brightest cell}
 Consider a bitmap of size N×N and rasterize the field onto it, one single-precision sample per pixel. Lay the pixels out along a Z-order curve, so that spatially close samples stay close in memory, then scan them one by one for the global maximum. Does it hold up?
 {visual: ../../examples/argmax2d/01_fractal_distribution.rs, iteratively add one more shape every frame}
-A lookup is now O(1), in principle — but increasing precision costs both quadratic time *and* quadratic memory. The 4096×4096 grid shown here already suffers an average discretization error of 2.44e-4 while consuming 64MB. A dead end.
+Good enough for a toy model. A lookup is now O(1), in principle — but increasing precision costs both quadratic time *and* quadratic memory. The 4096×4096 grid shown here already suffers an average discretization error of 2.44e-4 while consuming 64MB. One can can come up with more optimizations, split it in chunks; but this will merely change the constant before O. A dead end.
 
 ### Scene 4
 {visual: assets/Adaptively sampled distance fields.pdf, scrolling}
@@ -56,7 +58,7 @@ The paper *Adaptively Sampled Distance Fields* (2000) (doi:10.1145/344779.344899
 Current work takes a different route: each node — a *bucket* — stores the primitives (function pointers) themselves.
 
 {visual: a quadtree subdividing over the plane; each leaf highlights only the few primitives whose fields reach into it; a query point descends root-to-leaf, then min-reduces over that leaf's short bucket}
-The purpose of the buckets is spatial locality of relevance.  Far from a shape, that shape never wins the minimum, so there is no reason to keep it there. Each leaf retains only the handful of primitives that can define the field inside it. To sample `g` at a point, descend to its leaf and minimise over that one short bucket:
+The purpose of the buckets is spatial locality of relevance.  Far from a shape, that shape never wins the minimum, so there is no reason to keep it there. Each leaf retains only the handful of primitives sufficient to fully define the field inside it. To sample `g` at a point, descend to its leaf and minimise over that one short bucket:
 {formula: g(\vec v)\;=\;\min_{f \in B(\ell(\vec v))} f(\vec v),\qquad \text{cost }\;O(\mathrm{depth} + \beta)}
 {read: "g of v is the minimum over the primitives f in the bucket of the leaf containing v; the cost is order depth plus beta, the bucket size."}
 On a balanced tree the depth is logarithmic and the bucket size `β` stays constant, so a query runs in O(log N) — never once touching the millions of distant primitives.
@@ -64,10 +66,6 @@ On a balanced tree the depth is logarithmic and the bucket size `β` stays const
 The next section develops the algebraic formalism in its entirety, on which the crucial optimizations rely. If you'd rather see the final results instead, jump to 00:00.
 
 ### Scene 5
-<!-- quadtree arena -->
-{visual: a single contiguous array of nodes; each internal node points to the index of the first of its four children, drawn as an arrow into the packed block; sibling cells adjacent in memory}
-The tree itself lives in a flat arena — every node in one contiguous array. A node names its four children by the index of the first, since the four sit contiguously, rather than through a boxed pointer. Siblings stay cache-adjacent, the whole structure takes a single allocation, and, being purely index-based, it admits lock-free parallel traversal. The child link is an `Option<NonZeroU32>`; the niche fits a node into exactly 64 bytes — one cache line — with `None` marking a leaf.
-
 <!-- Lipzschitz-continuity -->
 {visual: a 1-D slice of the field drawn as a curve; at a sample point c, draw the forward cone of slope ±L; slide c along the axis and show the curve never leaving the swept cone. Inset: two nearby points a, b with the bars |f(a)−f(b)| and L·|a−b|, the first always the shorter}
 The soundness of everything that follows rests on Lipschitz continuity. A function `f` is `L`-Lipschitz when
@@ -75,10 +73,13 @@ The soundness of everything that follows rests on Lipschitz continuity. A functi
 {read: "the absolute value of f of a minus f of b is at most L times the distance from a to b, for all a and b."}
 Geometrically, the graph is confined to a cone of slope `L`, so a single sample together with the constant pins the function across an entire neighbourhood. True SDFs are one-Lipschitz; estimators simply declare a larger `L`.
 
-Now the complete field algebra. A primitive is a pair: a field `f` and its declared Lipschitz constant `L`. A bucket denotes their pointwise minimum, whose constant is the largest among them — and the `Lipschitz` trait propagates it automatically along any combinator chain.
-
 <!-- sdf_geq_everywhere -->
-The core predicate decides whether `f ≥ g` everywhere on a rectangle. Since `f − g` is `(L_f + L_g)`-Lipschitz,
+{visual: TODO}
+Next, assume you do not yet know the definition of Lipschitz-continuity we just discussed. A quick task for you: given 1-dimensional interval and two functions - f and g: how would you prove that `f ≥ g` on the entire interval? To clarify, you do not anything about the functions at this moment either, and the only operation you are permitted is to sample a value of the function, one place at a time.  
+Perhaps you can sample it on regular intervals, stopping once you found a spot where `f < g`. But what if all your samples were positive, but there was a sharp spike in between your samples? Your strategy will yield a false-positive, leading to some nasty issues down the line. And besides, in 2D case a regular grid test will take O(N^2) in terms of the resolution, you can only increase it so far.  
+Another idea? Perhaps come with some fancy interior point method optimizer? Think on your own.  
+
+Here is my solution: since `f − g` is `(L_f + L_g)`-Lipschitz,
 {formula: (f-g)(\vec v)\;\ge\;(f-g)(\vec c)\;-\;(L_f + L_g)\,h(R)\qquad \forall\, \vec v \in R}
 {read: "for every v in the rectangle R, f minus g at v is at least its value at the centre c, minus the sum of the Lipschitz constants L-f and L-g, times h of R, the half-diagonal of R."}
 {visual: a live ADF-node rectangle over the field f−g. At each rectangle: sample the centre δ and draw the Lipschitz slack (L_f+L_g)·h as a symmetric interval around δ; colour the rectangle green when δ ≥ slack (f≥g proven — discard), red when δ<0 (witness — abort, return false), amber otherwise (undecided). Recurse, subdividing only the amber rectangles into quadrants, so the amber frontier races down the f=g contour until every rectangle is green or one turns red}
@@ -116,6 +117,11 @@ For a **local** maximum, no square of side proportional to `d` is sound at all: 
 {formula: \hat g(\vec c_R) + L_B\, h(R)\;\le\;\mathrm{dist}(R, \vec x_0) - d}
 {read: "g-hat at the centre of R, plus the bucket constant L-B times the half-diagonal, is at most the distance from R to x-zero, minus d."}
 Here `g-hat` is the node's own bucket field — exact at a leaf, and at an internal node a pre-subdivision snapshot, which stays a valid upper bound because insertions only ever push the field down.
+
+<!-- quadtree arena -->
+{visual: a single contiguous array of nodes; each internal node points to the index of the first of its four children, drawn as an arrow into the packed block; sibling cells adjacent in memory}
+Lastly, I'd like to briefly mention quadtree implementation itself.
+Rather than dynamically allocating each node in heap, the tree lives in a flat arena — every node in one contiguous array. A node names its four children by the index of the first, since the four sit contiguously. Siblings stay cache-adjacent, the whole structure takes a single allocation, and, being purely index-based, it admits lock-free parallel traversal. The child link is an `Option<NonZeroU32>`; the niche fits it exactly into 4 bytes, and the whole node is exactly 64 bytes — one cache line — with `None` variant marking a leaf. Optimizing memory footprint further is definitely possible, but out of my scope.
 
 ### Scene 6
 {visual: title card — GD-ADF: lossless, 10–100× less memory than the bitmap, continuous field ⇒ gradient ascent; a local-maximum method}

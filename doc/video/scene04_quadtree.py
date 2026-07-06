@@ -224,7 +224,7 @@ class Scene04Quadtree(VideoScene):
 
     # ------------------------------------------------------------------ #
     def beat_transition(self) -> None:
-        line1 = Text("Next: the complete field algebra.", font_size=FS_H2, color=INK)
+        line1 = Text("Next: the complete algebraic formalism.", font_size=FS_H2, color=INK)
         line2 = Text("Prefer the results? Jump to 00:00.", font_size=FS_CAPTION, color=MUTED)
         grp = VGroup(line1, line2).arrange(DOWN, buff=0.4).move_to(ORIGIN)
         self.play(FadeIn(line1, shift=UP * 0.2))

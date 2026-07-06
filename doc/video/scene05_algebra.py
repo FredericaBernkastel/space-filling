@@ -24,11 +24,11 @@ BLUE = "#58a6ff"
 
 class Scene05Algebra(VideoScene):
     def construct(self) -> None:
-        self.beat_arena()
         self.beat_lipschitz()
         self.beat_bnb()
         self.beat_insert()
         self.beat_domains()
+        self.beat_arena()
 
     # ------------------------------------------------------------------ #
     def beat_arena(self) -> None:
