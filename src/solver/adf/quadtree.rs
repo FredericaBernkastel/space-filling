@@ -119,6 +119,12 @@ impl<Data, _Float: Float> Quadtree<Data, _Float> {
     &self.nodes[0]
   }
 
+  /// Number of nodes in the arena (internal + leaves).
+  #[inline]
+  pub fn node_count(&self) -> usize {
+    self.nodes.len()
+  }
+
   /// Apply `f` to every node (internal and leaf); order is unspecified. Stops
   /// early and returns the error if `f` fails.
   pub fn traverse(&self, f: &mut dyn FnMut(&Node<Data, _Float>) -> Result<()>) -> Result<()> {

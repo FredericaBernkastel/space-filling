@@ -414,18 +414,23 @@ impl <_Float: Float> Debug for ADF<_Float> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     use humansize::{FileSize, file_size_opts as options};
 
-    let mut total_nodes = 0u64;
-    let mut total_size = 0usize;
     let mut max_depth = 0u8;
+    let mut bucket_slots = 0usize;
     self.tree.traverse(&mut |node| {
-      total_nodes += 1;
-      total_size += std::mem::size_of::<Self>()
-        + node.data.capacity() * std::mem::size_of::<Primitive<_Float>>();
-      max_depth = (max_depth).max(node.depth);
+      max_depth = max_depth.max(node.depth);
+      bucket_slots += node.data.len();
       Ok(())
     }).ok();
+    // Actual data only — Vec spare capacity is not counted (it can always be
+    // shrunk to fit): the arena's nodes, plus each bucket's `Primitive`s (fat
+    // pointer + Lipschitz constant per slot). The closures behind the `Arc`s
+    // are shared between buckets and are not attributed here.
+    let total_size = std::mem::size_of::<Self>()
+      + self.tree.node_count()
+        * std::mem::size_of::<Node<Vec<Primitive<_Float>>, _Float>>()
+      + bucket_slots * std::mem::size_of::<Primitive<_Float>>();
     f.debug_struct("ADF")
-      .field("total_nodes", &total_nodes)
+      .field("total_nodes", &self.tree.node_count())
       .field("max_depth", &max_depth)
       .field("size", &total_size.file_size(options::BINARY).unwrap())
       .finish()

@@ -244,7 +244,7 @@ class Scene08Mandelbrot(VideoScene):
         counter.become(counter_text(COUNT).move_to(counter_anchor, aligned_edge=RIGHT))
         self.wait(0.6)
 
-        # the quoted figures (script-verbatim: "7 seconds, 4.74 MiB, no obvious errors.")
+        # the quoted figures (script-verbatim: "7 seconds, 3.4 MiB, zero errors.")
         def stat(value: str, label: str, color=ACCENT) -> VGroup:
             v = mono(value, font_size=FS_H2, color=color)
             l = Text(label, font_size=FS_CHIP, color=MUTED)
@@ -252,8 +252,9 @@ class Scene08Mandelbrot(VideoScene):
 
         stats = VGroup(
             stat("7 s", "— insertion time"),
-            stat("4.74 MiB", "— ADF size"),
-            stat("✓", "no obvious errors", color=GREEN),
+            stat("17 k", "— nodes"),
+            stat("3.4 MiB", "— ADF size"),
+            stat("✓", "zero errors", color=GREEN),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.32)
         stats.to_edge(RIGHT, buff=1.0).shift(DOWN * 1.6)
 

@@ -25,6 +25,7 @@ BLUE = "#58a6ff"
 class Scene05Algebra(VideoScene):
     def construct(self) -> None:
         self.beat_lipschitz()
+        self.beat_sampling_trap()
         self.beat_bnb()
         self.beat_insert()
         self.beat_domains()
@@ -196,6 +197,76 @@ class Scene05Algebra(VideoScene):
         self.play(c2.animate.set_value(1.8), run_time=4.0, rate_func=linear)
         self.wait(1.2)
         self.play(FadeOut(Group(formula, note, ax2, curve2, clabel2, cone2, forb2)))
+
+    # ------------------------------------------------------------------ #
+    def beat_sampling_trap(self) -> None:
+        """Prove f >= g knowing only point samples: regular sampling passes every
+        check, then the revealed curves hide a spike between two samples — a
+        false positive. (The Lipschitz predicate that follows is the rescue.)"""
+        question = rich_text("prove f ≥ g on the whole interval — sampling one point at a time",
+                             font_size=FS_H2, color=INK).to_edge(UP, buff=0.5)
+        sub = Text("you know nothing else about f or g", font_size=FS_CAPTION, color=MUTED)
+        sub.next_to(question, DOWN, buff=0.22)
+        self.play(FadeIn(question), FadeIn(sub))
+
+        def g1(x):
+            return 1.0 + 0.25 * np.sin(0.9 * x - 0.4)
+
+        def f0(x):
+            return 1.9 + 0.35 * np.sin(1.1 * x + 0.7)
+
+        xs_spike = 0.5  # midway between two samples; V dips below g there
+
+        def f1(x):
+            return min(f0(x), 0.45 + 5.0 * abs(x - xs_spike))
+
+        ax = Axes(x_range=[-3, 3, 1], y_range=[0, 3, 1], x_length=9.6, y_length=3.4, tips=False,
+                  axis_config={"stroke_color": MUTED, "stroke_width": 2}).to_edge(DOWN, buff=1.15)
+        legend = VGroup(
+            VGroup(Dot(radius=0.05, color=COOL), Text("f", font_size=FS_CAPTION, color=COOL)).arrange(RIGHT, buff=0.12),
+            VGroup(Dot(radius=0.05, color=ACCENT), Text("g", font_size=FS_CAPTION, color=ACCENT)).arrange(RIGHT, buff=0.12),
+        ).arrange(RIGHT, buff=0.55).next_to(ax, UP, buff=0.15).to_edge(LEFT, buff=1.0)
+        self.play(Create(ax), FadeIn(legend))
+
+        # regular samples, one at a time — f lands above g at every one
+        columns = VGroup()
+        for k, x in enumerate(range(-3, 4)):
+            tick = DashedLine(ax.c2p(x, 0), ax.c2p(x, 2.6), dash_length=0.06,
+                              color=MUTED, stroke_width=1).set_stroke(opacity=0.4)
+            fd = Dot(ax.c2p(x, f1(x)), radius=0.055, color=COOL)
+            gd = Dot(ax.c2p(x, g1(x)), radius=0.055, color=ACCENT)
+            check = rich_text("✓", font_size=14, color=GREEN).move_to(ax.c2p(x, 2.8))
+            col = VGroup(tick, fd, gd, check)
+            columns.add(col)
+            self.play(FadeIn(tick), FadeIn(fd, scale=1.6), FadeIn(gd, scale=1.6),
+                      FadeIn(check, shift=UP * 0.1), run_time=0.28)
+        passed = Text("every sample passes — done?", font_size=FS_CAPTION, color=INK)
+        passed.next_to(ax, UP, buff=0.15).to_edge(RIGHT, buff=1.0)
+        self.play(FadeIn(passed))
+        self.wait(1.4)
+
+        # the reveal: the true curves, and a spike hiding between two samples
+        fcurve = ax.plot(f1, color=COOL, stroke_width=3)
+        gcurve = ax.plot(g1, color=ACCENT, stroke_width=3)
+        self.play(Create(gcurve), Create(fcurve), run_time=1.6)
+
+        band = Rectangle(width=abs(ax.c2p(0.615, 0)[0] - ax.c2p(0.385, 0)[0]),
+                         height=abs(ax.c2p(0, 3)[1] - ax.c2p(0, 0)[1]))
+        band.set_fill(RED, 0.22).set_stroke(width=0)
+        band.move_to(ax.c2p(xs_spike, 1.5))
+        trap = rich_text("a hidden spike — f < g between the samples", font_size=FS_CAPTION, color=RED)
+        trap.next_to(ax, UP, buff=0.15).to_edge(RIGHT, buff=1.0)
+        # the checks stay green on purpose: every sample honestly passed —
+        # that is exactly the trap
+        self.play(FadeIn(band), ReplacementTransform(passed, trap))
+        self.play(Flash(ax.c2p(xs_spike, 0.45), color=RED, line_length=0.2))
+        self.wait(1.2)
+
+        grid_note = rich_text("and in 2D, a regular grid costs O(N²) — resolution only stretches so far",
+                              font_size=FS_CHIP, color=MUTED).to_edge(DOWN, buff=0.4)
+        self.play(FadeIn(grid_note, shift=UP * 0.1))
+        self.wait(1.8)  # "think on your own"
+        self.play(*[FadeOut(m) for m in list(self.mobjects)])
 
     # ------------------------------------------------------------------ #
     def beat_bnb(self) -> None:

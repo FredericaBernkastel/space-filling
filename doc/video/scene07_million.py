@@ -100,8 +100,8 @@ class Scene07Million(VideoScene):
 
         stats = VGroup(
             stat("49 s", "on a 4-core machine"),
-            stat("113 k", "ADF tree nodes"),
-            stat("76 MiB", "total size"),
+            stat("159 k", "ADF tree nodes"),
+            stat("59 MiB", "total size"),
         ).arrange(DOWN, buff=0.7, aligned_edge=RIGHT)
         stats.to_edge(RIGHT, buff=0.8).set_y(0.1)
 

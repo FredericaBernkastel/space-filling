@@ -56,4 +56,5 @@ fn main() {
   for (d, ax, ay, bx, by, n) in leaves {
     println!("  d{d} ({ax:+.2},{ay:+.2})..({bx:+.2},{by:+.2})  |B|={n}");
   }
+  println!("{adf:#?}");
 }
