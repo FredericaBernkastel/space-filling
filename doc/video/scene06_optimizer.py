@@ -74,7 +74,7 @@ class Scene06Optimizer(VideoScene):
         title = Text("GD-ADF — reintroducing the optimizer", font_size=FS_TITLE, color=INK)
         chips = VGroup(
             Text("lossless — the field is exact, not sampled", font_size=FS_BODY, color=MUTED),
-            Text("10–100× less memory than the bitmap", font_size=FS_BODY, color=MUTED),
+            rich_text("10–100× less memory than the bitmap", font_size=FS_BODY, color=MUTED),
             rich_text("continuous field ⇒ gradient ascent works", font_size=FS_BODY, color=MUTED),
             rich_text("⇒ GD-ADF is a local-maximum method", font_size=FS_BODY, color=FIELD_HI),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.32)
@@ -147,8 +147,9 @@ class Scene06Optimizer(VideoScene):
         ch_raw = chart(ch_raw_o, "raw  (no momentum)", RED)
         ch_mom = chart(ch_mom_o, "momentum", TRAIL)
 
+        # caption lane sits above the source chip's line (the mono chip is wide)
         cap = Text("a trial step is kept only if g improves — the iterate is monotone",
-                   font_size=FS_CHIP, color=MUTED).to_edge(DOWN, buff=0.35).set_x(2.2)
+                   font_size=FS_CHIP, color=MUTED).to_edge(DOWN, buff=0.78).set_x(2.2)
 
         self.play(FadeIn(title), FadeIn(img), FadeIn(dim), Create(border), FadeIn(deco),
                   FadeIn(chip), FadeIn(d_eq), FadeIn(p_eq), FadeIn(cap))
@@ -174,7 +175,7 @@ class Scene06Optimizer(VideoScene):
         self.play(FadeIn(ch_raw))
         raw_dot, raw_trail = play_ascent(False, RED, ch_raw_o)
         raw_note = Text("the raw gradient alternates sides of the ridge",
-                        font_size=FS_CHIP, color=RED).to_edge(DOWN, buff=0.35).set_x(2.2)
+                        font_size=FS_CHIP, color=RED).to_edge(DOWN, buff=0.78).set_x(2.2)
         self.play(ReplacementTransform(cap, raw_note))
         self.wait(0.8)
 
@@ -182,7 +183,7 @@ class Scene06Optimizer(VideoScene):
                   raw_dot.animate.set_opacity(0.45))
         mom_dot, mom_trail = play_ascent(True, TRAIL, ch_mom_o, rt=0.28)
         mom_note = Text("momentum cancels the across-ridge component — travel runs along the ridge",
-                        font_size=FS_CHIP, color=TRAIL).to_edge(DOWN, buff=0.35).set_x(2.2)
+                        font_size=FS_CHIP, color=TRAIL).to_edge(DOWN, buff=0.78).set_x(2.2)
         self.play(ReplacementTransform(raw_note, mom_note))
         self.wait(0.6)
 
@@ -199,7 +200,7 @@ class Scene06Optimizer(VideoScene):
         v_raw = verdict(False, RED).next_to(ch_raw[0], DOWN, buff=0.32)
         v_mom = verdict(True, TRAIL).next_to(ch_mom[0], DOWN, buff=0.32)
         end_note = rich_text("h < Δ stops the ascent — the kink is refined bisection-style",
-                             font_size=FS_CHIP, color=FIELD_HI).to_edge(DOWN, buff=0.35).set_x(2.2)
+                             font_size=FS_CHIP, color=FIELD_HI).to_edge(DOWN, buff=0.78).set_x(2.2)
 
         self.play(FadeIn(apex_dot, scale=2.0), FadeIn(apex_lbl), FadeIn(v_raw), FadeIn(v_mom))
         self.play(ReplacementTransform(mom_note, end_note))

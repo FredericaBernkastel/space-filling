@@ -30,9 +30,6 @@ class Scene01Intro(VideoScene):
     # ------------------------------------------------------------------ #
     def beat_equation(self) -> None:
         """'Liserotte here.' + equation (1): the arg-max / min objective."""
-        signature = Text("Liserotte", font_size=FS_CAPTION, color=MUTED, slant=ITALIC)
-        signature.to_corner(DR, buff=0.4)
-        self.play(FadeIn(signature, shift=UP * 0.2))
 
         eq = MathTex(
             r"\vec{x}^{*}",                    # 0
@@ -69,7 +66,6 @@ class Scene01Intro(VideoScene):
                 FadeOut(goal, shift=DOWN * 0.2),
                 FadeOut(number),
                 FadeOut(eq, shift=UP * 0.3),
-                FadeOut(signature),
                 lag_ratio=0.12,
             )
         )
@@ -78,7 +74,7 @@ class Scene01Intro(VideoScene):
     def beat_readme(self) -> None:
         """Scroll the rendered README 'Implementation' section (framed page)."""
         self.scroll_image(asset("readme.md.png"), width=7.0, run_time=7.5,
-                          framed=True, chip_label="readme.md")
+                          framed=True)
 
     def beat_bourke_webpage(self) -> None:
         """Scroll Bourke's 2011 page, exported to PDF and rasterized to a strip."""
@@ -95,7 +91,7 @@ class Scene01Intro(VideoScene):
         img.move_to(ORIGIN)
 
         self.camera.frame.save_state()
-        self.camera.frame.scale(0.28).move_to(img.get_center() + RIGHT * 1.2 + UP * 0.8)
+        self.camera.frame.scale(0.28).move_to(img.get_center() + LEFT * 3 + UP * 0.8)
         self.add(img)
         self.wait(0.5)
         self.play(Restore(self.camera.frame), run_time=6, rate_func=smooth)

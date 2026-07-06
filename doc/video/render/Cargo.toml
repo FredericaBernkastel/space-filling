@@ -16,6 +16,10 @@ name = "random_distribution"
 path = "src/bin/random_distribution.rs"
 
 [[bin]]
+name = "adf_layout"
+path = "src/bin/adf_layout.rs"
+
+[[bin]]
 name = "custom_primitive"
 path = "src/bin/custom_primitive.rs"
 

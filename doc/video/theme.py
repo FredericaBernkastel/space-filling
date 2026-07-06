@@ -65,16 +65,21 @@ def mono_span(s: str) -> str:
     return f'<span face="Fira Code">{s}</span>'
 
 
-# Alef's coverage stops at Latin + common punctuation; this Pango build does
-# family fallback but NOT per-glyph fallback, so maths/symbol characters would
-# render as tofu boxes. rich_text() keeps prose in Alef and routes exactly the
-# missing glyphs through DejaVu Sans (full coverage, probe-verified).
-_SYMBOL_FONT = "DejaVu Sans"
-_ALEF_MISSING = set(
+# Alef's coverage stops at Latin + common punctuation, and this Pango build
+# does family fallback but NOT per-glyph fallback, so maths/symbol characters
+# would render as tofu boxes. rich_text() keeps prose in Alef and routes the
+# maths glyphs through Fira Code, matching the code face. Render-verified:
+# Fira Code covers every symbol the scenes use EXCEPT the subscript letters
+# (ᵢⱼₐ…ₜ) and ⇒ ⇄ ≫ ⊕ ⊖ — exactly those fall back to DejaVu Sans.
+_SYMBOL_FONT = "Fira Code"
+_SYMBOL_FALLBACK = "DejaVu Sans"
+_FIRA_GAPS = set("ⁱₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼ⇒⇄≫⊕⊖")
+_SYMBOL_CHARS = set(
     "⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿⁱ₀₁₂₃₄₅₆₇₈₉"    # super/subscript digits
     "ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼ"              # subscript letters
-    "≈≠≥≤≫∇‖⊕⊖⊆∈∀∃⇒⇄→ℓ✓"        # maths & marks
+    "≈≠≥≤≫∇‖∪⊕⊖⊆∈∀∃⇒⇄→ℓ✓"       # maths & marks
     "ΔΩαβγδθλμπσφω"               # Greek
+    "·×"                          # Alef has these, but they belong with the maths
 )
 
 
@@ -82,19 +87,27 @@ def _pango_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _face(ch: str) -> str | None:
+    if ch not in _SYMBOL_CHARS:
+        return None
+    return _SYMBOL_FALLBACK if ch in _FIRA_GAPS else _SYMBOL_FONT
+
+
 def rich_text(text: str, **kwargs) -> MarkupText:
-    """Prose in the main face, symbols Alef lacks in the fallback face."""
-    parts = []
-    run, missing = [], False
-    for ch in text + "\0":  # sentinel flushes the last run
-        m = ch in _ALEF_MISSING
-        if ch != "\0" and m == missing:
-            run.append(ch)
-            continue
-        if run:
-            chunk = _pango_escape("".join(run))
-            parts.append(f'<span face="{_SYMBOL_FONT}">{chunk}</span>' if missing else chunk)
-        run, missing = [ch], m
+    """Prose in the main face; maths glyphs in Fira Code (DejaVu for its gaps)."""
+    parts: list[str] = []
+    run, face = "", None
+    for ch in text:
+        f = _face(ch)
+        if f != face and run:
+            chunk = _pango_escape(run)
+            parts.append(f'<span face="{face}">{chunk}</span>' if face else chunk)
+            run = ""
+        run += ch
+        face = f
+    if run:
+        chunk = _pango_escape(run)
+        parts.append(f'<span face="{face}">{chunk}</span>' if face else chunk)
     return MarkupText("".join(parts), **kwargs)
 
 ASSETS = Path(__file__).resolve().parent / "assets"

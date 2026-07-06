@@ -628,7 +628,7 @@ class Scene05Algebra(VideoScene):
         lr_lbls = VGroup(
             Text("local max", font_size=FS_CAPTION, color=INK),
             Text("D* unbounded —", font_size=FS_CHIP, color=TRAIL),
-            Text("no c·d square works", font_size=FS_CHIP, color=TRAIL),
+            rich_text("no c·d square works", font_size=FS_CHIP, color=TRAIL),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.16).to_edge(RIGHT, buff=0.5).shift(UP * 1.1)
         chgL = rich_text("insert at x₀: the change\nstreaks out along D*",
                     font_size=FS_CHIP, color=COOL, line_spacing=0.8).to_edge(RIGHT, buff=0.5).shift(DOWN * 0.9)

@@ -17,7 +17,7 @@ from manim import *
 import fields as F
 from theme import (
     VideoScene, INK, MUTED, ACCENT, COOL, BG, TRAIL,
-    FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
+    FS_H2, FS_BODY, FS_CAPTION, FS_CHIP, mono_span
 )
 
 RED = "#ff5f57"
@@ -68,14 +68,14 @@ class Scene02SDF(VideoScene):
             if not inside(x, y)
         )
 
-        counter = Text("attempts: 0", font_size=FS_BODY, color=INK).to_corner(DR, buff=0.5)
+        counter = MarkupText(f'attempts: {mono_span("0")}', font_size=FS_BODY, color=INK).to_corner(DR, buff=0.5)
         self.play(FadeIn(counter))
         dots = VGroup()
         for i, (x, y) in enumerate(reds, start=1):
             dot = Dot([x, y, 0], radius=0.08, color=RED)
             self.play(
                 FadeIn(dot, scale=1.6),
-                Transform(counter, Text(f"attempts: {i}", font_size=FS_BODY, color=INK).to_corner(DR, buff=0.5)),
+                Transform(counter, MarkupText(f"attempts: {mono_span(i)}", font_size=FS_BODY, color=INK).to_corner(DR, buff=0.5)),
                 run_time=0.16,
             )
             dots.add(dot)
@@ -89,35 +89,58 @@ class Scene02SDF(VideoScene):
 
     # ------------------------------------------------------------------ #
     def beat_grid(self) -> None:
-        """A 5x3 grid of shape SDFs (most of shapes.rs), each labelled."""
+        """A 5x3 grid of shape SDFs (most of shapes.rs), each labelled with its
+        full field notation, verbatim from the shapes.rs doc comments
+        (norms as ||.||, componentwise abs as |.|)."""
         specs = [
-            ("Circle", r"|\vec v|-1", F.circle(0, 0, 1.0)),
-            ("Square", r"\mathrm{box}(\vec v)", F.box(0, 0, 0.9, 0.9)),
-            ("Triangle", r"\mathrm{ngon}_3", F.regular_polygon(0, 0, 3, 1.0)),
-            ("Pentagon", r"\mathrm{ngon}_5", F.regular_polygon(0, 0, 5, 1.0)),
-            ("Hexagon", r"\mathrm{ngon}_6", F.regular_polygon(0, 0, 6, 1.0)),
-            ("Octagon", r"\mathrm{ngon}_8", F.regular_polygon(0, 0, 8, 1.0)),
-            ("Star", r"\mathrm{star}_{7,3}", F.star(0, 0, 7, 3.0, 1.0)),
-            ("Pentagram", r"\mathrm{star}_{5}", F.pentagram(0, 0, 1.0)),
-            ("Hexagram", r"\mathrm{star}_{6}", F.hexagram(0, 0, 1.0)),
-            ("Moon", r"\max(d_1,-d_2)", F.moon(0, 0, 1.0, 0.6)),
-            ("Cross", r"\mathrm{cross}_t", F.cross(0, 0, 0.32, 1.0)),
-            ("Ring", r"\mathrm{ring}_\rho", F.ring(0, 0, 0.5, 1.0)),
-            ("Kakera", r"\mathrm{kakera}_w", F.kakera(0, 0, 0.6, 1.0)),
-            ("Line", r"\mathrm{seg}-t", F.segment(-0.8, -0.5, 0.8, 0.5, 0.18)),
-            ("Polygon", r"s\min_i\mathrm{dist}", F.polygon([(-0.9, -0.5), (0.8, -0.7), (0.5, 0.9), (-0.3, 0.4)])),
+            ("Circle", [r"\lVert\vec p\rVert-1"],
+             F.circle(0, 0, 1.0)),
+            ("Square", [r"\lVert\max(\vec q,\vec 0)\rVert+\min(\max(q_x,q_y),0)",
+                        r"\vec q=\lvert\vec p\rvert-1"],
+             F.box(0, 0, 0.9, 0.9)),
+            ("Triangle", [r"\max_i\,(\vec p\cdot\vec n_i)-\cos(\pi/3)"],
+             F.regular_polygon(0, 0, 3, 1.0)),
+            ("Pentagon", [r"\max_i\,(\vec p\cdot\vec n_i)-\cos(\pi/5)"],
+             F.regular_polygon(0, 0, 5, 1.0)),
+            ("Hexagon", [r"\max_i\,(\vec p\cdot\vec n_i)-\cos(\pi/6)"],
+             F.regular_polygon(0, 0, 6, 1.0)),
+            ("Octagon", [r"\max_i\,(\vec p\cdot\vec n_i)-\cos(\pi/8)"],
+             F.regular_polygon(0, 0, 8, 1.0)),
+            ("Star", [r"\pm\lVert\vec p\,'-\mathrm{proj}(\vec p\,')\rVert",
+                      r"(n,m)=(7,3)"],
+             F.star(0, 0, 7, 3.0, 1.0)),
+            ("Pentagram", [r"=\mathrm{Star}\bigl(n{=}5,\ m{=}\tfrac{10}{3}\bigr)"],
+             F.pentagram(0, 0, 1.0)),
+            ("Hexagram", [r"=\mathrm{Star}(n{=}6,\ m{=}3)"],
+             F.hexagram(0, 0, 1.0)),
+            ("Moon", [r"\max\bigl(\lVert\vec p\rVert-1,\ 1-\lVert\vec p-(d,0)\rVert\bigr)"],
+             F.moon(0, 0, 1.0, 0.6)),
+            ("Cross", [r"\mathrm{sgn}(k)\,\lVert\max(\vec w,\vec 0)\rVert"],
+             F.cross(0, 0, 0.32, 1.0)),
+            ("Ring", [r"\max(\lVert\vec p\rVert-1,\ \rho-\lVert\vec p\rVert)"],
+             F.ring(0, 0, 0.5, 1.0)),
+            ("Kakera", [r"\pm\lVert\vec q-\mathrm{proj}(\vec q)\rVert"],
+             F.kakera(0, 0, 0.6, 1.0)),
+            ("Line", [r"\mathrm{dist}(\vec p,[\vec a,\vec b])-t/2"],
+             F.segment(-0.8, -0.5, 0.8, 0.5, 0.18)),
+            ("Polygon", [r"s\cdot\min_i\,\mathrm{dist}(\vec p,\vec e_i)"],
+             F.polygon([(-0.9, -0.5), (0.8, -0.7), (0.5, 0.9), (-0.3, 0.4)])),
         ]
         tiles = []
         for name, notation, fn in specs:
             img = F.field_image(fn, height=1.3, res=210, extent=1.5, interval=0.14)
             border = SurroundingRectangle(img, color=MUTED, buff=0.0).set_stroke(width=1)
             name_t = Text(name, font_size=FS_CHIP, color=INK)
-            note_t = MathTex(notation, color=MUTED).scale(0.34)
-            label = VGroup(name_t, note_t).arrange(DOWN, buff=0.05).next_to(img, DOWN, buff=0.1)
+            note_t = VGroup(*[MathTex(line, color=MUTED).scale(0.34) for line in notation]
+                            ).arrange(DOWN, buff=0.06)
+            label = VGroup(name_t, note_t).arrange(DOWN, buff=0.06).next_to(img, DOWN, buff=0.1)
             tiles.append(Group(img, border, label))
 
-        grid = Group(*tiles).arrange_in_grid(rows=3, cols=5, buff=(0.55, 0.3))
-        grid.scale_to_fit_height(6.6).move_to(0.45 * DOWN)
+        grid = Group(*tiles).arrange_in_grid(rows=3, cols=5, buff=(0.5, 0.35))
+        grid.scale_to_fit_height(6.6)
+        if grid.width > 13.5:
+            grid.scale_to_fit_width(13.5)
+        grid.move_to(0.45 * DOWN)
         intro = Text("represent every shape by a signed distance function",
                      font_size=FS_BODY, color=MUTED).to_edge(UP, buff=0.35)
 

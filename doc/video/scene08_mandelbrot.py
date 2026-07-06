@@ -16,7 +16,7 @@ from manim import *
 
 import fields as F
 from theme import (
-    VideoScene, asset, INK, MUTED, ACCENT, COOL, TRAIL, FIELD_HI, BG, rich_text,
+    VideoScene, asset, mono, INK, MUTED, ACCENT, COOL, TRAIL, FIELD_HI, BG, rich_text,
     FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
 )
 from video import load_frames, VideoMobject
@@ -181,7 +181,7 @@ class Scene08Mandelbrot(VideoScene):
         lbox = SurroundingRectangle(ldecl, color=FIELD_HI, buff=0.2, corner_radius=0.1).set_stroke(width=1.5)
         lnote = VGroup(
             Text("declared once, on the type —", font_size=FS_CHIP, color=MUTED),
-            Text("rotate · scale · translate propagate it", font_size=FS_CHIP, color=MUTED),
+            rich_text("rotate · scale · translate propagate it", font_size=FS_CHIP, color=MUTED),
             Text("soundness intact; pruning merely relaxed", font_size=FS_CHIP, color=MUTED),
         ).arrange(DOWN, aligned_edge=LEFT, buff=0.12)
 
@@ -209,12 +209,19 @@ class Scene08Mandelbrot(VideoScene):
         panel = Group(video, vbox).move_to(np.array([-2.2, -0.35, 0.0]))
         chip = self.source_chip("examples/gd_adf/06_custom_primitive.rs — ADF max depth 7, L = 4")
 
+        def fmt(n: int) -> str:
+            return f"{n:,}".replace(",", " ")
+
+        def counter_text(n: int) -> Text:
+            return mono(fmt(n), font_size=40, color=ACCENT)
+
         counter_lbl = Text("mandelbrots inserted", font_size=FS_CAPTION, color=MUTED)
-        counter = Integer(0, color=ACCENT, font_size=46)
-        target = Text("target: 20 000", font_size=FS_CHIP, color=MUTED)
-        readout = VGroup(counter_lbl, counter, target).arrange(DOWN, buff=0.3)
+        counter = counter_text(0)
+        target = mono("target: 20 000", font_size=FS_CHIP, color=MUTED)
+        readout = VGroup(counter_lbl, counter, target).arrange(DOWN, aligned_edge=RIGHT, buff=0.3)
         readout.to_edge(RIGHT, buff=1.0).shift(UP * 0.6)
-        counter_pos = counter.get_center().copy()  # pin: set_value re-typesets
+        # pin the units digit: the number grows leftward, odometer-style
+        counter_anchor = counter.get_right().copy()
 
         prog = ValueTracker(0.0)
         n = video.n_frames
@@ -229,16 +236,17 @@ class Scene08Mandelbrot(VideoScene):
 
         self.play(FadeIn(title), FadeIn(video), Create(vbox), FadeIn(chip), FadeIn(readout))
         video.add_updater(lambda m: m.set_frame(prog.get_value() * (m.n_frames - 1)))
-        counter.add_updater(lambda m: m.set_value(count_at(prog.get_value())).move_to(counter_pos))
+        counter.add_updater(lambda m: m.become(
+            counter_text(count_at(prog.get_value())).move_to(counter_anchor, aligned_edge=RIGHT)))
         self.play(prog.animate.set_value(1.0), run_time=n / 30.0, rate_func=linear)
         video.clear_updaters()
         counter.clear_updaters()
-        counter.set_value(COUNT)
+        counter.become(counter_text(COUNT).move_to(counter_anchor, aligned_edge=RIGHT))
         self.wait(0.6)
 
         # the quoted figures (script-verbatim: "7 seconds, 4.74 MiB, no obvious errors.")
         def stat(value: str, label: str, color=ACCENT) -> VGroup:
-            v = rich_text(value, font_size=FS_H2, color=color)
+            v = mono(value, font_size=FS_H2, color=color)
             l = Text(label, font_size=FS_CHIP, color=MUTED)
             return VGroup(v, l).arrange(RIGHT, buff=0.25)
 
