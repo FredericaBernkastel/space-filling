@@ -14,8 +14,8 @@ import numpy as np
 from manim import *
 
 from theme import (
-    VideoScene, INK, MUTED, ACCENT, COOL, mono,
-    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP,
+    VideoScene, INK, MUTED, ACCENT, COOL, mono, mono_span,
+    FS_TITLE, FS_H2, FS_BODY, FS_CAPTION, FS_CHIP, rich_text
 )
 
 
@@ -69,7 +69,7 @@ class Scene10Outro(VideoScene):
         repo = mono("github.com/FredericaBernkastel/space-filling",
                     font_size=FS_CAPTION, color=COOL)
         card = VGroup(name, tagline, repo).arrange(DOWN, buff=0.32).move_to(UP * 0.15)
-        signature = Text("Liserotte", font_size=FS_CAPTION, color=MUTED, slant=ITALIC)
+        signature = Text(f'𝖓𝖎𝖕𝖆~★ ( =^_^= )', font="Segoe UI", weight=BOLD, font_size=FS_CAPTION, color=ACCENT)
         signature.to_corner(DR, buff=0.4)
 
         self.play(FadeIn(name, shift=UP * 0.1))
