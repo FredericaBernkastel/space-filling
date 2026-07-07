@@ -68,10 +68,15 @@ def build_stream_mp4(bin_name: str, out: Path, fps: int = 30, size: int = 640) -
     subprocess.run(["cargo", "build", "--release", "--bin", bin_name],
                    cwd=render_dir, check=True)
     gen = subprocess.Popen([str(exe)], stdout=subprocess.PIPE)
+    # The bins emit RGBA whose antialiasing lives entirely in the alpha channel
+    # (RGB is pure white even at edge pixels). A bare RGBA->YUV conversion drops
+    # alpha and snaps every edge to binary, so premultiply first: with the black
+    # transparent background this equals compositing over black, landing the
+    # true sub-pixel coverage in RGB before the scaler sees it.
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps),
-         "-i", "-", "-vf", f"scale={size}:{size}:flags=lanczos", "-pix_fmt", "yuv420p",
-         "-crf", "20", str(out)],
+         "-i", "-", "-vf", f"premultiply=inplace=1,scale={size}:{size}:flags=lanczos",
+         "-pix_fmt", "yuv420p", "-crf", "20", str(out)],
         stdin=gen.stdout, check=True,
     )
     gen.stdout.close()
@@ -79,7 +84,7 @@ def build_stream_mp4(bin_name: str, out: Path, fps: int = 30, size: int = 640) -
     print(f"wrote {out.name}")
 
 
-def build_kenburns_mp4(src: Path, out: Path, size: int = 1280, fps: int = 30) -> None:
+def build_kenburns_mp4(src: Path, out: Path, size: int = 1280, fps: int = 60) -> None:
     """Pre-render a zoom/pan (Ken Burns) pass over a large still as an mp4.
 
     1M.png is 8192x8192 (64 MP) — far too large for manim to pan live (it
@@ -91,13 +96,18 @@ def build_kenburns_mp4(src: Path, out: Path, size: int = 1280, fps: int = 30) ->
     if out.exists() and out.stat().st_mtime >= src.stat().st_mtime:
         print(f"skip {out.name} (up to date)")
         return
-    im = Image.open(src).convert("RGB")
+    im = Image.open(src)
+    if "A" in im.getbands():
+        # composite over black rather than dropping alpha — in these renders the
+        # antialiasing lives in the alpha channel (RGB is white under it)
+        im = Image.alpha_composite(Image.new("RGBA", im.size, (0, 0, 0, 255)), im.convert("RGBA"))
+    im = im.convert("RGB")
     W = im.width
     keys = [  # (t seconds, cx, cy, zoom) — normalized centre, zoom >= 1
         (0.0, 0.50, 0.50, 1.0),
         (1.0, 0.50, 0.50, 1.0),
         (4.2, 0.30, 0.72, 6.4),
-        (7.6, 0.72, 0.35, 6.4),
+        (7.6, 0.59, 0.92, 6.4),
         (11.0, 0.50, 0.50, 1.0),
         (11.6, 0.50, 0.50, 1.0),
     ]
@@ -112,7 +122,7 @@ def build_kenburns_mp4(src: Path, out: Path, size: int = 1280, fps: int = 30) ->
 
     enc = subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps),
-         "-i", "-", "-pix_fmt", "yuv420p", "-crf", "20", str(out)],
+         "-i", "-", "-pix_fmt", "yuv444p", "-crf", "0", str(out)],
         stdin=subprocess.PIPE,
     )
     n = int(keys[-1][0] * fps) + 1
@@ -123,7 +133,7 @@ def build_kenburns_mp4(src: Path, out: Path, size: int = 1280, fps: int = 30) ->
         cy = min(max(cy, half), 1 - half)
         box = (round((cx - half) * W), round((cy - half) * W),
                round((cx + half) * W), round((cy + half) * W))
-        im.crop(box).resize((size, size), Image.LANCZOS).save(enc.stdin, format="PNG")
+        im.crop(box).resize((size, size), resample=Image.Resampling.LANCZOS).save(enc.stdin, format="PNG")
     enc.stdin.close()
     if enc.wait() != 0:
         raise RuntimeError("ffmpeg failed")
