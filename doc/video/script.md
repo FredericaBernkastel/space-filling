@@ -181,10 +181,16 @@ Can the current GD-ADF implementation handle it in reasonable time, if at all? T
 7 seconds, 4.74 MiB, no obvious errors.
 
 ### Scene 9
+> {visual: four numbered rows, each with a small glyph — a wireframe cube (N-D), operation chips (+ kept, − and ↔ struck out), a picture frame (drawing), an IC package (GPU)}
+
 Limitations and future work.
 1. Today the implementation covers only the 2D plane, though extending it to N dimensions ought to be straightforward: nothing in the quadtree, the SDFs, or the optimizer assumes a particular dimensionality.
 2. Only insertion is supported for now — no deletion, no movement.
 3. Basic drawing is included, but I recommend a third-party library; the implementation was intended to be compatible with any drawing API out of the box.
+> {visual: the GPU assessment as its own composition — a CPU panel ("owns every mutation": insert/subdivide/prune, the sound f64 path, dedup + refine the survivors) facing a GPU panel ("read-only field oracle": the 64-B node arena drawn as a strip that uploads as-is, mega-batches of f32 ascents), joined by two arrows: arena deltas →, ← batch maxima (f32). Below, Arc<dyn Fn> struck through → "shape IR" and "baked distance fields" pills; then the verdict chips — 10–100× (ascent phase) vs 3–10× (end to end, Amdahl) — with the batch-size caveat as a footnote}
+
+4. A GPU port is feasible, with following assessment: the device should serve as a *read-only field oracle*, never the mutator. The flat quadtree arena uploads as-is — and the embarrassingly parallel ascents of `find_max_parallel` are the natural kernel: coarse single-precision batches on the device, with double-precision refinement of the few survivors, and every insertion, staying on the sound CPU path. The price is generality: buckets store arbitrary function pointers, which a GPU cannot process, so primitives must be reified into a fixed shape IR — baked distance fields covering everything exotic.  
+The theoretical gains are lopsided: 10–100× throughput on the ascent phase itself, yet perhaps 3–10× end to end, by Amdahl's law, while the structural updates remain on the CPU. Nor can the batch simply grow with the hardware — a batch's survivors are capped by how many disjoint free balls the current field admits, so the useful batch size scales with the fill state, not with the core count.
 
 ### Scene 10
 This is all, I hope you've learnt something new. Excited to see what kind of art you will make — feel free to share!
