@@ -18,7 +18,7 @@ For an introduction, see [Paul Bourke — *Random space filling of the plane* (2
 There, however, the search for the next location is inefficient and offers very limited control over the
 resulting distribution<sup>[[1]](#footnote_1)</sup>. This work presents two solvers for the following problem:
 
-![](doc/eq1.svg)
+$\vec{x}^{*} \;=\; \arg\max_{\vec v \in \Omega}\ \min_{n}\ \mathrm{sdf}_{n}(\vec v)$
 
 The **sdf<sub>n</sub>** are signed distance functions (*primitives*) whose aggregate pointwise minimum forms a
 compound distance field, denoted **SDF** hereafter. The task is to locate a *safe domain* — a region guaranteed
@@ -177,6 +177,7 @@ Showcasing:
 [`05_image_dataset`](examples/argmax2d/05_image_dataset.rs)  
 Displays over 100 000 images.  
 Run with `cargo run --release --features "drawing" --example 05_image_dataset -- "<image folder>" -C target-cpu=native`
+
 ![](doc/image_dataset.gif)
 
 [`06_custom_primitive`](examples/gd_adf/06_custom_primitive.rs)  
