@@ -18,7 +18,7 @@ For an introduction, see [Paul Bourke — *Random space filling of the plane* (2
 There, however, the search for the next location is inefficient and offers very limited control over the
 resulting distribution<sup>[[1]](#footnote_1)</sup>. This work presents two solvers for the following problem:
 
-$\vec{x}^{*} \;=\; \arg\max_{\vec v \in \Omega}\ \min_{n}\ \mathrm{sdf}_{n}(\vec v)$
+$$\vec{x}^{*} = \arg\max_{\vec v \in \Omega}\ \min_{n}\ \mathrm{sdf}_{n}(\vec v)$$
 
 The **sdf<sub>n</sub>** are signed distance functions (*primitives*) whose aggregate pointwise minimum forms a
 compound distance field, denoted **SDF** hereafter. The task is to locate a *safe domain* — a region guaranteed
