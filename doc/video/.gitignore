@@ -12,3 +12,4 @@ assets/derived/
 # Rust render helper build output
 render/target/
 /assets
+/VO

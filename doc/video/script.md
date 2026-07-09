@@ -74,7 +74,7 @@ The purpose of the buckets is spatial locality of relevance.  Far from a shape, 
 {read: "g of v is the minimum over the primitives f in the bucket of the leaf containing v; the cost is order depth plus beta, the bucket size."}
 On a balanced tree the depth is logarithmic and the bucket size `β` stays constant, so a query runs in O(log N) — never once touching the millions of distant primitives.
 
-The next section develops the algebraic formalism in its entirety, on which the crucial optimizations rely. If you'd rather see the final results instead, jump to 00:00.
+The next section develops the algebraic formalism in its entirety, on which the crucial optimizations rely. If you'd rather see the final results instead, jump to 21:13.
 
 ### Scene 5
 <!-- Lipzschitz-continuity -->
@@ -167,9 +167,9 @@ Disjoint free balls guarantee the shapes cannot overlap, whatever the insertion 
 So, how long does it take to make "A Million-Circle Fractal"?
 > {visual: the real run, embedded: render/src/bin/random_distribution.rs — 02_random_distribution verbatim, driven to 1M circles at ADF max depth 10 — pre-rendered to assets/derived/random_distribution.mp4 on a geometric frame schedule (~330 frames from the first 4 circles to the full million, so the fill accelerates smoothly). Beside the footage a live "circles inserted" counter follows the same schedule up to 1 000 000} 
 
-> {visual: assets/1M.png (the finished 8192² render), a pre-baked zoom/pan pass (assets/derived/million_zoom.mp4): full view, dive to 6.4×, diagonal pan across, pull back out; then the quoted figures land on a dim strip over the artwork — 49 s / 113 k nodes / 76 MiB}  
+> {visual: assets/1M.png (the finished 8192² render), a pre-baked zoom/pan pass (assets/derived/million_zoom.mp4): full view, dive to 6.4×, diagonal pan across, pull back out; then the quoted figures land on a dim strip over the artwork — 49 s / 159 k nodes / 59 MiB}  
 
-49 seconds on a 4-core machine. The resulting ADF tree contains 113k nodes, totalling 76MiB.
+49 seconds on a 4-core machine. The resulting ADF tree contains 159k nodes, totalling 59MiB.
 
 ### Scene 8
 So far we've only seen simple circle shapes. Let's try something much more funky: implement a Mandelbrot distance estimator, and fit 20k instances of it.
@@ -178,7 +178,7 @@ So far we've only seen simple circle shapes. Let's try something much more funky
 Can the current GD-ADF implementation handle it in reasonable time, if at all? The Mandelbrot estimator is not a true SDF — its gradient is unbounded near the boundary filaments, so the one-Lipschitz bound no longer applies — and moreover, the interior is clamped to 0 altogether. I therefore declare a larger Lipschitz constant, which keeps every soundness guarantee intact while merely relaxing the pruning; the constant is stated once on the type and propagates through every rotated, scaled, translated copy automatically.
 > {visual: ../../examples/gd_adf/06_custom_primitive.rs, gradually filling the space each frame}
 
-7 seconds, 4.74 MiB, no obvious errors.
+7 seconds, 3.4 MiB, zero errors.
 
 ### Scene 9
 > {visual: four numbered rows, each with a small glyph — a wireframe cube (N-D), operation chips (+ kept, − and ↔ struck out), a picture frame (drawing), an IC package (GPU)}
