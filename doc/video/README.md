@@ -41,6 +41,12 @@ uv run python render_all.py --list     # show the plan only
 Originals land in `media/videos/<scene>/1440p60/`; ordered copies are
 collected in `media/final/NN_SceneName.mp4`, logs in `media/logs/`.
 
+The thumbnail (a single still):
+
+```sh
+uv run manim -r 1920,1080 -s thumbnail.py Thumbnail
+```
+
 ## LaTeX (for formulas)
 
 `Tex` / `MathTex` mobjects require a LaTeX distribution, which is **not**

@@ -183,6 +183,13 @@ def union(*fns):
     return f
 
 
+def smooth_min(f1, f2, k=8.0):
+    """Exponential smooth minimum of two fields (matches ``sdf::SmoothMin``)."""
+    def f(X, Y):
+        return -np.logaddexp(-k * f1(X, Y), -k * f2(X, Y)) / k
+    return f
+
+
 # --- rasterization + colour ---------------------------------------------
 
 

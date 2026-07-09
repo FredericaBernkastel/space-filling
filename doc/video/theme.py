@@ -77,7 +77,7 @@ _FIRA_GAPS = set("ⁱₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼ⇒⇄≫⊕⊖")
 _SYMBOL_CHARS = set(
     "⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿⁱ₀₁₂₃₄₅₆₇₈₉"    # super/subscript digits
     "ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼ"              # subscript letters
-    "≈≠≥≤≫∇‖∪⊕⊖⊆∈∀∃⇒⇄→ℓ✓"       # maths & marks
+    "≈≠≥≤≫∇‖∪⊕⊖⊆∈∀∃⇒⇄→ℓ✓•"      # maths & marks
     "ΔΩαβγδθλμπσφω"               # Greek
     "·×"                          # Alef has these, but they belong with the maths
 )
