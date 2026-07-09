@@ -70,8 +70,13 @@ fn rescale_bounding_box(
   (bounding_box, offset, min_side)
 }
 
-/// Draw shapes, parallel.
-/// May cause undefined behaviour.
+/// Draw shapes in parallel, each rayon task writing directly to `framebuffer`.
+///
+/// The tasks share `framebuffer` through an aliased `&mut` with no
+/// synchronization, so overlapping writes would be a data race (potential UB).
+/// Sound only when the shapes cover disjoint regions — which space-filling
+/// distributions guarantee, their shapes occupying disjoint balls. See
+/// `examples/gd_adf/04_polymorphic.rs`.
 pub fn draw_parallel<Float, Backend, Sh>(
   framebuffer: &mut Backend,
   shapes: impl rayon::iter::ParallelIterator<Item =Sh>

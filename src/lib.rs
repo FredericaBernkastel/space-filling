@@ -1,7 +1,7 @@
 //! This is a library for generalized space filling in ℝ² (do not mix with _packing_).
 //!
 //! It is split into two main modules: [`solver`] for generating a distribution of shapes,
-//! and [`drawing`] for displaying it (requires `draw` feature).
+//! and [`drawing`] for displaying it (requires the `drawing` feature).
 //! Here, "shape" denotes one or multiple regions of ℝ² space, that can be represented by a
 //! signed distance function.
 //!
@@ -46,11 +46,10 @@
     //!     .translate(global_max.point.to_vector())
     //!     .scale(global_max.distance / 4.0);
     //!   /** Update the field.
-    //!    * `Circle` impletemens the `SDF` trait. Additionally, it has been concluded that
-    //!    * only a certain part of the field is being changed every time, depending on the
-    //!    * current maximum distance. To be exact - a square region with a side of
-    //!    * max_dist * 4.0 * sqrt(2.0), which made possible achieving
-    //!    * greater speed of computation. **/
+    //!    * `Circle` implements the `SDF` trait. Only a bounded region of the field
+    //!    * changes per insertion: for a global maximum it is contained in a square
+    //!    * of side `4 * max_dist` centred at the maximum (`util::domain_global_max`),
+    //!    * which is what keeps the update cheap. **/
     //!   representation.insert_sdf_domain(
     //!     util::domain_global_max(global_max),
     //!     |v| circle.sdf(v)

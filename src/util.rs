@@ -44,7 +44,9 @@ pub fn domain_empirical<P: Float + FloatConst>(p: DistPoint<P, P, WorldSpace>) -
   }
 }
 
-/// Find up to `batch_size` distinct local maxima using GD optimizer.
+/// Find up to `batch_size` distinct local maxima via the adaptive ascent
+/// optimizer ([`LineSearch`]); the returned maxima have pairwise-disjoint free
+/// balls, so shapes placed at them cannot intersect within the batch.
 pub fn find_max_parallel<_Float>(f: impl Fn(P2<_Float>) -> _Float + Send + Sync, batch_size: u64, rng: &mut impl Rng, line_search: LineSearch<_Float>)
                                  -> Vec<DistPoint<_Float, _Float, WorldSpace>>
   where _Float: Float + Send + Sync

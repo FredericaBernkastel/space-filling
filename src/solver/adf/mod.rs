@@ -1,5 +1,10 @@
-//! Adaptive Distance Field, uses quadtree as an underlying data structire.
-//! Each node (bucket) stores several `Arc<dyn Fn(Point2D) -> {float}>`
+//! Adaptively Sampled Distance Field, backed by a [`quadtree`] arena.
+//!
+//! Each node (bucket) stores a handful of [`Primitive`]s — a field closure
+//! together with its declared Lipschitz bound — and represents their pointwise
+//! `min`. `ADF` itself implements [`SDF`], so a field composed
+//! of millions of primitives is sampled in logarithmic time by descending to
+//! the leaf covering the query point, rather than evaluated at quadratic cost.
 
 #![allow(clippy::mut_from_ref)]
 use {
@@ -155,46 +160,6 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
     self.prune_subdiv = subdiv;
     self
   }
-  /*
-    Upon insertion of a new SDF primitive (`f`), this function tests whether it does
-    change the distance field within a certain domain (remember that it is considered changed
-    if and only if at least one point of `f` is lower than combined distance field (`g`) within
-    a certain domain `D` (tree node).
-    If no change is present, therefore updating `g` within the domain may be safely
-    skipped. However, it is imperfect: the test is only performed within a static square grid of
-    25 control points, thus sometimes yielding incorrect result, and generally being very slow.
-
-    Proposition. Use gradient descent (see `sdf_partialord`) in order to pick the control points
-    more carefully, and answer following questions:
-    \begin{align*}
-&f(\overrightarrow{v}) < g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(1)\\
-&f(\overrightarrow{v}) > g(\overrightarrow{v}), \forall\, \overrightarrow{v}\epsilon \,\mathfrak{D} &(2)\\
-&\exists \overrightarrow{v}\epsilon \,\mathfrak{D}: f(\overrightarrow{v}) < g(\overrightarrow{v}) &(3)
-\end{align}
-
-    Proposition 2. Use interior point method in order to specify the boundary constraint of `D`
-
-    Update: implemented in [adf::sdf_partialord]
-   */
-
-  /// f(v) > g(v) forall v e D
-  #[deprecated] #[allow(unused)]
-  fn higher_all(
-    f: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
-    g: &(dyn Fn(Point2D<f64, WorldSpace>) -> f64),
-    d: Rect<f64, WorldSpace>
-  ) -> bool {
-    let control_points = |rect: Rect<_, _>| {
-      let n = 5;
-      let p = (0..n).map(move |x| x as f64 / (n - 1) as f64);
-      itertools::iproduct!(p.clone(), p)
-        .map(move |p| rect.origin + rect.size.to_vector().component_mul(p.into()))
-    };
-
-    !control_points(d)
-      .any(|v| g(v) > f(v))
-  }
-
   /// Add a new sdf primitive function, assumed to be a true SDF (`lipschitz = 1`).
   /// See [`Self::insert_primitive_domain`] for approximate fields.
   pub fn insert_sdf_domain(

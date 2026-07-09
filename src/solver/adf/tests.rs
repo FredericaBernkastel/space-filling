@@ -82,10 +82,9 @@ use crate::geometry::DistPoint;
     });
 
   println!("profile: {}ms", t0.elapsed().as_millis());
-  // TODO: Fix sdf insertion method
-  /* Here, `adf_error_margin` denotes failed attempts to instert a shape in ADF due to
-     imperfect primitive elimination method. See `solver::adf::ADF::higher_all` for more details.
-   */
+  // `adf_error_margin` is the fraction of located maxima whose insertion did not
+  // lower the field (`insert_at_maximum` returned `false`) — e.g. a near-duplicate
+  // maximum, or a candidate lost to the optimizer's numeric tolerance.
   println!("adf_error_margin: {:+.3e}", trials.get() as f64 / primitives.len() as f64 - 1.0);
   println!("{representation:#?}");
   //drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);

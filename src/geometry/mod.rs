@@ -1,7 +1,14 @@
-//! .
+//! Coordinate spaces, the [`Shape`] trait with its transform/boolean
+//! combinators, and the SDF shape primitives.
 //!
-//! The origin of coordinate system is in top-left corner. Most of shapes are represented in the
-//! interval `[-1, 1]`, and center in the origin.
+//! Distances are expressed in [`WorldSpace`] — normalized coordinates with the
+//! origin in the top-left corner and the y-axis pointing down, matching image
+//! layout; [`PixelSpace`] is the discrete counterpart. The solvers operate over
+//! the unit square `[0, 1]²`. Each primitive is a *unit* shape inscribed in the
+//! unit circle (spanning `[-1, 1]`, centred at the origin), then positioned with
+//! [`Shape::translate`] / [`Shape::scale`] / [`Shape::rotate`]. Every combinator
+//! preserves or `max`-combines its operands' Lipschitz bounds, so a composed
+//! shape reports an honest constant to the ADF (see [`Lipschitz`]).
 
 use {
   std::ops::Add,
