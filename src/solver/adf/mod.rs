@@ -13,7 +13,7 @@ use {
     sdf::{SDF, Lipschitz},
   },
   quadtree::{
-    Quadtree, Node, Refine, child_rects
+    Quadtree, Node, Refine, NdRect, child_rects
   },
   std::{
     sync::Arc,
@@ -67,7 +67,7 @@ impl<_Float: Float> Primitive<_Float> {
 
 #[derive(Clone)]
 pub struct ADF<Float> {
-  pub tree: Quadtree<Vec<Primitive<Float>>, Float>,
+  pub tree: Quadtree<Vec<Primitive<Float>>, Float, 2>,
   /// Max quadtree-style subdivisions the redundancy test ([`sdf_geq_everywhere`])
   /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
   /// primitive is pruned only when provably redundant to within ~`node/2^n`),
@@ -136,8 +136,10 @@ where
     if depth >= max_subdiv {
       return false; // undecided within budget → conservatively assume a witness
     }
-    for sub in child_rects(rect) {
-      stack.push((sub, depth + 1));
+    // the proof search refines euclid rectangles; the round-trip through the
+    // tree's NdRect is a free copy
+    for sub in child_rects(NdRect::from_euclid(rect)) {
+      stack.push((sub.to_euclid(), depth + 1));
     }
   }
   true
@@ -176,7 +178,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
     domain: Rect<_Float, WorldSpace>,
     prim: Primitive<_Float>
   ) -> bool {
-    self.insert_where(move |node| node.rect.intersects(&domain), prim)
+    self.insert_where(move |node| node.rect.to_euclid().intersects(&domain), prim)
   }
 
   /// Insert a primitive placed at a **maximum** `p` of the field (any placement
@@ -214,21 +216,22 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   ) -> bool {
     let two = _Float::one() + _Float::one();
     self.insert_where(move |node| {
-      let r = node.rect.to_box2d();
+      let rect = node.rect.to_euclid();
+      let r = rect.to_box2d();
       let q = Point2D::new(
         center.x.max(r.min.x).min(r.max.x),
         center.y.max(r.min.y).min(r.max.y),
       );
       let dist = (center - q).length();
-      let half_diag = node.rect.size.to_vector().length() / two;
-      node.data.as_slice().sdf(node.rect.center())
+      let half_diag = rect.size.to_vector().length() / two;
+      node.data.as_slice().sdf(rect.center())
         + bucket_lipschitz(&node.data) * half_diag > dist - radius
     }, prim)
   }
 
   fn insert_where(
     &mut self,
-    keep: impl Fn(&Node<Vec<Primitive<_Float>>, _Float>) -> bool + Sync,
+    keep: impl Fn(&Node<Vec<Primitive<_Float>>, _Float, 2>) -> bool + Sync,
     prim: Primitive<_Float>
   ) -> bool {
     const BUCKET_SIZE: usize = 3;
@@ -249,7 +252,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
       // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
       if sdf_geq_everywhere(
         f.as_ref(), |p| node.data.as_slice().sdf(p),
-        node.rect, prim.lipschitz, l_bucket, subdiv
+        node.rect.to_euclid(), prim.lipschitz, l_bucket, subdiv
       ) {
         return Refine::None;
       }
@@ -257,7 +260,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
       // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
       if sdf_geq_everywhere(
         |p| node.data.as_slice().sdf(p), f.as_ref(),
-        node.rect, l_bucket, prim.lipschitz, subdiv
+        node.rect.to_euclid(), l_bucket, prim.lipschitz, subdiv
       ) {
         return Refine::SetData(vec![prim.clone()]);
       }
@@ -293,7 +296,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
         // Max bucket size reached: subdivide, pruning the combined set per child.
         let mut combined = node.data.clone();
         combined.push(prim.clone());
-        Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect)))
+        Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect.to_euclid())))
       }
     })
   }
@@ -328,18 +331,19 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
     let mut bounds: Option<Box2D<_Float, WorldSpace>> = None;
     self.tree.visit_leaves(
       |node| {
-        let r = node.rect.to_box2d();
-        let half_diag = node.rect.size.to_vector().length() / two;
+        let rect = node.rect.to_euclid();
+        let r = rect.to_box2d();
+        let half_diag = rect.size.to_vector().length() / two;
         // distance from x0 to the rectangle
         let q = Point2D::new(
           x0.x.max(r.min.x).min(r.max.x),
           x0.y.max(r.min.y).min(r.max.y),
         );
         let dist = (x0 - q).length();
-        self.sdf(node.rect.center()) + l * half_diag <= dist - d
+        self.sdf(rect.center()) + l * half_diag <= dist - d
       },
       |leaf| {
-        let r = leaf.rect.to_box2d();
+        let r = leaf.rect.to_euclid().to_box2d();
         bounds = Some(match bounds {
           Some(b) => b.union(&r),
           None => r,
@@ -363,7 +367,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
 
 impl <_Float: Float> SDF<_Float> for ADF<_Float> {
   fn sdf(&self, pixel: P2<_Float>) -> _Float {
-    match self.tree.pt_to_node(pixel) {
+    match self.tree.pt_to_node(pixel.to_array()) {
       Some(node) => node.data.as_slice().sdf(pixel),
       None => self.tree.root().data.as_slice().sdf(pixel),
     }}}
@@ -392,7 +396,7 @@ impl <_Float: Float> Debug for ADF<_Float> {
     // are shared between buckets and are not attributed here.
     let total_size = std::mem::size_of::<Self>()
       + self.tree.node_count()
-        * std::mem::size_of::<Node<Vec<Primitive<_Float>>, _Float>>()
+        * std::mem::size_of::<Node<Vec<Primitive<_Float>>, _Float, 2>>()
       + bucket_slots * std::mem::size_of::<Primitive<_Float>>();
     f.debug_struct("ADF")
       .field("total_nodes", &self.tree.node_count())

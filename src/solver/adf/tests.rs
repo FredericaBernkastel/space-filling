@@ -415,7 +415,7 @@ use crate::geometry::DistPoint;
 
   // --- collect leaves (rect + bucket) ---
   let mut leaves_v: Vec<(Rect<f64, WorldSpace>, Vec<Primitive<f64>>)> = vec![];
-  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect, n.data.clone())); } Ok(()) }).ok();
+  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect.to_euclid(), n.data.clone())); } Ok(()) }).ok();
 
   let sizes: Vec<usize> = leaves_v.iter().map(|(_, b)| b.len()).collect();
   let leaves = sizes.len();

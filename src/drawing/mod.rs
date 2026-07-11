@@ -125,7 +125,7 @@ impl Argmax2D {
   }
 }
 
-impl <Data, _Float: Float> Quadtree<Data, _Float> {
+impl <Data, _Float: Float> Quadtree<Data, _Float, 2> {
   pub fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
     use geometry::Line;
 
@@ -133,7 +133,7 @@ impl <Data, _Float: Float> Quadtree<Data, _Float> {
     self.traverse(&mut |node| {
       if !node.is_leaf() { return Ok(()) };
 
-      let rect = node.rect.cast();
+      let rect = node.rect.to_euclid().cast();
       let lines = [
         [[0.0, 0.0], [rect.size.width, 0.0]],
         [[rect.size.width, 0.0], rect.size.into()],
@@ -159,8 +159,8 @@ impl <Data, _Float: Float> Quadtree<Data, _Float> {
 
   pub fn draw_bounding(&self, domain: euclid::Rect<_Float, WorldSpace>, image: &mut RgbaImage) -> &Self {
     self.traverse(&mut |node| {
-      if node.is_leaf() && node.rect.intersects(&domain) {
-        let rect = node.rect.cast();
+      if node.is_leaf() && node.rect.to_euclid().intersects(&domain) {
+        let rect = node.rect.to_euclid().cast();
         geometry::Rect {
           size: rect.size.to_vector().to_point()
         } .translate(rect.origin.to_vector() + rect.size.to_vector() * 0.5)
@@ -181,7 +181,7 @@ impl <_Float: Float + Signed + AsPrimitive<f64>> ADF<_Float> {
   pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
     self.tree.traverse(&mut |node| {
       if node.is_leaf() {
-        let rect = node.rect;
+        let rect = node.rect.to_euclid();
         let alpha = (((node.data.len() - 1) as f64 / 3.0).powf(1.75)
           * 0.33 * 255.0) as u8;
         geometry::Rect {
