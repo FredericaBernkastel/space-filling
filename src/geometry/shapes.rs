@@ -475,13 +475,13 @@ mod tests {
     let span = 2.5;
     for i in 0..20000 {
       let p = Point2D::<f64, WorldSpace>::new(
-        rng.gen_range(-span..span), rng.gen_range(-span..span));
+        rng.random_range(-span..span), rng.random_range(-span..span));
       let q = if i % 2 == 0 {
-        Point2D::new(rng.gen_range(-span..span), rng.gen_range(-span..span))
+        Point2D::new(rng.random_range(-span..span), rng.random_range(-span..span))
       } else {
         // short-range pair: within 1e-4..1e-2 of p
-        let angle = rng.gen_range(0.0..std::f64::consts::TAU);
-        let r = 10f64.powf(rng.gen_range(-4.0..-2.0));
+        let angle = rng.random_range(0.0..std::f64::consts::TAU);
+        let r = 10f64.powf(rng.random_range(-4.0..-2.0));
         p + V2::new(angle.cos(), angle.sin()) * r
       };
       let (fp, fq) = (f(p), f(q));

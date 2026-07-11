@@ -58,8 +58,8 @@ use crate::geometry::DistPoint;
       let circle = {
         use std::f64::consts::PI;
 
-        let angle = rng.gen_range(-PI..=PI);
-        let r = (rng.gen_range(1e-6..1.0).powf(5.0) * local_max.distance)
+        let angle = rng.random_range(-PI..=PI);
+        let r = (rng.random_range(1e-6..1.0).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
         // polar to cartesian
@@ -116,8 +116,8 @@ use crate::geometry::DistPoint;
     let mut local_max = None;
     for _ in 0..50 {
       let p0 = P2::new(
-        rng.gen_range(0.0..1.0),
-        rng.gen_range(0.0..1.0),
+        rng.random_range(0.0..1.0),
+        rng.random_range(0.0..1.0),
       );
       let ret = LineSearch::default().optimize(|p| representation.sdf(p), p0);
       let ret = DistPoint { distance: representation.sdf(ret), point: ret};
@@ -153,8 +153,8 @@ use crate::geometry::DistPoint;
     let circle = {
       use std::f64::consts::PI;
 
-      let angle = rng.gen_range::<f64, _>(-PI..=PI);
-      let r = (rng.gen_range::<f64, _>(0.0..1.0).powf(1.0) * local_max.distance)
+      let angle = rng.random_range::<f64, _>(-PI..=PI);
+      let r = (rng.random_range::<f64, _>(0.0..1.0).powf(1.0) * local_max.distance)
         .min(1.0 / 6.0);
       let delta = local_max.distance - r;
       let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
@@ -218,8 +218,8 @@ use crate::geometry::DistPoint;
       Box::new(|p| representation.read().unwrap().sdf(p)),
       batch, 0, LineSearch::default()
     ).filter_map(|local_max| {
-      let angle = rng.gen_range(-PI..=PI);
-      let r = (rng.gen_range(0f64..1.0) * local_max.distance).min(1.0 / 6.0);
+      let angle = rng.random_range(-PI..=PI);
+      let r = (rng.random_range(0f64..1.0) * local_max.distance).min(1.0 / 6.0);
       let delta = local_max.distance - r;
       let offset = P2::from([angle.cos(), angle.sin()]) * delta;
       let circle = Circle.translate(local_max.point - offset).scale(r);
@@ -336,8 +336,8 @@ use crate::geometry::DistPoint;
       for m in maxima {
         if attempts >= target { break; }
         let circle = {
-          let angle = rng.gen_range(-PI..=PI);
-          let r = (rng.gen_range(1e-6..1.0).powf(5.0) * m.distance).min(1.0 / 6.0);
+          let angle = rng.random_range(-PI..=PI);
+          let r = (rng.random_range(1e-6..1.0).powf(5.0) * m.distance).min(1.0 / 6.0);
           let delta = m.distance - r;
           let offset = P2::from([angle.cos(), angle.sin()]) * delta;
           Circle.translate(m.point - offset).scale(r)
@@ -397,8 +397,8 @@ use crate::geometry::DistPoint;
     for m in maxima {
       if attempts >= 50000 { break; }
       let circle = {
-        let angle = rng.gen_range(-PI..=PI);
-        let r = (rng.gen_range(0f64..1.0).powf(1.0) * m.distance).min(1.0 / 6.0);
+        let angle = rng.random_range(-PI..=PI);
+        let r = (rng.random_range(0f64..1.0).powf(1.0) * m.distance).min(1.0 / 6.0);
         let delta = m.distance - r;
         let offset = P2::from([angle.cos(), angle.sin()]) * delta;
         Circle.translate(m.point - offset).scale(r)

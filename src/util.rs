@@ -56,8 +56,8 @@ pub fn find_max_parallel<_Float>(f: impl Fn(P2<_Float>) -> _Float + Send + Sync,
   let mut rng_buf = vec![P2::splat(_Float::zero()); batch_size as usize];
   rng_buf.iter_mut().for_each(|x| {
     *x = P2::new(
-      _Float::from(rng.gen_range::<f64, _>(0.0..1.0)).unwrap(),
-      _Float::from(rng.gen_range::<f64, _>(0.0..1.0)).unwrap(),
+      _Float::from(rng.random_range::<f64, _>(0.0..1.0)).unwrap(),
+      _Float::from(rng.random_range::<f64, _>(0.0..1.0)).unwrap(),
     );
   });
 

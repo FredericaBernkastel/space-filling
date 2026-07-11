@@ -39,8 +39,8 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
       let circle = {
         use std::f32::consts::PI;
 
-        let angle = rng.gen_range(-PI..=PI);
-        let r = (rng.gen_range(0f32..1.0).powf(1.0) * global_max.distance)
+        let angle = rng.random_range(-PI..=PI);
+        let r = (rng.random_range(0f32..1.0).powf(1.0) * global_max.distance)
           .min(1.0 / 4.0);
         let delta = global_max.distance - r;
         let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;

@@ -28,8 +28,8 @@ fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
         0 => Arc::new({
           use std::f64::consts::PI;
 
-          let angle = rng.gen_range(-PI..=PI);
-          let r = (rng.gen_range(0.0..1.0) * local_max.distance)
+          let angle = rng.random_range(-PI..=PI);
+          let r = (rng.random_range(0.0..1.0) * local_max.distance)
             .min(1.0 / 6.0);
           let delta = local_max.distance - r;
           let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
@@ -43,11 +43,11 @@ fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
         1 | _ => Arc::new(Square
           .translate(local_max.point.to_vector())
           .scale(local_max.distance / 2.0)
-          .rotate(Angle::degrees(rng.gen_range(0.0..45.0)))
+          .rotate(Angle::degrees(rng.random_range(0.0..45.0)))
           .texture(Rgba([
             ((local_max.distance * 2.0).sqrt() * 255.0) as u8,
             32,
-            rng.gen_range(64..128),
+            rng.random_range(64..128),
             255]
           )))
 

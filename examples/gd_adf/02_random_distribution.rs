@@ -29,8 +29,8 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
     let circle = {
       use std::f64::consts::PI;
 
-      let angle = rng.gen_range(-PI..=PI);
-      let r = (rng.gen_range(0f64..1.0).powf(1.0) * local_max.distance)
+      let angle = rng.random_range(-PI..=PI);
+      let r = (rng.random_range(0f64..1.0).powf(1.0) * local_max.distance)
         .min(1.0 / 6.0);
       let delta = local_max.distance - r;
       // polar to cartesian
