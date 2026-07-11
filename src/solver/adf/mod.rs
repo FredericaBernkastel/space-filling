@@ -1,4 +1,5 @@
-//! Adaptively Sampled Distance Field, backed by a [`quadtree`] arena.
+//! Adaptively Sampled Distance Field, backed by a [`quadtree`] arena, in any
+//! compile-time dimension count.
 //!
 //! Each node (bucket) stores a handful of [`Primitive`]s — a field closure
 //! together with its declared Lipschitz bound — and represents their pointwise
@@ -9,18 +10,17 @@
 #![allow(clippy::mut_from_ref)]
 use {
   crate::{
-    geometry::{P2, WorldSpace, BoundingBox, DistPoint},
+    geometry::{Point, Aabb, Real, VectorExt, DistPoint},
     sdf::{SDF, Lipschitz},
   },
   quadtree::{
-    Quadtree, Node, Refine, NdRect, child_rects
+    Quadtree, Node, Refine, Dim, Branching, Children, child_rect, child_rects
   },
   std::{
     sync::Arc,
     fmt::{Debug, Formatter}
   },
-  euclid::{Point2D, Box2D, Rect},
-  num_traits::{Float, Signed}
+  nalgebra::Scalar,
 };
 
 #[cfg(test)] mod tests;
@@ -36,15 +36,15 @@ pub(crate) mod quadtree;
 /// real proof, so nothing contributing is dropped or skipped; pruning merely
 /// becomes less effective the larger the bound).
 #[derive(Clone)]
-pub struct Primitive<Float> {
-  pub f: Arc<dyn Fn(P2<Float>) -> Float + Send + Sync>,
+pub struct Primitive<Float: Scalar, const D: usize> {
+  pub f: Arc<dyn Fn(Point<Float, D>) -> Float + Send + Sync>,
   pub lipschitz: Float,
 }
 
-impl<_Float: Float> Primitive<_Float> {
+impl<_Float: Real, const D: usize> Primitive<_Float, D> {
   /// A primitive assumed to be a true SDF (`lipschitz = 1`). For a shape type,
   /// prefer [`Self::from_shape`], which derives the bound automatically.
-  pub fn new(f: impl Fn(P2<_Float>) -> _Float + Send + Sync + 'static) -> Self {
+  pub fn new(f: impl Fn(Point<_Float, D>) -> _Float + Send + Sync + 'static) -> Self {
     Self { f: Arc::new(f), lipschitz: _Float::one() }
   }
   /// Declare the Lipschitz constant of this primitive's field.
@@ -58,7 +58,7 @@ impl<_Float: Float> Primitive<_Float> {
   /// so a custom estimator declares its constant once, on the type.
   pub fn from_shape<S>(shape: S) -> Self
   where
-    S: SDF<_Float> + Lipschitz<_Float> + Send + Sync + 'static,
+    S: SDF<_Float, D> + Lipschitz<_Float> + Send + Sync + 'static,
   {
     let lipschitz = shape.lipschitz();
     Self { f: Arc::new(move |p| shape.sdf(p)), lipschitz }
@@ -66,9 +66,9 @@ impl<_Float: Float> Primitive<_Float> {
 }
 
 #[derive(Clone)]
-pub struct ADF<Float> {
-  pub tree: Quadtree<Vec<Primitive<Float>>, Float, 2>,
-  /// Max quadtree-style subdivisions the redundancy test ([`sdf_geq_everywhere`])
+pub struct ADF<Float: Scalar, const D: usize> {
+  pub tree: Quadtree<Vec<Primitive<Float, D>>, Float, D>,
+  /// Max subdivisions the redundancy test ([`sdf_geq_everywhere`])
   /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
   /// primitive is pruned only when provably redundant to within ~`node/2^n`),
   /// at more work in near-tangent regions.
@@ -79,8 +79,8 @@ pub struct ADF<Float> {
   lipschitz_max: Float,
 }
 
-impl <_Float: Float> SDF<_Float> for &[Primitive<_Float>] {
-  fn sdf(&self, pixel: P2<_Float>) -> _Float {
+impl <_Float: Real, const D: usize> SDF<_Float, D> for &[Primitive<_Float, D>] {
+  fn sdf(&self, pixel: Point<_Float, D>) -> _Float {
     self.iter()
       .map(|p| (p.f)(pixel))
       .reduce(|a, b| if a <= b { a } else { b })
@@ -90,35 +90,36 @@ impl <_Float: Float> SDF<_Float> for &[Primitive<_Float>] {
 
 /// The Lipschitz constant of `min` over a bucket: `min` of `L_i`-Lipschitz
 /// functions is `max(L_i)`-Lipschitz.
-fn bucket_lipschitz<_Float: Float>(bucket: &[Primitive<_Float>]) -> _Float {
+fn bucket_lipschitz<_Float: Real, const D: usize>(bucket: &[Primitive<_Float, D>]) -> _Float {
   bucket.iter().map(|p| p.lipschitz).fold(_Float::one(), _Float::max)
 }
 
 /// Returns `true` only when `f(v) >= g(v)` is *provable* for every `v` in
 /// `domain`. Sound **provided `f` is `l_f`-Lipschitz and `g` is `l_g`-Lipschitz**
 /// (true SDFs are 1-Lipschitz): then `f - g` is `(l_f + l_g)`-Lipschitz, so over
-/// a rectangle of half-diagonal `h` centred at `c`,
-/// `f - g >= (f - g)(c) - (l_f + l_g)·h`. That bound *proves a sub-rectangle
+/// a box of half-diagonal `h` centred at `c`,
+/// `f - g >= (f - g)(c) - (l_f + l_g)·h`. That bound *proves a sub-box
 /// clean* (`(f-g)(c) - (l_f+l_g)·h >= 0`) or discards it toward a witness
-/// (`(f-g)(c) < 0`); undecided sub-rectangles are refined up to `max_subdiv`
+/// (`(f-g)(c) < 0`); undecided sub-boxes are refined up to `max_subdiv`
 /// levels, beyond which it conservatively answers `false`.
 ///
 /// Cost is adaptive: well-separated fields settle at the root and a real witness
 /// is reached by descent — no fixed grid or GD schedule. Larger constants are
 /// conservative: certification just needs deeper refinement, and an overly large
 /// bound degrades into "only a real witness ever decides", never unsoundness.
-fn sdf_geq_everywhere<_Float, F, G>(
+fn sdf_geq_everywhere<_Float, F, G, const D: usize>(
   f: F,
   g: G,
-  domain: Rect<_Float, WorldSpace>,
+  domain: Aabb<_Float, D>,
   l_f: _Float,
   l_g: _Float,
   max_subdiv: u32,
 ) -> bool
 where
-  _Float: Float,
-  F: Fn(P2<_Float>) -> _Float,
-  G: Fn(P2<_Float>) -> _Float,
+  _Float: Real,
+  F: Fn(Point<_Float, D>) -> _Float,
+  G: Fn(Point<_Float, D>) -> _Float,
+  Dim<D>: Branching,
 {
   let two = _Float::one() + _Float::one();
   let l_sum = l_f + l_g;
@@ -128,27 +129,30 @@ where
     if diff < _Float::zero() {
       return false; // witness: f < g here, so `f >= g everywhere` is false
     }
-    let size = rect.size.to_vector();
-    let half_diag = (size.x * size.x + size.y * size.y).sqrt() / two;
+    let half_diag = rect.size().length() / two;
     if diff >= l_sum * half_diag {
-      continue; // `f - g >= 0` proved over the whole rectangle
+      continue; // `f - g >= 0` proved over the whole box
     }
     if depth >= max_subdiv {
       return false; // undecided within budget → conservatively assume a witness
     }
-    // the proof search refines euclid rectangles; the round-trip through the
-    // tree's NdRect is a free copy
-    for sub in child_rects(NdRect::from_euclid(rect)) {
-      stack.push((sub.to_euclid(), depth + 1));
+    for sub in child_rects(rect) {
+      stack.push((sub, depth + 1));
     }
   }
   true
 }
 
-impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
-  /// Create a new ADF instance. `max_depth` specifies maximum number of quadtree subdivisions;
+impl <_Float: Real + Send + Sync, const D: usize> ADF<_Float, D>
+where
+  Dim<D>: Branching,
+  // trivially satisfied — the GAT is always an array — but the compiler
+  // cannot see through the projection
+  Children<Vec<Primitive<_Float, D>>, D>: Send,
+{
+  /// Create a new ADF instance. `max_depth` specifies maximum number of tree subdivisions;
   /// `init` specifies initial sdf primitives.
-  pub fn new(max_depth: u8, init: Vec<Primitive<_Float>>) -> Self {
+  pub fn new(max_depth: u8, init: Vec<Primitive<_Float, D>>) -> Self {
     let lipschitz_max = bucket_lipschitz(&init);
     Self {
       tree: Quadtree::new(max_depth, init),
@@ -166,8 +170,8 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// See [`Self::insert_primitive_domain`] for approximate fields.
   pub fn insert_sdf_domain(
     &mut self,
-    domain: Rect<_Float, WorldSpace>,
-    f: Arc<dyn Fn(P2<_Float>) -> _Float + Send + Sync>
+    domain: Aabb<_Float, D>,
+    f: Arc<dyn Fn(Point<_Float, D>) -> _Float + Send + Sync>
   ) -> bool {
     self.insert_primitive_domain(domain, Primitive { f, lipschitz: _Float::one() })
   }
@@ -175,10 +179,10 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// Add a new sdf primitive with an explicit Lipschitz bound (see [`Primitive`]).
   pub fn insert_primitive_domain(
     &mut self,
-    domain: Rect<_Float, WorldSpace>,
-    prim: Primitive<_Float>
+    domain: Aabb<_Float, D>,
+    prim: Primitive<_Float, D>
   ) -> bool {
-    self.insert_where(move |node| node.rect.to_euclid().intersects(&domain), prim)
+    self.insert_where(move |node| node.rect.intersects(&domain), prim)
   }
 
   /// Insert a primitive placed at a **maximum** `p` of the field (any placement
@@ -198,8 +202,8 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// (see `solver::adf::tests::insertion_domain`).
   pub fn insert_at_maximum(
     &mut self,
-    p: DistPoint<_Float, _Float, WorldSpace>,
-    prim: Primitive<_Float>
+    p: DistPoint<_Float, _Float, D>,
+    prim: Primitive<_Float, D>
   ) -> bool {
     self.insert_within(p.point, p.distance, prim)
   }
@@ -210,29 +214,23 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// actual reach, shrinking the visited region `D*` accordingly.
   pub fn insert_within(
     &mut self,
-    center: P2<_Float>,
+    center: Point<_Float, D>,
     radius: _Float,
-    prim: Primitive<_Float>
+    prim: Primitive<_Float, D>
   ) -> bool {
     let two = _Float::one() + _Float::one();
     self.insert_where(move |node| {
-      let rect = node.rect.to_euclid();
-      let r = rect.to_box2d();
-      let q = Point2D::new(
-        center.x.max(r.min.x).min(r.max.x),
-        center.y.max(r.min.y).min(r.max.y),
-      );
-      let dist = (center - q).length();
-      let half_diag = rect.size.to_vector().length() / two;
-      node.data.as_slice().sdf(rect.center())
+      let dist = (center - node.rect.clamp_point(&center)).length();
+      let half_diag = node.rect.size().length() / two;
+      node.data.as_slice().sdf(node.rect.center())
         + bucket_lipschitz(&node.data) * half_diag > dist - radius
     }, prim)
   }
 
   fn insert_where(
     &mut self,
-    keep: impl Fn(&Node<Vec<Primitive<_Float>>, _Float, 2>) -> bool + Sync,
-    prim: Primitive<_Float>
+    keep: impl Fn(&Node<Vec<Primitive<_Float, D>>, _Float, D>) -> bool + Sync,
+    prim: Primitive<_Float, D>
   ) -> bool {
     const BUCKET_SIZE: usize = 3;
     self.lipschitz_max = self.lipschitz_max.max(prim.lipschitz);
@@ -252,7 +250,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
       // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
       if sdf_geq_everywhere(
         f.as_ref(), |p| node.data.as_slice().sdf(p),
-        node.rect.to_euclid(), prim.lipschitz, l_bucket, subdiv
+        node.rect, prim.lipschitz, l_bucket, subdiv
       ) {
         return Refine::None;
       }
@@ -260,13 +258,13 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
       // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
       if sdf_geq_everywhere(
         |p| node.data.as_slice().sdf(p), f.as_ref(),
-        node.rect.to_euclid(), l_bucket, prim.lipschitz, subdiv
+        node.rect, l_bucket, prim.lipschitz, subdiv
       ) {
         return Refine::SetData(vec![prim.clone()]);
       }
 
       // remove SDF primitives that do not affect the field within `rect`
-      let prune = |data: &[Primitive<_Float>], rect| {
+      let prune = |data: &[Primitive<_Float, D>], rect| {
         let mut g = vec![];
         for (i, p_i) in data.iter().enumerate() {
           let sdf_old = |p|
@@ -296,7 +294,8 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
         // Max bucket size reached: subdivide, pruning the combined set per child.
         let mut combined = node.data.clone();
         combined.push(prim.clone());
-        Refine::Subdivide(child_rects(node.rect).map(|rect| prune(combined.as_slice(), rect.to_euclid())))
+        Refine::Subdivide(<Dim<D> as Branching>::children_from_fn(
+          |i| prune(combined.as_slice(), child_rect(node.rect, i))))
       }
     })
   }
@@ -313,7 +312,7 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   ///
   /// and `D*` is tight: every `v ∈ D*` is updated by *some* admissible `S`.
   /// `D*` is not bounded by any multiple of `d` (an escape ray between contact
-  /// points can extend it arbitrarily), so no constant-sized rectangle is
+  /// points can extend it arbitrarily), so no constant-sized box is
   /// correct in general — this method instead covers `D*` by tree leaves,
   /// discarding a subtree `R` once
   ///
@@ -322,36 +321,29 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   /// ```
   ///
   /// (`g(v) ≤ g(c_R) + L·h(R)` by `L`-Lipschitz continuity of the whole field),
-  /// and returns the bounding rectangle of the surviving leaves.
-  pub fn update_domain(&self, p: DistPoint<_Float, _Float, WorldSpace>) -> Rect<_Float, WorldSpace> {
+  /// and returns the bounding box of the surviving leaves.
+  pub fn update_domain(&self, p: DistPoint<_Float, _Float, D>) -> Aabb<_Float, D> {
     let (x0, d) = (p.point, p.distance);
     let two = _Float::one() + _Float::one();
     let l = self.lipschitz_max;
 
-    let mut bounds: Option<Box2D<_Float, WorldSpace>> = None;
+    let mut bounds: Option<Aabb<_Float, D>> = None;
     self.tree.visit_leaves(
       |node| {
-        let rect = node.rect.to_euclid();
-        let r = rect.to_box2d();
-        let half_diag = rect.size.to_vector().length() / two;
-        // distance from x0 to the rectangle
-        let q = Point2D::new(
-          x0.x.max(r.min.x).min(r.max.x),
-          x0.y.max(r.min.y).min(r.max.y),
-        );
-        let dist = (x0 - q).length();
-        self.sdf(rect.center()) + l * half_diag <= dist - d
+        let half_diag = node.rect.size().length() / two;
+        // distance from x0 to the box
+        let dist = (x0 - node.rect.clamp_point(&x0)).length();
+        self.sdf(node.rect.center()) + l * half_diag <= dist - d
       },
       |leaf| {
-        let r = leaf.rect.to_euclid().to_box2d();
         bounds = Some(match bounds {
-          Some(b) => b.union(&r),
-          None => r,
+          Some(b) => b.union(&leaf.rect),
+          None => leaf.rect,
         });
       },
     );
     // The leaf containing x0 always qualifies, so `bounds` is non-empty.
-    bounds.unwrap().to_rect()
+    bounds.unwrap()
   }
 
   /// # Safety
@@ -365,21 +357,25 @@ impl <_Float: Float + Signed + Send + Sync> ADF<_Float> {
   }
 }
 
-impl <_Float: Float> SDF<_Float> for ADF<_Float> {
-  fn sdf(&self, pixel: P2<_Float>) -> _Float {
-    match self.tree.pt_to_node(pixel.to_array()) {
+impl <_Float: Real, const D: usize> SDF<_Float, D> for ADF<_Float, D>
+where
+  Dim<D>: Branching,
+{
+  fn sdf(&self, pixel: Point<_Float, D>) -> _Float {
+    match self.tree.pt_to_node(pixel) {
       Some(node) => node.data.as_slice().sdf(pixel),
       None => self.tree.root().data.as_slice().sdf(pixel),
     }}}
 
-impl <_Float: Float> BoundingBox<_Float> for ADF<_Float> {
-  fn bounding_box(&self) -> Box2D<_Float, WorldSpace> {
-    Box2D::new(
-      P2::splat(_Float::zero()),
-      P2::splat(_Float::one())
-    )}}
+impl <_Float: Real, const D: usize> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D> {
+  fn bounding_box(&self) -> Aabb<_Float, D> {
+    Aabb::unit()
+  }}
 
-impl <_Float: Float> Debug for ADF<_Float> {
+impl <_Float: Real, const D: usize> Debug for ADF<_Float, D>
+where
+  Dim<D>: Branching,
+{
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     use humansize::{FileSize, file_size_opts as options};
 
@@ -396,8 +392,8 @@ impl <_Float: Float> Debug for ADF<_Float> {
     // are shared between buckets and are not attributed here.
     let total_size = std::mem::size_of::<Self>()
       + self.tree.node_count()
-        * std::mem::size_of::<Node<Vec<Primitive<_Float>>, _Float, 2>>()
-      + bucket_slots * std::mem::size_of::<Primitive<_Float>>();
+        * std::mem::size_of::<Node<Vec<Primitive<_Float, D>>, _Float, D>>()
+      + bucket_slots * std::mem::size_of::<Primitive<_Float, D>>();
     f.debug_struct("ADF")
       .field("total_nodes", &self.tree.node_count())
       .field("max_depth", &max_depth)

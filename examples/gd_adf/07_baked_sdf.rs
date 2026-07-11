@@ -19,13 +19,12 @@ use {
     sdf::{self, SDF, Lipschitz},
     solver::{ADF, LineSearch, Primitive},
     drawing::Draw,
-    geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation, P2},
+    geometry::{BoundingBox, Shape, Scale, Translation, Aabb, P2, V2, Real, VectorExt},
     util
   },
-  euclid::{Point2D, Vector2D as V2, Box2D},
+  nalgebra::Rotation2,
   image::{RgbaImage, Luma, Pixel},
   anyhow::Result,
-  num_traits::Float,
   num_complex::Complex,
   rayon::prelude::*,
   std::{sync::Arc, time::Instant}
@@ -36,8 +35,8 @@ use {
 /// evaluated during the bake.
 struct MandlelDE;
 
-impl <T: Float> SDF<T> for MandlelDE {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl <T: Real> SDF<T, 2> for MandlelDE {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let c = Complex::new(pixel.x, pixel.y);
     let mut z = Complex::new(T::zero(), T::zero());
     let mut dz = Complex::new(T::one(), T::zero());
@@ -59,15 +58,15 @@ impl <T: Float> SDF<T> for MandlelDE {
   }
 }
 
-impl<T: Float> BoundingBox<T> for MandlelDE {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::new(T::from(-2.5).unwrap(), T::from(-1.25).unwrap()),
-      Point2D::new(T::from(0.5).unwrap(), T::from(1.25).unwrap())
+impl<T: Real> BoundingBox<T, 2> for MandlelDE {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::new(
+      P2::new(T::from(-2.5).unwrap(), T::from(-1.25).unwrap()),
+      P2::new(T::from(0.5).unwrap(), T::from(1.25).unwrap())
     )}}
 
 /// scaled to a box [-1, 1]
-fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
+fn mandel_de_norm<T: Real>() -> Scale<Translation<MandlelDE, T, 2>, T> {
   MandlelDE
     .translate(V2::new(T::from(1.0).unwrap(), T::zero()))
     .scale(T::one() / T::from(1.5).unwrap())
@@ -78,11 +77,11 @@ struct BakedSdf {
   data: Vec<f32>,
   res: usize,
   /// Square window the grid covers.
-  window: Box2D<f64, WorldSpace>,
+  window: Aabb<f64, 2>,
   cell: f64,
   /// Bounding box reported to the combinators (their rotation/scale pivot) —
   /// kept equal to the analytic shape's, so the scene matches `06` exactly.
-  bbox: Box2D<f64, WorldSpace>,
+  bbox: Aabb<f64, 2>,
 }
 
 impl BakedSdf {
@@ -90,13 +89,13 @@ impl BakedSdf {
   /// Euclidean distance transform of the mask.
   fn bake(
     inside: impl Fn(P2<f64>) -> bool + Sync,
-    window: Box2D<f64, WorldSpace>,
-    bbox: Box2D<f64, WorldSpace>,
+    window: Aabb<f64, 2>,
+    bbox: Aabb<f64, 2>,
     res: usize,
   ) -> Self {
-    let cell = window.width() / (res - 1) as f64;
+    let cell = window.size().x / (res - 1) as f64;
     let mask: Vec<bool> = (0..res * res).into_par_iter()
-      .map(|i| inside(Point2D::new(
+      .map(|i| inside(P2::new(
         window.min.x + (i % res) as f64 * cell,
         window.min.y + (i / res) as f64 * cell,
       )))
@@ -127,21 +126,18 @@ impl BakedSdf {
 #[derive(Clone)]
 struct Baked(Arc<BakedSdf>);
 
-impl SDF<f64> for Baked {
+impl SDF<f64, 2> for Baked {
   fn sdf(&self, p: P2<f64>) -> f64 {
     let b = &self.0;
     // Outside the baked window, extend with the distance to the window: the
     // field keeps growing (a small primitive can never wrongly become the
     // global minimum far away), and the total stays (1 + √2)-Lipschitz.
-    let q = Point2D::new(
-      p.x.clamp(b.window.min.x, b.window.max.x),
-      p.y.clamp(b.window.min.y, b.window.max.y),
-    );
+    let q = b.window.clamp_point(&p);
     b.sample(q) + (p - q).length()
   }
 }
-impl BoundingBox<f64> for Baked {
-  fn bounding_box(&self) -> Box2D<f64, WorldSpace> { self.0.bbox }
+impl BoundingBox<f64, 2> for Baked {
+  fn bounding_box(&self) -> Aabb<f64, 2> { self.0.bbox }
 }
 
 /// Certified: an exact EDT is 1-Lipschitz, bilinear interpolation of it √2,
@@ -217,10 +213,10 @@ fn main() -> Result<()> {
   let bbox = analytic.bounding_box();
   let window = {
     let c = bbox.center();
-    let half = bbox.width().max(bbox.height()) / 2.0 + 0.25;
-    Box2D::new(
-      Point2D::new(c.x - half, c.y - half),
-      Point2D::new(c.x + half, c.y + half),
+    let half = bbox.size().x.max(bbox.size().y) / 2.0 + 0.25;
+    Aabb::new(
+      P2::new(c.x - half, c.y - half),
+      P2::new(c.x + half, c.y + half),
     )
   };
   let t_bake = Instant::now();
@@ -242,18 +238,18 @@ fn main() -> Result<()> {
   ]);
 
   util::local_maxima_iter(
-    Box::new(|p| representation.sdf(p)),
+    Box::new(|p: P2<f64>| representation.sdf(p)),
     32,
     0,
     LineSearch { Δ: 1.0 / 1024.0, ..Default::default() }
   ).filter_map(|local_max| {
     // sample gradient of the (now cheap) distance field at local_max
     let gradient = LineSearch::default().grad(|p| main_de.sdf(p), local_max.point);
-    let angle = gradient.angle_from_x_axis();
+    let angle = gradient.y.atan2(gradient.x);
 
     let primitive = baked.clone()
-      .rotate(angle)
-      .translate(local_max.point.to_vector())
+      .rotate(Rotation2::new(angle))
+      .translate(local_max.point.coords)
       .scale(local_max.distance / 4.0);
 
     // the shape is scaled to d/4; its bounding-box half-diagonal is ~1.31,

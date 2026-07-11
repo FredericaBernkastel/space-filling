@@ -22,7 +22,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 rand = { version = "0.10", default-features = false }
 rand_pcg = { version = "0.10" }
 rayon = "1.12"
-euclid = "0.22"
+nalgebra = "0.35"
 num-traits = "0.2"
 itertools = "0.15"
 humansize = "1.1"

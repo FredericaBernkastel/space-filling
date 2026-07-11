@@ -1,4 +1,4 @@
-//! This is a library for generalized space filling in ℝ² (do not mix with _packing_).
+//! This is a library for generalized space filling in ℝᴺ (do not mix with _packing_).
 //!
 //! It is split into two main modules: [`solver`] for generating a distribution of shapes,
 //! and [`drawing`] for displaying it (requires the `drawing` feature).
@@ -43,7 +43,7 @@
     //!   let global_max = representation.find_max();
     //!   // Make a new circle at the location with highest distance to all other circles.
     //!   let circle = Circle
-    //!     .translate(global_max.point.to_vector())
+    //!     .translate(global_max.point.coords)
     //!     .scale(global_max.distance / 4.0);
     //!   /** Update the field.
     //!    * `Circle` implements the `SDF` trait. Only a bounded region of the field
@@ -80,18 +80,18 @@
 //! #
 //! # fn main() -> Result<()> {
     //! let path = "out.png";
-    //! let mut representation = RwLock::new(ADF::<f64>::new(5, vec![Primitive::new(sdf::boundary_rect)]));
+    //! let mut representation = RwLock::new(ADF::<f64, 2>::new(5, vec![Primitive::new(sdf::boundary_rect)]));
     //! let mut image = image::RgbaImage::new(2048, 2048);
     //! // In case of GD-ADF, it is adviced to use `util::local_maxima_iter`,
     //! // as it is capable of finding multiple local maxima in parallel.
     //! // By default, this is an infinite iterator.
     //! util::local_maxima_iter(
     //!   // provide a closure for sampling distance field
-    //!   Box::new(|p| representation.read().unwrap().sdf(p)),
+    //!   Box::new(|p: P2<f64>| representation.read().unwrap().sdf(p)),
     //!   32, 0, LineSearch::default()
     //! ).filter_map(|local_max| {
     //!   let circle = Circle
-    //!     .translate(local_max.point.to_vector())
+    //!     .translate(local_max.point.coords)
     //!     .scale(local_max.distance / 4.0);
     //!   // Update the distance field. An insertion which does not lower the field
     //!   // anywhere reports `false` - thus Option is returned
@@ -164,6 +164,10 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(rustdoc::private_intra_doc_links)]
+
+/// Re-exported: the geometry vocabulary (points, vectors, rotations) is
+/// nalgebra's, so downstream code can name the exact same versions.
+pub use nalgebra;
 
 pub mod util;
 pub mod sdf;

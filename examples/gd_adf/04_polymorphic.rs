@@ -1,7 +1,7 @@
 use {
   std::sync::{Arc, RwLock},
   space_filling::{
-    geometry::{Shape, Ring, Square},
+    geometry::{Shape, Ring, Square, P2, V2},
     sdf::{self, SDF},
     solver::{ADF, LineSearch, Primitive},
     drawing::{self, Draw},
@@ -10,16 +10,16 @@ use {
   image::{RgbaImage, Rgba, Luma, Pixel, DynamicImage},
   anyhow::Result,
   rand::prelude::*,
-  euclid::{Point2D, Angle}
+  nalgebra::Rotation2
 };
 
-fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
+fn polymorphic(representation: &RwLock<ADF<f64, 2>>, texture: Arc<DynamicImage>)
   -> impl Iterator<Item = Arc<dyn Draw<f64, RgbaImage> + Send + Sync>> + '_
 {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   util::local_maxima_iter(
-    Box::new(|p| representation.read().unwrap().sdf(p)),
+    Box::new(|p: P2<f64>| representation.read().unwrap().sdf(p)),
     32, 0, LineSearch::default()
   ) .enumerate()
     .filter_map(move |(i, local_max)| {
@@ -32,18 +32,18 @@ fn polymorphic(representation: &RwLock<ADF<f64>>, texture: Arc<DynamicImage>)
           let r = (rng.random_range(0.0..1.0) * local_max.distance)
             .min(1.0 / 6.0);
           let delta = local_max.distance - r;
-          let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
+          let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
           Ring { inner_r: 0.5 }
-            .translate(local_max.point - offset)
+            .translate(local_max.point.coords - offset)
             .scale(r)
             .texture(texture.clone())
         }),
 
         1 | _ => Arc::new(Square
-          .translate(local_max.point.to_vector())
+          .translate(local_max.point.coords)
           .scale(local_max.distance / 2.0)
-          .rotate(Angle::degrees(rng.random_range(0.0..45.0)))
+          .rotate(Rotation2::new(rng.random_range(0.0..45f64).to_radians()))
           .texture(Rgba([
             ((local_max.distance * 2.0).sqrt() * 255.0) as u8,
             32,

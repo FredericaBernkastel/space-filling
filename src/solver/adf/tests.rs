@@ -1,7 +1,7 @@
 use {
   super::*,
   crate::{
-    geometry::{Circle, Shape, P2},
+    geometry::{Circle, Shape, P2, V2},
     drawing,
     sdf,
     solver::{ADF, LineSearch},
@@ -9,25 +9,24 @@ use {
   },
   anyhow::Result,
   image::{Rgba, RgbaImage},
-  euclid::{Vector2D, Size2D},
   std::cell::Cell
 };
 use crate::geometry::DistPoint;
 
 #[test] fn draw_layout() -> Result<()> {
   let mut image = RgbaImage::new(512, 512);
-  let mut adf = ADF::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
-  let domain = Rect::from_size(Size2D::splat(1.0));
+  let mut adf = ADF::<f64, 2>::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
+  let domain = Aabb::unit();
 
   let t0 = std::time::Instant::now();
   adf.insert_sdf_domain(domain, Arc::new(|p| Circle
     .scale(0.25)
-    .translate(Vector2D::splat(0.5))
+    .translate(V2::repeat(0.5))
     .sdf(p)
   ));
   adf.insert_sdf_domain(domain, Arc::new(|p| Circle
     .scale(0.125)
-    .translate(Vector2D::splat(0.125))
+    .translate(V2::repeat(0.125))
     .sdf(p)
   ));
   println!("{}us", t0.elapsed().as_micros());
@@ -43,7 +42,7 @@ use crate::geometry::DistPoint;
   use rand::prelude::*;
 
   let mut image = RgbaImage::new(1024, 1024);
-  let representation = ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
+  let representation = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
   let mut primitives = vec![];
   let trials = Cell::new(0u64);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -51,7 +50,7 @@ use crate::geometry::DistPoint;
   let t0 = std::time::Instant::now();
 
   util::local_maxima_iter(
-    Box::new(|p| representation.sdf(p)),
+    Box::new(|p: P2<f64>| representation.sdf(p)),
     32, 0, LineSearch::default()
   ).inspect(|_| trials.set(trials.get() + 1))
     .filter_map(|local_max| {
@@ -59,13 +58,13 @@ use crate::geometry::DistPoint;
         use std::f64::consts::PI;
 
         let angle = rng.random_range(-PI..=PI);
-        let r = (rng.random_range(1e-6..1.0).powf(5.0) * local_max.distance)
+        let r = (rng.random_range(1e-6..1.0f64).powf(5.0) * local_max.distance)
           .min(1.0 / 6.0);
         let delta = local_max.distance - r;
         // polar to cartesian
-        let offset = P2::from([angle.cos(), angle.sin()]) * delta;
+        let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-        Circle.translate(local_max.point - offset)
+        Circle.translate(local_max.point.coords - offset)
           .scale(r)
       };
       // alternately use safe RwLock<ADF> for 1.5x slowdown
@@ -87,12 +86,7 @@ use crate::geometry::DistPoint;
   // maximum, or a candidate lost to the optimizer's numeric tolerance.
   println!("adf_error_margin: {:+.3e}", trials.get() as f64 / primitives.len() as f64 - 1.0);
   println!("{representation:#?}");
-  //drawing::display_sdf(|p| representation.sdf(p), &mut image, 3.5);
-  //representation.draw_layout(&mut image);
   use {image::Pixel, drawing::Draw};
-  /*primitives.into_iter()
-    .for_each(|p| p.texture(image::Luma([255]).to_rgba())
-    .draw(&mut image));*/
   representation
     .texture(image::Luma([255]).to_rgba())
     .draw(&mut image);
@@ -107,7 +101,7 @@ use crate::geometry::DistPoint;
 
   std::fs::create_dir("test\\anim").ok();
 
-  let mut representation = ADF::new(11, vec![Primitive::new(sdf::boundary_rect)]);
+  let mut representation = ADF::<f64, 2>::new(11, vec![Primitive::new(sdf::boundary_rect)]);
   let mut circles = vec![];
   let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 
@@ -143,7 +137,7 @@ use crate::geometry::DistPoint;
     {
       let mut image = image.clone();
       Circle
-        .translate(local_max.point.to_vector())
+        .translate(local_max.point.coords)
         .scale(local_max.distance)
         .texture(Rgba([0x45, 0x8F, 0xF5, 0x7F]))
         .draw(&mut image);
@@ -157,9 +151,9 @@ use crate::geometry::DistPoint;
       let r = (rng.random_range::<f64, _>(0.0..1.0).powf(1.0) * local_max.distance)
         .min(1.0 / 6.0);
       let delta = local_max.distance - r;
-      let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
+      let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-      Circle.translate(local_max.point - offset)
+      Circle.translate(local_max.point.coords - offset)
         .scale(r)
     };
     let domain = representation.update_domain(local_max);
@@ -171,7 +165,7 @@ use crate::geometry::DistPoint;
     {
       let mut image = image.clone();
       Circle
-        .translate(local_max.point.to_vector())
+        .translate(local_max.point.coords)
         .scale(local_max.distance * 4.0)
         .texture(Rgba([0xFF, 0, 0, 0x7F]))
         .draw(&mut image);
@@ -205,28 +199,30 @@ use crate::geometry::DistPoint;
 #[test] #[ignore] fn bench_circle_intersections() {
   use rand::prelude::*;
   use std::f64::consts::PI;
+  use crate::geometry::VectorExt;
 
   use {rayon::prelude::*, std::sync::RwLock};
 
   for (batch, target) in [(32u64, 1000usize), (1, 1000), (32, 100_000)] {
     let representation = RwLock::new(
-      ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)]));
+      ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]));
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let t0 = std::time::Instant::now();
 
     let circles: Vec<(P2<f64>, f64)> = util::local_maxima_iter(
-      Box::new(|p| representation.read().unwrap().sdf(p)),
+      Box::new(|p: P2<f64>| representation.read().unwrap().sdf(p)),
       batch, 0, LineSearch::default()
     ).filter_map(|local_max| {
       let angle = rng.random_range(-PI..=PI);
       let r = (rng.random_range(0f64..1.0) * local_max.distance).min(1.0 / 6.0);
       let delta = local_max.distance - r;
-      let offset = P2::from([angle.cos(), angle.sin()]) * delta;
-      let circle = Circle.translate(local_max.point - offset).scale(r);
+      let offset = V2::new(angle.cos(), angle.sin()) * delta;
+      let center = local_max.point - offset;
+      let circle = Circle.translate(center.coords).scale(r);
       representation.write().unwrap().insert_at_maximum(
         local_max,
         Primitive::from_shape(circle)
-      ).then(|| ((local_max.point - offset).to_point(), r))
+      ).then(|| (center, r))
     }).take(target).collect();
     let build = t0.elapsed();
 
@@ -257,6 +253,44 @@ use crate::geometry::DistPoint;
   }
 }
 
+// The whole pipeline in three dimensions: an octree-backed ADF over the unit
+// cube, N-dimensional gradient ascent, and the D*-pruned insertion walk. The
+// balls are placed at located maxima with radius d/2, so no two may ever
+// intersect — an overlap would prove a corrupted field or a broken walk.
+#[test] fn sphere_packing_3d() {
+  use rand::prelude::*;
+  use crate::geometry::VectorExt;
+
+  let mut adf = ADF::<f64, 3>::new(4, vec![Primitive::new(sdf::boundary_rect)]);
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
+  let mut spheres: Vec<(crate::geometry::Point<f64, 3>, f64)> = vec![];
+
+  while spheres.len() < 100 {
+    let maxima = util::find_max_parallel(
+      |p| adf.sdf(p), 16, &mut rng, LineSearch::default());
+    for m in maxima {
+      if spheres.len() >= 100 { break; }
+      let r = m.distance / 2.0;
+      let sphere = Circle.translate(m.point.coords).scale(r);
+      if adf.insert_at_maximum(m, Primitive::from_shape(sphere)) {
+        spheres.push((m.point, r));
+      }
+    }
+  }
+
+  for i in 0..spheres.len() {
+    for j in i + 1..spheres.len() {
+      let ((c1, r1), (c2, r2)) = (spheres[i], spheres[j]);
+      let gap = (c1 - c2).length() - (r1 + r2);
+      assert!(gap > -1e-9, "spheres {i} and {j} intersect by {:.3e}", -gap);
+    }
+  }
+  // and the field itself remembers them: at each centre it reads exactly -r
+  for &(c, r) in &spheres {
+    assert!((adf.sdf(c) + r).abs() < 1e-9);
+  }
+}
+
 // Constructive proof that no constant-sized insertion domain is sound for
 // local maxima. Three point-like obstacles at 90°, 210°, 330° around x0 form a
 // strict local maximum (contact gaps 120° < 180°). Along the escape bisector
@@ -268,12 +302,12 @@ use crate::geometry::DistPoint;
 #[test] fn insertion_domain() {
   let x0 = P2::new(0.5, 0.75);
   let d = 0.05;
-  let full = Rect::from_size(Size2D::splat(1.0));
+  let full = Aabb::unit();
 
-  let mut adf = ADF::new(7, vec![Primitive::new(sdf::boundary_rect)]);
+  let mut adf = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
   for angle in [90f64, 210., 330.] {
     let (s, c) = angle.to_radians().sin_cos();
-    let obstacle = Circle.scale(1e-4).translate(x0.to_vector() + Vector2D::new(c, s) * d);
+    let obstacle = Circle.scale(1e-4).translate(x0.coords + V2::new(c, s) * d);
     adf.insert_sdf_domain(full, Arc::new(move |p| obstacle.sdf(p)));
   }
 
@@ -281,7 +315,7 @@ use crate::geometry::DistPoint;
   // pipeline-style placement: a circle inside the maximal ball, pushed toward w
   let r = 0.01;
   let circle = Circle.scale(r)
-    .translate(x0.to_vector() + Vector2D::new(0.0, -1.0) * (local_max.distance - r));
+    .translate(x0.coords + V2::new(0.0, -1.0) * (local_max.distance - r));
   let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
 
   let probe = P2::new(0.48, 0.45); // R = 6·d down the escape ray
@@ -309,7 +343,7 @@ use crate::geometry::DistPoint;
   }
 }
 
-// Counts how often `insert_sdf_domain` returns `false` (the quadtree was not
+// Counts how often `insert_sdf_domain` returns `false` (the tree was not
 // changed) under realistic circle-packing insertion. A `false` means the
 // redundancy test judged the new primitive to be `>= g` everywhere in its
 // domain, so it was discarded. With the sound `sdf_geq_everywhere` this can only
@@ -324,23 +358,23 @@ use crate::geometry::DistPoint;
   use std::f64::consts::PI;
 
   fn run(batch: u64, subdiv: u32, target: u64, seed: u64) -> (u64, u64) {
-    let mut adf = ADF::<f64>::new(7, vec![Primitive::new(sdf::boundary_rect)])
+    let mut adf = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)])
       .with_prune_subdiv(subdiv);
     let ls = LineSearch::default();
     let mut rng = rand_pcg::Pcg64::seed_from_u64(seed);
     let (mut attempts, mut failures) = (0u64, 0u64);
 
     while attempts < target {
-      let maxima = util::find_max_parallel(|p| adf.sdf(p), batch, &mut rng, ls);
+      let maxima = util::find_max_parallel(|p: P2<f64>| adf.sdf(p), batch, &mut rng, ls);
       if maxima.is_empty() { continue; }
       for m in maxima {
         if attempts >= target { break; }
         let circle = {
           let angle = rng.random_range(-PI..=PI);
-          let r = (rng.random_range(1e-6..1.0).powf(5.0) * m.distance).min(1.0 / 6.0);
+          let r = (rng.random_range(1e-6..1.0f64).powf(5.0) * m.distance).min(1.0 / 6.0);
           let delta = m.distance - r;
-          let offset = P2::from([angle.cos(), angle.sin()]) * delta;
-          Circle.translate(m.point - offset).scale(r)
+          let offset = V2::new(angle.cos(), angle.sin()) * delta;
+          Circle.translate(m.point.coords - offset).scale(r)
         };
         attempts += 1;
         if !adf.insert_at_maximum(m, Primitive::from_shape(circle)) {
@@ -380,7 +414,7 @@ use crate::geometry::DistPoint;
   use std::f64::consts::PI;
 
   let subdiv = 8u32;
-  let mut adf = ADF::<f64>::new(6, vec![Primitive::new(sdf::boundary_rect)])
+  let mut adf = ADF::<f64, 2>::new(6, vec![Primitive::new(sdf::boundary_rect)])
     .with_prune_subdiv(subdiv);
   let ls = LineSearch::default();
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -392,7 +426,7 @@ use crate::geometry::DistPoint;
 
   let (mut attempts, mut failures) = (0u64, 0u64);
   while attempts < 50000 {
-    let maxima = util::find_max_parallel(|p| adf.sdf(p), 32, &mut rng, ls);
+    let maxima = util::find_max_parallel(|p: P2<f64>| adf.sdf(p), 32, &mut rng, ls);
     if maxima.is_empty() { continue; }
     for m in maxima {
       if attempts >= 50000 { break; }
@@ -400,8 +434,8 @@ use crate::geometry::DistPoint;
         let angle = rng.random_range(-PI..=PI);
         let r = (rng.random_range(0f64..1.0).powf(1.0) * m.distance).min(1.0 / 6.0);
         let delta = m.distance - r;
-        let offset = P2::from([angle.cos(), angle.sin()]) * delta;
-        Circle.translate(m.point - offset).scale(r)
+        let offset = V2::new(angle.cos(), angle.sin()) * delta;
+        Circle.translate(m.point.coords - offset).scale(r)
       };
       let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
       attempts += 1;
@@ -414,8 +448,8 @@ use crate::geometry::DistPoint;
   }
 
   // --- collect leaves (rect + bucket) ---
-  let mut leaves_v: Vec<(Rect<f64, WorldSpace>, Vec<Primitive<f64>>)> = vec![];
-  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect.to_euclid(), n.data.clone())); } Ok(()) }).ok();
+  let mut leaves_v: Vec<(Aabb<f64, 2>, Vec<Primitive<f64, 2>>)> = vec![];
+  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect, n.data.clone())); } Ok(()) }).ok();
 
   let sizes: Vec<usize> = leaves_v.iter().map(|(_, b)| b.len()).collect();
   let leaves = sizes.len();
@@ -442,13 +476,13 @@ use crate::geometry::DistPoint;
   let redundant: u64 = leaves_v.par_iter().map(|(rect, bucket)| {
     let n = bucket.len();
     if n < 2 { return 0u64; }
-    let s = rect.size.width / (GL as f64 - 1.0);
+    let s = rect.size().x / (GL as f64 - 1.0);
     let margin = s * std::f64::consts::SQRT_2;
     let mut min_diff = vec![f64::MAX; n];
     let mut vals = vec![0.0f64; n];
     for iy in 0..GL {
       for ix in 0..GL {
-        let v = P2::new(rect.origin.x + ix as f64 * s, rect.origin.y + iy as f64 * s);
+        let v = P2::new(rect.min.x + ix as f64 * s, rect.min.y + iy as f64 * s);
         for (i, p) in bucket.iter().enumerate() { vals[i] = (p.f)(v); }
         let (mut min1, mut min2, mut arg1) = (f64::MAX, f64::MAX, 0usize);
         for (i, &val) in vals.iter().enumerate() {

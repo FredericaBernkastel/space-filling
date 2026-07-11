@@ -16,60 +16,11 @@
 //! quadtree-only implementation.
 
 use {
-  crate::geometry::WorldSpace,
+  crate::geometry::{Aabb, Point, Real},
   anyhow::Result,
-  euclid::{Point2D, Size2D, Rect},
-  num_traits::Float,
+  nalgebra::Scalar,
   std::num::NonZeroU32,
 };
-
-/// An axis-aligned box in `DIMS` dimensions; `origin` is the minimal corner.
-///
-/// For `DIMS = 2` the field layout matches `euclid::Rect` — the
-/// [`Self::to_euclid`] / [`Self::from_euclid`] bridges the 2D solvers use are
-/// plain copies that compile away.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct NdRect<F, const DIMS: usize> {
-  pub origin: [F; DIMS],
-  pub size: [F; DIMS],
-}
-
-impl<F: Float, const DIMS: usize> NdRect<F, DIMS> {
-  /// The unit hypercube `[0, 1]^DIMS`.
-  #[inline]
-  pub fn unit() -> Self {
-    Self { origin: [F::zero(); DIMS], size: [F::one(); DIMS] }
-  }
-  /// Half-open containment: `origin[a] <= pt[a] < origin[a] + size[a]` on
-  /// every axis (the `euclid::Rect::contains` convention; `false` for NaN).
-  #[inline]
-  pub fn contains(&self, pt: [F; DIMS]) -> bool {
-    (0..DIMS).all(|a| self.origin[a] <= pt[a] && pt[a] < self.origin[a] + self.size[a])
-  }
-  #[inline]
-  pub fn center(&self) -> [F; DIMS] {
-    let two = F::one() + F::one();
-    std::array::from_fn(|a| self.origin[a] + self.size[a] / two)
-  }
-}
-
-impl<F: Float> NdRect<F, 2> {
-  /// Zero-cost view as the euclid type the 2D solvers and drawing speak.
-  #[inline]
-  pub fn to_euclid(self) -> Rect<F, WorldSpace> {
-    Rect {
-      origin: Point2D::new(self.origin[0], self.origin[1]),
-      size: Size2D::new(self.size[0], self.size[1]),
-    }
-  }
-  #[inline]
-  pub fn from_euclid(rect: Rect<F, WorldSpace>) -> Self {
-    Self {
-      origin: [rect.origin.x, rect.origin.y],
-      size: [rect.size.width, rect.size.height],
-    }
-  }
-}
 
 /// Compile-time dimension marker; [`Branching`] ties it to its `2^DIMS`-way
 /// child arrays.
@@ -77,8 +28,7 @@ pub struct Dim<const DIMS: usize>;
 
 /// The `2^DIMS`-way branching of a [`Dim`]: supplies true `[T; 2^DIMS]` arrays
 /// (stable Rust cannot express a generic-`DIMS`-dependent array length), so
-/// child payloads live on the stack exactly as the fixed `[T; 4]` did before.
-/// Implemented for `DIMS = 1..=6`.
+/// child payloads live on the stack. Implemented for `DIMS = 1..=6`.
 pub trait Branching {
   /// `2^DIMS`.
   const CHILDREN: usize;
@@ -103,25 +53,28 @@ impl_branching!(1 2 3 4 5 6);
 pub type Children<T, const DIMS: usize> = <Dim<DIMS> as Branching>::Children<T>;
 
 /// The `i`-th sub-cell of `rect`: bit `a` of `i` selects the upper half along
-/// axis `a`. For `DIMS = 2` this is the previous quadrant order — TL, TR, BL,
-/// BR — so the 2D arena layout is unchanged.
+/// axis `a`. For `DIMS = 2` this is the quadrant order TL, TR, BL, BR. Child
+/// cells share their boundary coordinates bit-for-bit with the parent and each
+/// other (min/max representation), so the tiling is exact.
 #[inline]
-pub fn child_rect<F: Float, const DIMS: usize>(
-  rect: NdRect<F, DIMS>,
+pub fn child_rect<F: Real, const DIMS: usize>(
+  rect: Aabb<F, DIMS>,
   i: usize,
-) -> NdRect<F, DIMS> {
-  let two = F::one() + F::one();
-  let size: [F; DIMS] = std::array::from_fn(|a| rect.size[a] / two);
-  let origin = std::array::from_fn(|a|
-    if i & (1 << a) != 0 { rect.origin[a] + size[a] } else { rect.origin[a] });
-  NdRect { origin, size }
+) -> Aabb<F, DIMS> {
+  let c = rect.center();
+  let mut min = rect.min;
+  let mut max = rect.max;
+  for a in 0..DIMS {
+    if i & (1 << a) != 0 { min[a] = c[a]; } else { max[a] = c[a]; }
+  }
+  Aabb { min, max }
 }
 
 /// All `2^DIMS` sub-cells of `rect`, in [`child_rect`] order.
 #[inline]
-pub fn child_rects<F: Float, const DIMS: usize>(
-  rect: NdRect<F, DIMS>,
-) -> Children<NdRect<F, DIMS>, DIMS>
+pub fn child_rects<F: Real, const DIMS: usize>(
+  rect: Aabb<F, DIMS>,
+) -> Children<Aabb<F, DIMS>, DIMS>
 where
   Dim<DIMS>: Branching,
 {
@@ -137,8 +90,8 @@ where
 /// whole node at 64 bytes — one cache line, and a power-of-two stride so arena
 /// indexing is a shift.
 #[derive(Clone)]
-pub struct Node<Data, Float, const DIMS: usize> {
-  pub rect: NdRect<Float, DIMS>,
+pub struct Node<Data, Float: Scalar, const DIMS: usize> {
+  pub rect: Aabb<Float, DIMS>,
   pub depth: u8,
   pub data: Data,
   /// Arena index of the first child (in [`child_rect`] order), or `None` for
@@ -146,7 +99,7 @@ pub struct Node<Data, Float, const DIMS: usize> {
   children: Option<NonZeroU32>,
 }
 
-impl<Data, Float, const DIMS: usize> Node<Data, Float, DIMS> {
+impl<Data, Float: Scalar, const DIMS: usize> Node<Data, Float, DIMS> {
   #[inline]
   pub fn is_leaf(&self) -> bool {
     self.children.is_none()
@@ -155,7 +108,7 @@ impl<Data, Float, const DIMS: usize> Node<Data, Float, DIMS> {
 
 /// A 2^N-tree stored as a flat arena. `nodes[0]` is always the root.
 #[derive(Clone)]
-pub struct Quadtree<Data, Float, const DIMS: usize> {
+pub struct Quadtree<Data, Float: Scalar, const DIMS: usize> {
   nodes: Vec<Node<Data, Float, DIMS>>,
   pub max_depth: u8,
 }
@@ -174,14 +127,14 @@ where
   Subdivide(Children<Data, DIMS>),
 }
 
-impl<Data, _Float: Float, const DIMS: usize> Quadtree<Data, _Float, DIMS>
+impl<Data, _Float: Real, const DIMS: usize> Quadtree<Data, _Float, DIMS>
 where
   Dim<DIMS>: Branching,
 {
   /// A tree with a single root node covering the unit hypercube.
   pub fn new(max_depth: u8, init: Data) -> Self {
     let root = Node {
-      rect: NdRect::unit(),
+      rect: Aabb::unit(),
       depth: 0,
       data: init,
       children: None,
@@ -235,9 +188,9 @@ where
   /// root hypercube (including NaN coordinates). Descent picks the child by
   /// per-axis comparison against the node's centre — `pt[a] >= center[a]`
   /// sets bit `a` — matching the half-open child cells exactly.
-  pub fn pt_to_node(&self, pt: [_Float; DIMS]) -> Option<&Node<Data, _Float, DIMS>> {
+  pub fn pt_to_node(&self, pt: Point<_Float, DIMS>) -> Option<&Node<Data, _Float, DIMS>> {
     let mut node = &self.nodes[0];
-    if !node.rect.contains(pt) {
+    if !node.rect.contains(&pt) {
       return None;
     }
     while let Some(first) = node.children {
@@ -349,15 +302,15 @@ where
 mod tests {
   use super::*;
 
-  // The 2D instantiation must preserve the previous concrete layout: node =
-  // one cache line, NdRect = euclid::Rect, children in TL, TR, BL, BR order.
+  // The 2D instantiation must preserve the concrete layout: node = one cache
+  // line, and children in TL, TR, BL, BR order.
   #[test] fn layout_2d() {
     use std::mem::size_of;
-    assert_eq!(size_of::<NdRect<f64, 2>>(), size_of::<Rect<f64, WorldSpace>>());
+    assert_eq!(size_of::<Aabb<f64, 2>>(), 32);
     assert_eq!(size_of::<Node<Vec<u64>, f64, 2>>(), 64);
 
-    let quads = child_rects(NdRect::<f64, 2>::unit());
-    assert_eq!(quads.map(|q| q.origin),
+    let quads = child_rects(Aabb::<f64, 2>::unit());
+    assert_eq!(quads.map(|q| [q.min.x, q.min.y]),
       [[0.0, 0.0], [0.5, 0.0], [0.0, 0.5], [0.5, 0.5]]);
   }
 
@@ -373,9 +326,9 @@ mod tests {
     assert_eq!(tree.node_count(), 9);
 
     // x >= cx sets bit 0, y < cy leaves bit 1 clear, z >= cz sets bit 2
-    let node = tree.pt_to_node([0.75, 0.25, 0.75]).unwrap();
+    let node = tree.pt_to_node(Point::from([0.75, 0.25, 0.75])).unwrap();
     assert_eq!(node.data, 0b101);
-    assert_eq!(node.rect.origin, [0.5, 0.0, 0.5]);
-    assert!(tree.pt_to_node([0.5, 1.0, 0.5]).is_none()); // half-open root
+    assert_eq!(node.rect.min, Point::from([0.5, 0.0, 0.5]));
+    assert!(tree.pt_to_node(Point::from([0.5, 1.0, 0.5])).is_none()); // half-open root
   }
 }

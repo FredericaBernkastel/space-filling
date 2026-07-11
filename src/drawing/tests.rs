@@ -1,9 +1,9 @@
 use {
   super::*,
   crate::{
-    geometry::{Circle, Square}
+    geometry::{Circle, Square, VectorExt}
   },
-  euclid::Angle,
+  nalgebra::Rotation2,
   anyhow::Result,
   image::{Rgba, RgbaImage},
 };
@@ -11,7 +11,7 @@ use {
 #[test] fn texture() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
   Circle
-    .translate(V2::splat(0.5))
+    .translate(V2::repeat(0.5))
     .scale(0.5)
     .texture(&image::open("doc/embedded.jpg")?)
     .draw(&mut image);
@@ -22,12 +22,12 @@ use {
 #[test] fn polymorphic_a() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
   let shapes: Vec<Box<dyn Draw<_, _>>> = vec![
-    Box::new(Circle.translate(V2::splat(0.25)).scale(0.25)),
-    Box::new(Square.translate(V2::splat(0.75)).scale(0.25))
+    Box::new(Circle.translate(V2::repeat(0.25)).scale(0.25)),
+    Box::new(Square.translate(V2::repeat(0.75)).scale(0.25))
   ];
   shapes.into_iter()
     .for_each(|shape| shape
-      .rotate(Angle::degrees(45.0))
+      .rotate(Rotation2::new(45f64.to_radians()))
       .texture(|_| Luma([255u8]).to_rgba())
       .draw(&mut image)
     );
@@ -39,11 +39,11 @@ use {
   let mut image = RgbaImage::new(128, 128);
   let shapes: Vec<Box<dyn Draw<_, _>>> = vec![
     Box::new(Circle
-      .translate(V2::splat(0.25))
+      .translate(V2::repeat(0.25))
       .scale(0.25)
       .texture(Luma([255u8]).to_rgba())),
     Box::new(Square
-      .translate(V2::splat(0.75))
+      .translate(V2::repeat(0.75))
       .scale(0.25)
       .texture(Luma([127u8]).to_rgba()))
   ];
@@ -56,10 +56,10 @@ use {
 #[test] fn texture_fn() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
   Circle
-    .translate(V2::splat(0.5))
+    .translate(V2::repeat(0.5))
     .scale(0.5)
-    .texture(|pixel: Point2D<_, _>| {
-      let c = 1.0 - pixel.distance_to(Point2D::splat(0.5)) * 2.0;
+    .texture(|pixel: P2<f64>| {
+      let c = 1.0 - (pixel - P2::new(0.5, 0.5)).length() * 2.0;
       Rgba([(c * 255.0) as u8, 32, 128, 255])
     })
     .draw(&mut image);

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    geometry::{Shape, Circle, Translation, Scale, P2},
+    geometry::{Shape, Circle, Translation, Scale, P2, V2},
     sdf::{self, SDF},
     solver::{LineSearch, ADF, Primitive},
     drawing::Draw,
@@ -16,14 +16,14 @@ use {
   std::sync::RwLock
 };
 
-type AffineT<T> = Scale<Translation<T, f64>, f64>;
+type AffineT<T> = Scale<Translation<T, f64, 2>, f64>;
 
 // profile: 62ms, 1000 circrles, adf_subdiv = 5, gd_lattice = 1
-fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item = AffineT<Circle>> + '_  {
+fn random_distribution(representation: &RwLock<ADF<f64, 2>>) -> impl Iterator<Item = AffineT<Circle>> + '_  {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   util::local_maxima_iter(
-    Box::new(|p| representation.read().unwrap().sdf(p)),
+    Box::new(|p: P2<f64>| representation.read().unwrap().sdf(p)),
     32, 0, LineSearch::default()
   ).filter_map(move |local_max| {
     let circle = {
@@ -34,9 +34,9 @@ fn random_distribution(representation: &RwLock<ADF<f64>>) -> impl Iterator<Item 
         .min(1.0 / 6.0);
       let delta = local_max.distance - r;
       // polar to cartesian
-      let offset = P2::from([angle.cos(), angle.sin()]) * delta;
+      let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-      Circle.translate(local_max.point - offset)
+      Circle.translate(local_max.point.coords - offset)
         .scale(r)
     };
     representation.write().unwrap().insert_at_maximum(

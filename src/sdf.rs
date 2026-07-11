@@ -1,15 +1,14 @@
 use {
-  euclid::{Point2D, Vector2D as V2, Rotation2D, Box2D},
   crate::{
-    geometry::{self, WorldSpace, Shape, Rotation, Scale, Translation, BoundingBox},
+    geometry::{self, Point, Vector, Real, Aabb, Shape, Rotation, Scale, Translation, BoundingBox},
   },
-  num_traits::{Float, Signed},
-  std::ops::{Neg, Sub}
+  nalgebra::Scalar,
+  num_traits::Float,
 };
 
-/// Signed distance function
-pub trait SDF<T> {
-  fn sdf(&self, p: Point2D<T, WorldSpace>) -> T;
+/// Signed distance function over `D`-dimensional points.
+pub trait SDF<T: Scalar, const D: usize> {
+  fn sdf(&self, p: Point<T, D>) -> T;
 }
 
 /// An upper bound of the field's Lipschitz constant:
@@ -28,46 +27,42 @@ pub trait Lipschitz<T> {
   fn lipschitz(&self) -> T;
 }
 
-impl <S, P: Float> SDF<P> for Translation<S, P>
-  where S: Shape<P>,
-        P: Clone + Sub<Output = P>  {
-  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
+impl <S, T, const D: usize> SDF<T, D> for Translation<S, T, D>
+  where S: Shape<T, D>,
+        T: Real {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     self.shape.sdf(pixel - self.offset)
   }
 }
 
-impl <S, P> SDF<P> for Rotation<S, P>
-  where S: Shape<P>,
-        P: Float {
-  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
+impl <S, T, const D: usize> SDF<T, D> for Rotation<S, T, D>
+  where S: Shape<T, D>,
+        T: Real {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let pivot = self.shape.bounding_box().center();
-    let pixel = Rotation2D::new(self.angle)
-      .transform_point( (pixel - pivot).to_point())
-      + pivot.to_vector();
-
-    self.shape.sdf(pixel)
+    let pixel = self.rotation.matrix() * (pixel - pivot) + pivot.coords;
+    self.shape.sdf(Point::from(pixel))
   }
 }
 
-impl <S, P> SDF<P> for Scale<S, P>
-  where S: Shape<P>,
-        P: Float {
-  fn sdf(&self, pixel: Point2D<P, WorldSpace>) -> P {
+impl <S, T, const D: usize> SDF<T, D> for Scale<S, T>
+  where S: Shape<T, D>,
+        T: Real {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let c = self.shape.bounding_box().center();
-    let pixel = ((pixel - c) / self.scale + c.to_vector())
-      .to_point();
-    self.shape.sdf(pixel) * self.scale
+    let pixel = (pixel - c) / self.scale + c.coords;
+    self.shape.sdf(Point::from(pixel)) * self.scale
   }
 }
 
-/// Distance to the edges of the image (the unit square), positive inside.
+/// Distance to the edges of the image (the unit hypercube), positive inside.
 ///
-/// The negation of the exact unit-square SDF: `sdf(p) = -sdf_rect(p - 0.5)`.
+/// The negation of the exact unit-cube SDF: `sdf(p) = -sdf_rect(p - 0.5)`.
 /// Negation preserves the constant — 1-Lipschitz.
-pub fn boundary_rect<T: Float + Signed>(pixel: Point2D<T, WorldSpace>) -> T {
+pub fn boundary_rect<T: Real, const D: usize>(pixel: Point<T, D>) -> T {
   let p5 = T::one() / (T::one() + T::one());
-  -geometry::Rect { size: Point2D::splat(T::one()) }
-    .translate(V2::splat(p5))
+  -geometry::Rect { size: Vector::repeat(T::one()) }
+    .translate(Vector::repeat(p5))
     .sdf(pixel)
 }
 
@@ -79,19 +74,19 @@ pub struct Union<S1, S2> {
   pub s2: S2,
 }
 
-impl<T, S1, S2> SDF<T> for Union<S1, S2>
-  where T: Float,
-        S1: SDF<T>,
-        S2: SDF<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T, S1, S2, const D: usize> SDF<T, D> for Union<S1, S2>
+  where T: Real,
+        S1: SDF<T, D>,
+        S2: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     self.s1.sdf(pixel).min(self.s2.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T> for Union<S1, S2>
-  where T: Copy + PartialOrd,
-        S1: BoundingBox<T>,
-        S2: BoundingBox<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T, S1, S2, const D: usize> BoundingBox<T, D> for Union<S1, S2>
+  where T: Real,
+        S1: BoundingBox<T, D>,
+        S2: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
 
@@ -112,19 +107,19 @@ pub struct Subtraction<S1, S2> {
   pub s2: S2,
 }
 
-impl<T, S1, S2> SDF<T> for Subtraction<S1, S2>
-  where T: Float,
-    S1: SDF<T>,
-    S2: SDF<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T, S1, S2, const D: usize> SDF<T, D> for Subtraction<S1, S2>
+  where T: Real,
+    S1: SDF<T, D>,
+    S2: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     (-self.s2.sdf(pixel)).max(self.s1.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T> for Subtraction<S1, S2>
-  where T: Copy + PartialOrd,
-    S1: BoundingBox<T>,
-    S2: BoundingBox<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T, S1, S2, const D: usize> BoundingBox<T, D> for Subtraction<S1, S2>
+  where T: Real,
+    S1: BoundingBox<T, D>,
+    S2: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
 
@@ -144,24 +139,24 @@ pub struct Intersection<S1, S2> {
   pub s2: S2,
 }
 
-impl<T, S1, S2> SDF<T> for Intersection<S1, S2>
-  where T: Float,
-        S1: SDF<T>,
-        S2: SDF<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T, S1, S2, const D: usize> SDF<T, D> for Intersection<S1, S2>
+  where T: Real,
+        S1: SDF<T, D>,
+        S2: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     self.s1.sdf(pixel).max(self.s2.sdf(pixel))
   }}
 
-impl<T, S1, S2> BoundingBox<T> for Intersection<S1, S2>
-  where T: Copy + PartialOrd + num_traits::One + Neg<Output = T>,
-        S1: BoundingBox<T>,
-        S2: BoundingBox<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T, S1, S2, const D: usize> BoundingBox<T, D> for Intersection<S1, S2>
+  where T: Real,
+        S1: BoundingBox<T, D>,
+        S2: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     self.s1.bounding_box()
       .intersection(&self.s2.bounding_box())
-      .unwrap_or(Box2D {
-        min: Point2D::splat(-T::one()),
-        max: Point2D::splat(-T::one())
+      .unwrap_or(Aabb {
+        min: Point::from(Vector::repeat(-T::one())),
+        max: Point::from(Vector::repeat(-T::one()))
       })
   }}
 
@@ -185,21 +180,21 @@ pub struct SmoothMin<T, S1, S2> {
   pub k: T
 }
 
-impl<T, S1, S2> SDF<T> for SmoothMin<T, S1, S2>
-  where T: Float,
-        S1: SDF<T>,
-        S2: SDF<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T, S1, S2, const D: usize> SDF<T, D> for SmoothMin<T, S1, S2>
+  where T: Real,
+        S1: SDF<T, D>,
+        S2: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let (s1, s2) = (self.s1.sdf(pixel), self.s2.sdf(pixel));
     let res = (-self.k * s1).exp2() + (-self.k * s2).exp2();
     -res.log2() / self.k
   }}
 
-impl<T, S1, S2> BoundingBox<T> for SmoothMin<T, S1, S2>
-  where T: Copy + PartialOrd,
-        S1: BoundingBox<T>,
-        S2: BoundingBox<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T, S1, S2, const D: usize> BoundingBox<T, D> for SmoothMin<T, S1, S2>
+  where T: Real,
+        S1: BoundingBox<T, D>,
+        S2: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     self.s1.bounding_box().union(&self.s2.bounding_box())
   }}
 

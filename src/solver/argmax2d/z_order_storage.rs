@@ -1,12 +1,10 @@
 use {
-  crate::{
-    geometry::{DistPoint, WorldSpace, PixelSpace}
-  },
-  euclid::{Point2D, Rect, Box2D},
+  super::PixelPoint,
+  crate::geometry::{DistPoint, Aabb, P2},
   rayon::iter::ParallelIterator,
   anyhow::{Result, bail},
 };
-use num_traits::{NumCast, Float};
+use num_traits::Float;
 
 pub struct ZOrderStorage<T> {
   data: T,
@@ -19,26 +17,23 @@ impl <T> ZOrderStorage<T> {
     (self.resolution / self.chunk_size).pow(2)
   }
 
-  pub fn chunks_domain_par_iter<P>(&self, domain: Rect<P, WorldSpace>)
-    -> impl ParallelIterator<Item = Point2D<u64, PixelSpace>>
-    where P: NumCast + Copy {
+  /// Chunk coordinates covering `domain ∩ [0, 1]²`, rounded outwards.
+  pub fn chunks_domain_par_iter<P>(&self, domain: Aabb<P, 2>)
+    -> impl ParallelIterator<Item = PixelPoint>
+    where P: Float + nalgebra::Scalar {
     use rayon::prelude::*;
 
-    let domain = domain.cast::<f64>().to_box2d().intersection_unchecked(
-      &Box2D::new(
-        Point2D::splat(0.0),
-        Point2D::splat(1.0)
-      )
-    ) * self.resolution as f64;
-    let chunk_span = (domain / self.chunk_size as f64)
-      .round_out()
-      .cast::<u64>();
+    let chunks = self.resolution as f64 / self.chunk_size as f64;
+    let lo = |v: P| (v.to_f64().unwrap().clamp(0.0, 1.0) * chunks).floor() as u64;
+    let hi = |v: P| (v.to_f64().unwrap().clamp(0.0, 1.0) * chunks).ceil() as u64;
+    let (min_x, max_x) = (lo(domain.min.x), hi(domain.max.x));
+    let (min_y, max_y) = (lo(domain.min.y), hi(domain.max.y));
 
-    (chunk_span.min.y .. chunk_span.max.y)
+    (min_y..max_y)
       .into_par_iter()
       .flat_map(move |chunk_y|
-        (chunk_span.min.x .. chunk_span.max.x)
-          .into_par_iter().map(move |chunk_x| [chunk_x, chunk_y].into())
+        (min_x..max_x)
+          .into_par_iter().map(move |chunk_x| PixelPoint::new(chunk_x, chunk_y))
       )
   }
 }
@@ -67,7 +62,7 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
     }
   }
 
-  pub fn get_chunk_xy(&self, xy: Point2D<u64, PixelSpace>) -> Chunk<'_, T> {
+  pub fn get_chunk_xy(&self, xy: PixelPoint) -> Chunk<'_, T> {
     self.get_chunk(xy_to_offset(xy, self.resolution / self.chunk_size))
   }
 
@@ -76,19 +71,19 @@ impl <T: Clone> ZOrderStorage<Vec<T>> {
     (0..chunk_count).map(move |id| self.get_chunk(id))
   }
 
-  pub fn pixel(&self, xy: Point2D<u64, PixelSpace>) -> T {
+  pub fn pixel(&self, xy: PixelPoint) -> T {
     let chunk = self.get_chunk_xy(xy / self.chunk_size);
-    let offset = (xy - chunk.top_left).to_point();
+    let offset = PixelPoint::from(xy - chunk.top_left);
     let offset = xy_to_offset(offset, self.chunk_size) as usize;
     chunk.slice[offset].clone()
   }
 
-  pub fn pixels(&self) -> impl Iterator<Item = DistPoint<T, u64, PixelSpace>> + '_ {
+  pub fn pixels(&self) -> impl Iterator<Item = DistPoint<T, u64, 2>> + '_ {
     self.chunks().flat_map(move |chunk| {
       chunk.slice.iter().enumerate().map(move |(i, pixel)|
         DistPoint {
           distance: pixel.clone(),
-          point: offset_to_xy(i as u64, chunk.size) + chunk.top_left.to_vector()
+          point: offset_to_xy(i as u64, chunk.size) + chunk.top_left.coords
         }
       )
     })
@@ -107,19 +102,23 @@ impl<T> ZOrderStorage<Vec<T>> where T: Clone + Send + Sync {
 
 pub struct Chunk<'a, T> {
   pub slice: &'a [T],
-  pub top_left: Point2D<u64, PixelSpace>,
+  pub top_left: PixelPoint,
   pub id: u64,
   pub size: u64,
   pub global_size: u64
 }
 
 impl<'a, T> Chunk<'a, T> {
-  fn offset_to_xy_normalized<P: Float>(&self, offset: u64) -> Point2D<P, WorldSpace> {
-    let xy = offset_to_xy(offset, self.size) + self.top_left.to_vector();
-    (xy.cast::<P>() / P::from(self.global_size).unwrap()).cast_unit()
+  fn offset_to_xy_normalized<P: Float + nalgebra::Scalar>(&self, offset: u64) -> P2<P> {
+    let xy = offset_to_xy(offset, self.size) + self.top_left.coords;
+    let global = P::from(self.global_size).unwrap();
+    P2::new(
+      P::from(xy.x).unwrap() / global,
+      P::from(xy.y).unwrap() / global,
+    )
   }
 
-  pub(crate) fn pixels_mut<P: Float>(&self) -> impl Iterator<Item = (Point2D<P, WorldSpace>, &mut T)> {
+  pub(crate) fn pixels_mut<P: Float + nalgebra::Scalar>(&self) -> impl Iterator<Item = (P2<P>, &mut T)> {
     unsafe { std::slice::from_raw_parts_mut(self.slice.as_ptr() as *mut T, self.slice.len()) }
       .iter_mut()
       .enumerate()
@@ -130,12 +129,13 @@ impl<'a, T> Chunk<'a, T> {
   }
 }
 
-fn offset_to_xy(offset: u64, width: u64) -> Point2D<u64, PixelSpace> {
-  [ offset % width,
+fn offset_to_xy(offset: u64, width: u64) -> PixelPoint {
+  PixelPoint::new(
+    offset % width,
     offset / width,
-  ].into()
+  )
 }
 
-fn xy_to_offset(xy: Point2D<u64, PixelSpace>, width: u64) -> u64 {
+fn xy_to_offset(xy: PixelPoint, width: u64) -> u64 {
   xy.y * width + xy.x
 }

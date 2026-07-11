@@ -7,13 +7,12 @@ use {
     sdf::{self, SDF, Lipschitz},
     solver::{ADF, LineSearch, Primitive},
     drawing::Draw,
-    geometry::{WorldSpace, BoundingBox, Shape, Scale, Translation},
+    geometry::{BoundingBox, Shape, Scale, Translation, Aabb, P2, V2, Real},
     util
   },
-  euclid::{Point2D, Vector2D as V2, Box2D},
+  nalgebra::Rotation2,
   image::{RgbaImage, Luma, Pixel},
   anyhow::Result,
-  num_traits::Float,
   num_complex::Complex,
 };
 
@@ -21,8 +20,8 @@ use {
 /// Based on Hubbard-Douady equations, but partial derivatives in the interior behave much better.
 struct MandlelDE;
 
-impl <T: Float> SDF<T> for MandlelDE {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl <T: Real> SDF<T, 2> for MandlelDE {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let c = Complex::new(pixel.x, pixel.y);
     let mut z = Complex::new(T::zero(), T::zero());
     let mut dz = Complex::new(T::one(), T::zero());
@@ -47,11 +46,11 @@ impl <T: Float> SDF<T> for MandlelDE {
   }
 }
 
-impl<T: Float> BoundingBox<T> for MandlelDE {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::new(T::from(-2.5).unwrap(), T::from(-1.25).unwrap()),
-      Point2D::new(T::from(0.5).unwrap(), T::from(1.25).unwrap())
+impl<T: Real> BoundingBox<T, 2> for MandlelDE {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::new(
+      P2::new(T::from(-2.5).unwrap(), T::from(-1.25).unwrap()),
+      P2::new(T::from(0.5).unwrap(), T::from(1.25).unwrap())
     )}}
 
 // MandlelDE is a distance *estimator*, not a true SDF: its gradient is not
@@ -67,7 +66,7 @@ impl Lipschitz<f64> for MandlelDE {
 }
 
 /// scaled to a box [-1, 1]
-fn mandel_de_norm<T: Float>() -> Scale<Translation<MandlelDE, T>, T> {
+fn mandel_de_norm<T: Real>() -> Scale<Translation<MandlelDE, T, 2>, T> {
   MandlelDE
     .translate(V2::new(T::from(1.0).unwrap(), T::zero()))
     .scale(T::one() / T::from(1.5).unwrap())
@@ -92,7 +91,7 @@ fn main() -> Result<()> {
   ]);
 
   util::local_maxima_iter(
-    Box::new(|p| representation.sdf(p)),
+    Box::new(|p: P2<f64>| representation.sdf(p)),
     32,
     0,
     LineSearch::default()
@@ -100,11 +99,11 @@ fn main() -> Result<()> {
     // sample gradient of the distance field at local_max
     let gradient = LineSearch::default().grad(|p| main_de.sdf(p), local_max.point);
     // gradient direction
-    let angle = gradient.angle_from_x_axis();
+    let angle = gradient.y.atan2(gradient.x);
 
     let primitive = mandel_de_norm()
-      .rotate(angle)
-      .translate(local_max.point.to_vector())
+      .rotate(Rotation2::new(angle))
+      .translate(local_max.point.coords)
       .scale(local_max.distance / 4.0);
 
     // alternately use safe RwLock<ADF> or imperative style

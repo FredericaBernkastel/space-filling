@@ -4,18 +4,17 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    geometry::{Shape, Circle, Scale, Translation},
+    geometry::{Shape, Circle, Scale, Translation, V2},
     sdf::{self, SDF},
     solver::Argmax2D,
     drawing::Draw,
     util
   },
-  euclid::Point2D,
   anyhow::Result,
   image::{Luma, Pixel, RgbaImage}
 };
 
-type AffineT<T, P> = Scale<Translation<T, P>, P>;
+type AffineT<T, P> = Scale<Translation<T, P, 2>, P>;
 
 pub fn report_progress<'a, I>(iter: impl Iterator<Item = I>) -> impl Iterator<Item = I> {
   iter.enumerate()
@@ -43,9 +42,9 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
         let r = (rng.random_range(0f32..1.0).powf(1.0) * global_max.distance)
           .min(1.0 / 4.0);
         let delta = global_max.distance - r;
-        let offset = Point2D::from([angle.cos(), angle.sin()]) * delta;
+        let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-        Circle.translate(global_max.point - offset)
+        Circle.translate(global_max.point.coords - offset)
           .scale(r)
       };
       representation.insert_sdf_domain(
@@ -61,7 +60,7 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
   report_progress(0..).map(|_| {
     let global_max = representation.find_max();
     let circle = Circle
-      .translate(global_max.point.to_vector())
+      .translate(global_max.point.coords)
       .scale(global_max.distance / 3.0);
 
     representation.insert_sdf_domain(

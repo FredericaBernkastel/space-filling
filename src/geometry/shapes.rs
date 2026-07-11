@@ -1,11 +1,10 @@
 #![allow(non_upper_case_globals)]
 use {
-  super::{Shape, BoundingBox, WorldSpace, Translation},
+  super::{BoundingBox, Translation, Aabb, Point, Vector, P2, V2, Real, VectorExt},
   crate::sdf::{SDF, Lipschitz, Union},
-  euclid::{Box2D, Point2D, Vector2D as V2},
-  num_traits::{Float, Signed, FloatConst},
-  std::marker::PhantomData
+  num_traits::{Float, FloatConst},
 };
+#[cfg(test)] use super::Shape;
 
 fn clamp<T: Float>(mut x: T, min: T, max: T) -> T {
   if x < min { x = min; }
@@ -13,82 +12,82 @@ fn clamp<T: Float>(mut x: T, min: T, max: T) -> T {
   x
 }
 
-/// Unit circle.
+/// Unit sphere (a circle in 2D — the default; `Circle::<3>` for a ball, …).
 ///
-/// `sdf(p) = |p| - 1` — the exact signed distance, hence 1-Lipschitz.
+/// The dimension lives on the type so that combinator chains starting from a
+/// bare `Circle` stay inferable; it defaults to 2 in type positions.
+///
+/// `sdf(p) = |p| - 1` — the exact signed distance in any dimension, hence
+/// 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
-pub struct Circle;
+pub struct Circle<const D: usize = 2>;
 
-impl<T: Float> BoundingBox<T> for Circle {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real, const D: usize> BoundingBox<T, D> for Circle<D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl <T: Float> SDF<T> for Circle {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
-    pixel.to_vector().length() - T::one()
+impl <T: Real, const D: usize> SDF<T, D> for Circle<D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    pixel.coords.length() - T::one()
   }
 }
 
-/// Rectangle with center at `[0, 0]`.
+/// Axis-aligned box with center at the origin (a rectangle in 2D).
 ///
-/// With `q = |p| - size/2` (componentwise): `sdf(p) = |max(q, 0)| + min(max(q.x, q.y), 0)`
-/// — the exact signed distance to the box, hence 1-Lipschitz.
+/// With `q = |p| - size/2` (componentwise): `sdf(p) = |max(q, 0)| + min(max_a q_a, 0)`
+/// — the exact signed distance to the box in any dimension, hence 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
-pub struct Rect<T, S> {
-  pub size: Point2D<T, S>
+pub struct Rect<T, const D: usize> {
+  pub size: Vector<T, D>
 }
 
-impl<T: Float> BoundingBox<T> for Rect<T, WorldSpace> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T: Real, const D: usize> BoundingBox<T, D> for Rect<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     let two = T::one() + T::one();
-    Box2D::new(
-      -self.size / two,
-      self.size / two
-    )}}
+    Aabb {
+      min: Point::from(self.size / -two),
+      max: Point::from(self.size / two),
+    }}}
 
-impl<T> SDF<T> for Rect<T, WorldSpace>
-  where T: Float + Signed
-{
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real, const D: usize> SDF<T, D> for Rect<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let two = T::one() + T::one();
-    let dist = pixel.to_vector().abs() - (self.size.to_vector() / two);
+    let dist = pixel.coords.abs() - self.size / two;
     let outside_dist = dist
-      .max(V2::splat(T::zero()))
+      .map(|x| x.max(T::zero()))
       .length();
-    let inside_dist = dist.x
-      .max(dist.y)
+    let inside_dist = dist.iter()
+      .fold(T::neg_infinity(), |a, &b| a.max(b))
       .min(T::zero());
     outside_dist + inside_dist
   }}
 
-/// Line segment from `a` to `b` with round caps (a capsule).
+/// Line segment from `a` to `b` with round caps (a capsule), any dimension.
 ///
 /// `sdf(p) = dist(p, [a, b]) - thickness/2`, where `dist` projects `p` onto the
 /// segment with a clamped parameter — the exact signed distance, hence
 /// 1-Lipschitz. Degenerate for `a = b` (0/0).
 #[derive(Debug, Copy, Clone)]
-pub struct Line<T> {
-  pub a: Point2D<T, WorldSpace>,
-  pub b: Point2D<T, WorldSpace>,
+pub struct Line<T: nalgebra::Scalar, const D: usize> {
+  pub a: Point<T, D>,
+  pub b: Point<T, D>,
   pub thickness: T,
 }
 
-impl<T: Float> BoundingBox<T> for Line<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
+impl<T: Real, const D: usize> BoundingBox<T, D> for Line<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
     let two = T::one() + T::one();
-    let ret = Box2D::from_points([self.a, self.b]);
-    let t = V2::splat(self.thickness / two);
-    Box2D::new(ret.min - t, ret.max + t)
+    let ret = Aabb::from_points([self.a, self.b]);
+    let t = Vector::repeat(self.thickness / two);
+    Aabb::new(ret.min - t, ret.max + t)
   }}
 
-impl<T: Float> SDF<T> for Line<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real, const D: usize> SDF<T, D> for Line<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let ba = self.b - self.a;
     let pa = pixel - self.a;
-    let h = clamp(pa.dot(ba) / ba.dot(ba), T::zero(), T::one());
+    let h = clamp(pa.dot(&ba) / ba.dot(&ba), T::zero(), T::one());
     (pa - ba * h).length() - self.thickness / (T::one() + T::one())
   }
 }
@@ -103,21 +102,19 @@ impl<T: Float> SDF<T> for Line<T> {
 #[derive(Debug, Copy, Clone)]
 pub struct NGonC<const N: usize>;
 
-impl<T: Float, const N: usize> BoundingBox<T> for NGonC<N> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real, const N: usize> BoundingBox<T, 2> for NGonC<N> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float + FloatConst, const N: usize> SDF<T> for NGonC<N> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real + FloatConst, const N: usize> SDF<T, 2> for NGonC<N> {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let p5 = T::one() / (T::one() + T::one());
     let n = T::from(N).unwrap();
     let angle = pixel.y.atan2(pixel.x) + T::FRAC_PI_2();
     let split = T::TAU() / n;
     let r = (T::PI() / n).cos();
-    pixel.to_vector().length() * (split * (angle / split + p5).floor() - angle).cos() - r
+    pixel.coords.length() * (split * (angle / split + p5).floor() - angle).cos() - r
   }
 }
 
@@ -130,21 +127,19 @@ pub struct NGonR {
   pub n: u64
 }
 
-impl<T: Float> BoundingBox<T> for NGonR {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real> BoundingBox<T, 2> for NGonR {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float + FloatConst> SDF<T> for NGonR {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real + FloatConst> SDF<T, 2> for NGonR {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let p5 = T::one() / (T::one() + T::one());
     let n = T::from(self.n).unwrap();
     let angle = pixel.y.atan2(pixel.x) + T::FRAC_PI_2();
     let split = T::TAU() / n;
     let r = (T::PI() / n).cos();
-    pixel.to_vector().length() * (split * (angle / split + p5).floor() - angle).cos() - r
+    pixel.coords.length() * (split * (angle / split + p5).floor() - angle).cos() - r
   }
 }
 
@@ -160,27 +155,25 @@ pub struct Star<T> {
   pub m: T
 }
 
-impl<T: Float> BoundingBox<T> for Star<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real> BoundingBox<T, 2> for Star<T> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float + FloatConst> SDF<T> for Star<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real + FloatConst> SDF<T, 2> for Star<T> {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let module = |x: T, y: T| x - y * (x / y).floor();
     let n = T::from(self.n).unwrap();
     let an = T::PI() / n;
-    let en = T::PI()  / self.m;
-    let acs = V2::<_, WorldSpace>::new(an.cos(), an.sin());
+    let en = T::PI() / self.m;
+    let acs = V2::new(an.cos(), an.sin());
     let ecs = V2::new(en.cos(), en.sin());
 
     let bn = module(pixel.x.atan2(pixel.y), (T::one() + T::one()) * an) - an;
     let mut p = V2::new(bn.cos(), bn.sin().abs())
-      * pixel.to_vector().length()
+      * pixel.coords.length()
       - acs;
-    p += ecs * clamp(-p.dot(ecs), T::zero(), acs.y / ecs.y);
+    p += ecs * clamp(-p.dot(&ecs), T::zero(), acs.y / ecs.y);
     p.length() * p.x.signum()
   }
 }
@@ -197,17 +190,15 @@ pub struct Moon<T> {
   pub phase: T
 }
 
-impl<T: Float> BoundingBox<T> for Moon<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real> BoundingBox<T, 2> for Moon<T> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float> SDF<T> for Moon<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real> SDF<T, 2> for Moon<T> {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let two = T::one() + T::one();
-    let pixel = V2::<_, WorldSpace>::new(pixel.x, pixel.y.abs());
+    let pixel = V2::new(pixel.x, pixel.y.abs());
     let d = self.phase * two;
     // algebraically d²/2d; written directly to avoid 0/0 at phase = 0
     let a = d / two;
@@ -233,22 +224,22 @@ pub struct Kakera<T> {
   pub width: T
 }
 
-impl<T: Float> BoundingBox<T> for Kakera<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::new(-self.width, -T::one()),
-      Point2D::new(self.width, T::one())
+impl<T: Real> BoundingBox<T, 2> for Kakera<T> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::new(
+      Point::from([-self.width, -T::one()]),
+      Point::from([self.width, T::one()])
     )}}
 
-impl<T: Float + Signed> SDF<T> for Kakera<T> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real> SDF<T, 2> for Kakera<T> {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let two = T::one() + T::one();
-    let ndot = |a: V2<_, _,>, b: V2<_, _,>| a.x*b.x - a.y*b.y;
+    let ndot = |a: V2<T>, b: V2<T>| a.x * b.x - a.y * b.y;
     let b = V2::new(self.width, T::one());
-    let q = pixel.to_vector().abs();
-    let mut h = (-two * ndot(q, b) + ndot(b, b)) / b.dot(b);
+    let q = pixel.coords.abs();
+    let mut h = (-two * ndot(q, b) + ndot(b, b)) / b.dot(&b);
     h = clamp(h, -T::one(), T::one());
-    let d = (q - V2::new(T::one() - h, T::one() + h).component_mul(b) / two).length();
+    let d = (q - V2::new(T::one() - h, T::one() + h).component_mul(&b) / two).length();
     d * (q.x * b.y + q.y * b.x - b.x * b.y).signum()
   }
 }
@@ -264,45 +255,43 @@ pub struct Cross<T> {
   pub thickness: T
 }
 
-impl<T: Float> BoundingBox<T> for Cross<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real> BoundingBox<T, 2> for Cross<T> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float + Signed> SDF<T> for Cross<T>  {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
-    let mut pixel = pixel.to_vector().abs();
-    pixel = if pixel.y > pixel.x { pixel.yx() } else { pixel };
+impl<T: Real> SDF<T, 2> for Cross<T> {
+  fn sdf(&self, pixel: P2<T>) -> T {
+    let mut pixel = pixel.coords.abs();
+    pixel = if pixel.y > pixel.x { V2::new(pixel.y, pixel.x) } else { pixel };
     let q = pixel - V2::new(T::one(), self.thickness);
     let k = q.x.max(q.y);
     let w = if k > T::zero() { q } else { V2::new(self.thickness - pixel.x, -k) };
-    k.signum() * w.max(V2::splat(T::zero())).length()
+    k.signum() * w.map(|x| x.max(T::zero())).length()
   }
 }
 
-/// Annulus: unit circle with a concentric hole of radius `inner_r`.
+/// Annulus: unit sphere with a concentric hole of radius `inner_r` (any
+/// dimension; defaults to 2).
 ///
 /// `sdf(p) = max(|p| - 1, inner_r - |p|)` — the boolean subtraction of two
-/// concentric circles, which for an annulus happens to be the exact signed
+/// concentric spheres, which for an annulus happens to be the exact signed
 /// distance everywhere; 1-Lipschitz.
 #[derive(Debug, Copy, Clone)]
-pub struct Ring<T> {
+pub struct Ring<T, const D: usize = 2> {
   pub inner_r: T
 }
 
-impl<T: Float> BoundingBox<T> for Ring<T> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::new(
-      Point2D::splat(-T::one()),
-      Point2D::splat(T::one())
-    )}}
+impl<T: Real, const D: usize> BoundingBox<T, D> for Ring<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T: Float> SDF<T> for Ring<T>  {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
-    Shape::<T>::subtraction(Circle,Circle.scale(self.inner_r))
-      .sdf(pixel)
+impl<T: Real, const D: usize> SDF<T, D> for Ring<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let outer = pixel.coords.length() - T::one();
+    let inner = pixel.coords.length() - self.inner_r;
+    outer.max(-inner)
   }
 }
 
@@ -317,20 +306,20 @@ pub struct Polygon<T> {
   pub vertices: T
 }
 
-impl<T, U> BoundingBox<T> for Polygon<U>
-  where T: Float,
-        U: AsRef<[Point2D<T, WorldSpace>]> {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    Box2D::from_points(self.vertices.as_ref())
+impl<T, U> BoundingBox<T, 2> for Polygon<U>
+  where T: Real,
+        U: AsRef<[P2<T>]> {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::from_points(self.vertices.as_ref().iter().copied())
   }}
 
-impl<T, U> SDF<T> for Polygon<U>
-  where T: Float,
-        U: AsRef<[Point2D<T, WorldSpace>]> {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T, U> SDF<T, 2> for Polygon<U>
+  where T: Real,
+        U: AsRef<[P2<T>]> {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let v = self.vertices.as_ref();
     let mut d = match v.get(0) {
-      Some(&v) => (pixel - v).dot(pixel - v),
+      Some(&v) => (pixel - v).dot(&(pixel - v)),
       None => return T::max_value() / (T::one() + T::one())
     };
     let mut s = T::one();
@@ -339,51 +328,49 @@ impl<T, U> SDF<T> for Polygon<U>
       .for_each(|(i, j)| {
         let e = v[j] - v[i];
         let w = pixel - v[i];
-        let b = w - e * clamp(w.dot(e) / e.dot(e), T::zero(), T::one());
-        d = d.min(b.dot(b));
-        let c = euclid::BoolVector3D {
-          x: pixel.y >= v[i].y,
-          y: pixel.y < v[j].y,
-          z: e.x * w.y > e.y * w.x
-        };
-        if c.all() || c.none() {
-          s = s.neg();
+        let b = w - e * clamp(w.dot(&e) / e.dot(&e), T::zero(), T::one());
+        d = d.min(b.dot(&b));
+        let c = [
+          pixel.y >= v[i].y,
+          pixel.y < v[j].y,
+          e.x * w.y > e.y * w.x
+        ];
+        if c == [true; 3] || c == [false; 3] {
+          s = -s;
         }
       });
     s * d.sqrt()
   }
 }
 
-/// `= Rect { size: [2.0, 2.0] }` — exact SDF, 1-Lipschitz (see [`Rect`]).
+/// `= Rect { size: [2.0; D] }` — exact SDF, 1-Lipschitz (see [`Rect`]).
+/// Any dimension; defaults to 2.
 #[derive(Debug, Copy, Clone)]
-pub struct Square;
+pub struct Square<const D: usize = 2>;
 
-impl<T: Float> BoundingBox<T> for Square {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    let two = T::one() + T::one();
-    Rect { size: Point2D::splat(two) }.bounding_box()}}
+impl<T: Real, const D: usize> BoundingBox<T, D> for Square<D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T> SDF<T> for Square
-  where T: Float + Signed {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T: Real, const D: usize> SDF<T, D> for Square<D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
     let two = T::one() + T::one();
-    Rect { size: Point2D::splat(two) }.sdf(pixel)
+    Rect { size: Vector::repeat(two) }.sdf(pixel)
   }}
 
 /// `= Star { n: 5, m: 10.0 / 3.0 }` — exact SDF, 1-Lipschitz (see [`Star`]).
 #[derive(Debug, Copy, Clone)]
 pub struct Pentagram;
 
-impl<T: Float> BoundingBox<T> for Pentagram {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    let two = T::one() + T::one();
-    let three = two + T::one();
-    let ten = three * three + T::one();
-    Star { n: 5, m: ten / three }.bounding_box()}}
+impl<T: Real> BoundingBox<T, 2> for Pentagram {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T> SDF<T> for Pentagram
-  where T: Float + FloatConst {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T> SDF<T, 2> for Pentagram
+  where T: Real + FloatConst {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let two = T::one() + T::one();
     let three = two + T::one();
     let ten = three * three + T::one();
@@ -394,14 +381,14 @@ impl<T> SDF<T> for Pentagram
 #[derive(Debug, Copy, Clone)]
 pub struct Hexagram;
 
-impl<T: Float> BoundingBox<T> for Hexagram {
-  fn bounding_box(&self) -> Box2D<T, WorldSpace> {
-    let three = T::one() + T::one() + T::one();
-    Star { n: 6, m: three }.bounding_box()}}
+impl<T: Real> BoundingBox<T, 2> for Hexagram {
+  fn bounding_box(&self) -> Aabb<T, 2> {
+    Aabb::symmetric(T::one())
+  }}
 
-impl<T> SDF<T> for Hexagram
-  where T: Float + FloatConst {
-  fn sdf(&self, pixel: Point2D<T, WorldSpace>) -> T {
+impl<T> SDF<T, 2> for Hexagram
+  where T: Real + FloatConst {
+  fn sdf(&self, pixel: P2<T>) -> T {
     let three = T::one() + T::one() + T::one();
     Star { n: 6, m: three }.sdf(pixel)
   }}
@@ -425,15 +412,15 @@ pub type Octagon = NGonC<8>;
 ///
 /// `min` of two exact box fields — exact in free space, underestimates the
 /// interior depth where the rectangles overlap; 1-Lipschitz (see
-/// [`Shape::union`]).
+/// [`Shape::union`](super::Shape::union)).
 pub static HolyCross: Union <
-  Rect<f64, WorldSpace> ,
-  Translation < Rect<f64, WorldSpace>, f64 >
+  Rect<f64, 2>,
+  Translation < Rect<f64, 2>, f64, 2 >
 > = Union {
-  s1: Rect { size: Point2D { x: 0.4, y: 2.0, _unit: PhantomData::<WorldSpace> } },
+  s1: Rect { size: nalgebra::vector![0.4, 2.0] },
   s2: Translation {
-    shape: Rect { size: Point2D {  x: 1.432, y: 0.4, _unit: PhantomData::<WorldSpace> } },
-    offset: V2 { x: 0.0, y: -0.3, _unit: PhantomData::<WorldSpace> }
+    shape: Rect { size: nalgebra::vector![1.432, 0.4] },
+    offset: nalgebra::vector![0.0, -0.3]
   }
 };
 
@@ -441,18 +428,18 @@ pub static HolyCross: Union <
 // assembled from unit-gradient pieces (see each shape's doc), so the honest
 // bound is `1`. Combinators propagate these automatically; see
 // [`crate::sdf::Lipschitz`].
-impl<T: Float> Lipschitz<T> for Circle { fn lipschitz(&self) -> T { T::one() } }
-impl<T: Float> Lipschitz<T> for Rect<T, WorldSpace> { fn lipschitz(&self) -> T { T::one() } }
-impl<T: Float> Lipschitz<T> for Line<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, const D: usize> Lipschitz<T> for Circle<D> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, const D: usize> Lipschitz<T> for Rect<T, D> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float + nalgebra::Scalar, const D: usize> Lipschitz<T> for Line<T, D> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float, const N: usize> Lipschitz<T> for NGonC<N> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for NGonR { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Star<T> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Moon<T> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Kakera<T> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Cross<T> { fn lipschitz(&self) -> T { T::one() } }
-impl<T: Float> Lipschitz<T> for Ring<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, const D: usize> Lipschitz<T> for Ring<T, D> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float, U> Lipschitz<T> for Polygon<U> { fn lipschitz(&self) -> T { T::one() } }
-impl<T: Float> Lipschitz<T> for Square { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, const D: usize> Lipschitz<T> for Square<D> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Pentagram { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Hexagram { fn lipschitz(&self) -> T { T::one() } }
 
@@ -461,7 +448,7 @@ mod tests {
   use {
     super::*,
     crate::sdf,
-    euclid::Angle,
+    nalgebra::Rotation2,
     rand::prelude::*,
   };
 
@@ -470,14 +457,14 @@ mod tests {
   /// finiteness everywhere. Every stored primitive relies on an honest
   /// Lipschitz bound: the redundancy test certifies with it (`sdf_geq_everywhere`),
   /// and the D*-pruned insertion walk skips subtrees with it.
-  fn check_lipschitz(name: &str, l: f64, f: impl Fn(Point2D<f64, WorldSpace>) -> f64) {
+  fn check_lipschitz(name: &str, l: f64, f: impl Fn(P2<f64>) -> f64) {
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let span = 2.5;
     for i in 0..20000 {
-      let p = Point2D::<f64, WorldSpace>::new(
+      let p = P2::new(
         rng.random_range(-span..span), rng.random_range(-span..span));
       let q = if i % 2 == 0 {
-        Point2D::new(rng.random_range(-span..span), rng.random_range(-span..span))
+        P2::new(rng.random_range(-span..span), rng.random_range(-span..span))
       } else {
         // short-range pair: within 1e-4..1e-2 of p
         let angle = rng.random_range(0.0..std::f64::consts::TAU);
@@ -497,10 +484,10 @@ mod tests {
 
   #[test] fn lipschitz_shapes() {
     check_lipschitz("Circle", 1.0, |p| Circle.sdf(p));
-    check_lipschitz("Rect", 1.0, |p| Rect { size: Point2D::new(1.5, 0.8) }.sdf(p));
+    check_lipschitz("Rect", 1.0, |p| Rect { size: V2::new(1.5, 0.8) }.sdf(p));
     check_lipschitz("Square", 1.0, |p| Square.sdf(p));
     check_lipschitz("Line", 1.0, |p| Line
-      { a: Point2D::new(-0.8, -0.3), b: Point2D::new(0.6, 0.9), thickness: 0.2 }.sdf(p));
+      { a: P2::new(-0.8, -0.3), b: P2::new(0.6, 0.9), thickness: 0.2 }.sdf(p));
     check_lipschitz("Triangle", 1.0, |p| NGonC::<3>.sdf(p));
     check_lipschitz("Pentagon", 1.0, |p| NGonC::<5>.sdf(p));
     check_lipschitz("Heptagon", 1.0, |p| NGonC::<7>.sdf(p));
@@ -516,11 +503,11 @@ mod tests {
     check_lipschitz("Cross", 1.0, |p| Cross { thickness: 0.3 }.sdf(p));
     check_lipschitz("Ring", 1.0, |p| Ring { inner_r: 0.5 }.sdf(p));
     check_lipschitz("Polygon", 1.0, |p| Polygon { vertices: [
-      Point2D::new(-0.9, -0.5), Point2D::new(0.8, -0.7),
-      Point2D::new(0.5, 0.9), Point2D::new(-0.3, 0.4),
+      P2::new(-0.9, -0.5), P2::new(0.8, -0.7),
+      P2::new(0.5, 0.9), P2::new(-0.3, 0.4),
     ]}.sdf(p));
     check_lipschitz("HolyCross", 1.0, |p| HolyCross.sdf(p));
-    check_lipschitz("boundary_rect", 1.0, sdf::boundary_rect);
+    check_lipschitz("boundary_rect", 1.0, sdf::boundary_rect::<f64, 2>);
   }
 
   #[test] fn lipschitz_combinators() {
@@ -529,16 +516,16 @@ mod tests {
     // similarity whose value re-scale cancels the coordinate re-scale)
     // preserves the constant exactly
     check_lipschitz("translate", 1.0, |p| star().translate(V2::new(0.3, -0.2)).sdf(p));
-    check_lipschitz("rotate", 1.0, |p| star().rotate(Angle::degrees(37.0)).sdf(p));
+    check_lipschitz("rotate", 1.0, |p| star().rotate(Rotation2::new(37f64.to_radians())).sdf(p));
     check_lipschitz("scale(0.35)", 1.0, |p| star().scale(0.35).sdf(p));
     check_lipschitz("scale(2.5)", 1.0, |p| star().scale(2.5).sdf(p));
     // boolean ops: min/max of L-Lipschitz fields is max(L₁, L₂)-Lipschitz
     check_lipschitz("union", 1.0, |p| Circle.translate(V2::new(0.4, 0.0))
       .union(Square.scale(0.6)).sdf(p));
-    check_lipschitz("subtraction", 1.0, |p| Shape::<f64>::subtraction(
+    check_lipschitz("subtraction", 1.0, |p| Shape::<f64, 2>::subtraction(
       Square, Circle.scale(0.7).translate(V2::new(0.5, 0.5))).sdf(p));
-    check_lipschitz("intersection", 1.0, |p| Shape::<f64>::intersection(
-      Circle, Square.rotate(Angle::degrees(20.0))).sdf(p));
+    check_lipschitz("intersection", 1.0, |p| Shape::<f64, 2>::intersection(
+      Circle, Square.rotate(Rotation2::new(20f64.to_radians()))).sdf(p));
     // smooth_min: ∇ = w·∇f + (1−w)·∇g with w ∈ (0, 1) — a convex combination
     check_lipschitz("smooth_min", 1.0, |p| Circle.translate(V2::new(-0.4, 0.1))
       .smooth_min(Square.scale(0.5).translate(V2::new(0.5, 0.0)), 32.0).sdf(p));
@@ -546,14 +533,15 @@ mod tests {
 
   // the trait-derived constants agree with the numerically-verified bounds
   #[test] fn lipschitz_trait() {
-    assert_eq!(Lipschitz::<f64>::lipschitz(&Circle), 1.0);
+    // a bare `Lipschitz` call is dimension-independent, so `D` must be named
+    assert_eq!(Lipschitz::<f64>::lipschitz(&Circle::<2>), 1.0);
     assert_eq!(Lipschitz::<f64>::lipschitz(&HolyCross), 1.0);
     let chain = Star { n: 5, m: 10.0 / 3.0 }
       .scale(0.35)
-      .rotate(Angle::degrees(37.0))
+      .rotate(Rotation2::new(37f64.to_radians()))
       .translate(V2::new(0.3, -0.2));
     assert_eq!(chain.lipschitz(), 1.0);
-    let boolean = Shape::<f64>::union(Circle, Shape::<f64>::subtraction(Square, Ring { inner_r: 0.5 }));
+    let boolean = Shape::<f64, 2>::union(Circle, Shape::<f64, 2>::subtraction(Square, Ring::<f64, 2> { inner_r: 0.5 }));
     assert_eq!(boolean.lipschitz(), 1.0);
   }
 }

@@ -1,19 +1,16 @@
 //! Discrete distance field representation. Uses an f32-bitmap to store the data.
 
 use {
-  crate::{
-    geometry::{DistPoint, PixelSpace, WorldSpace}
-  },
+  crate::geometry::{DistPoint, Aabb, P2, Point},
   z_order_storage::ZOrderStorage,
   anyhow::Result,
-  euclid::{Rect, Point2D, Size2D},
 };
 
 pub mod z_order_storage;
 
 pub struct Argmax2D {
   pub (crate) dist_map: ZOrderStorage<Vec<f32>>,
-  chunk_argmax: Vec<DistPoint<f32, f32, WorldSpace>>
+  chunk_argmax: Vec<DistPoint<f32, f32, 2>>
 }
 
 impl Argmax2D {
@@ -31,7 +28,7 @@ impl Argmax2D {
   }
 
   #[inline]
-  fn write_cache(&self, id: u64, dist: DistPoint<f32, f32, WorldSpace>) {
+  fn write_cache(&self, id: u64, dist: DistPoint<f32, f32, 2>) {
     // Disjoint parallel writes: each chunk `id` is written once, from its own
     // rayon task. Derive the `*mut` from the Vec's data pointer (a raw ptr),
     // not from a `&T` — otherwise `invalid_reference_casting` denies it.
@@ -39,23 +36,17 @@ impl Argmax2D {
   }
 
   /// Find global maxima.
-  pub fn find_max(&self) -> DistPoint<f32, f32, WorldSpace> {
+  pub fn find_max(&self) -> DistPoint<f32, f32, 2> {
     *self.chunk_argmax.iter()
       .max()
       .unwrap()
   }
 
-  pub fn insert_sdf(&mut self, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
-    self.insert_sdf_domain(
-      Rect::new(
-        Point2D::splat(0.0),
-        Size2D::splat(1.0),
-      ),
-      sdf
-    );
+  pub fn insert_sdf(&mut self, sdf: impl Fn(P2<f32>) -> f32 + Sync + Send) {
+    self.insert_sdf_domain(Aabb::unit(), sdf);
   }
 
-  pub fn insert_sdf_domain(&mut self, domain: Rect<f32, WorldSpace>, sdf: impl Fn(Point2D<f32, WorldSpace>) -> f32 + Sync + Send) {
+  pub fn insert_sdf_domain(&mut self, domain: Aabb<f32, 2>, sdf: impl Fn(P2<f32>) -> f32 + Sync + Send) {
     use rayon::prelude::*;
 
     self.dist_map.chunks_domain_par_iter(domain)
@@ -91,7 +82,10 @@ impl Argmax2D {
   }
 
   /// Read underlying distance field bitmap.
-  pub fn pixels(&self) -> impl Iterator<Item = DistPoint<f32, u64, PixelSpace>> + '_ {
+  pub fn pixels(&self) -> impl Iterator<Item = DistPoint<f32, u64, 2>> + '_ {
     self.dist_map.pixels()
   }
 }
+
+// re-exported for the storage module
+pub(crate) type PixelPoint = Point<u64, 2>;
