@@ -1,0 +1,12 @@
+/target
+/.idea
+/test
+/gallery
+/Cargo.lock
+/out.png
+/.cargo
+/.codegraph
+/doc/video/assets/1M.png
+/doc/video/assets/Adaptively sampled distance fields.pdf
+/doc/video/assets/bourke_zoom.png
+/doc/video/scene10_ae

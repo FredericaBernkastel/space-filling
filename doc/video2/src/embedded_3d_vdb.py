@@ -1,14 +1,14 @@
 """
 Imports a space-filling volumetric signed-distance grid (`.vol`, written by
-`examples/gd_adf/08_volumetric_3d.rs`) into Blender and builds a complete,
+`08_embedded_3d`) into Blender and builds a complete,
 ready-to-render scene: an OpenVDB `distance` grid, a volumetric material whose
 color, opacity and emission vary near the zero distance (glowing rim, milky
 violet interior, transparent free space, turbulent haze), a camera, a soft key
 light, a black world, and Cycles volume settings.
 
 Usage:
-  blender --python examples/gd_adf/08_volumetric_3d.py -- out.vol
-  blender -b --python examples/gd_adf/08_volumetric_3d.py -- out.vol --render out.png
+  blender --python embedded_3d_vdb.py -- out.vol
+  blender -b --python embedded_3d_vdb.py -- out.vol --render out.png
 
 Requires an official Blender build (>= 3.0) — those bundle `pyopenvdb`.
 A `.vdb` and a `.blend` are saved next to the input `.vol`.
@@ -17,7 +17,7 @@ import bpy, struct, sys, os
 from mathutils import Vector
 
 def die(msg):
-    raise SystemExit(f"[08_volumetric_3d] {msg}")
+    raise SystemExit(f"[embedded_3d_vdb] {msg}")
 
 try:
     import pyopenvdb as vdb

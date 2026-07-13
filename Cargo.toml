@@ -78,7 +78,3 @@ path = "examples/gd_adf/06_custom_primitive.rs"
 name = "07_baked_sdf"
 required-features = ["drawing"]
 path = "examples/gd_adf/07_baked_sdf.rs"
-
-[[example]]
-name = "08_volumetric_3d"
-path = "examples/gd_adf/08_volumetric_3d.rs"

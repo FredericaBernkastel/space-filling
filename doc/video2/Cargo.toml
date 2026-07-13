@@ -1,0 +1,29 @@
+# Standalone helper crate for the explainer video: renders animation frames from
+# the space-filling library (imported via a local path) and streams them to
+# ffmpeg. Not part of the library — kept out of its examples on purpose.
+[package]
+name = "render"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "08_embedded_3d"
+path = "src/08_embedded_3d.rs"
+
+[dependencies]
+space-filling = { path = "../..", features = ["drawing"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+anyhow = "1.0"
+# same versions as the library, for the example-verbatim circle parameters
+rand = { version = "0.10.2", default-features = false }
+rand_pcg = "0.10.2"
+# example-verbatim Mandelbrot estimator (Scene 8)
+num-traits = "0.2"
+num-complex = "0.4"
+euclid = "0.22"
+rayon = "1.12"
+clap = "4.6"
+
+# Own workspace root, so cargo does not try to attach this to the parent crate.
+[workspace]
