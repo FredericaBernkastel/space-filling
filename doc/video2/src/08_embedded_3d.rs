@@ -11,33 +11,69 @@
 //! the hosts.
 //!
 //! ```text
-//! cargo run --release --bin 08_embedded_3d -- [n_hosts] [n_embedded] [resolution] [out.vol]
-//! blender --python src/08_volumetric_3d.py -- out.vol
+//! cargo run --release --bin 08_embedded_3d -- --help
+//! cargo run --release --bin 08_embedded_3d                      # out.vol
+//! cargo run --release --bin 08_embedded_3d -- --format obj      # out.obj
+//! blender --python src/08_embedded_3d_vdb.py -- out.vol
 //! ```
-//!
-//! File format (`.vol`): magic `SFVD`, three `u32` LE dimensions (x, y, z),
-//! then `x·y·z` signed distances as `f32` LE, x-fastest; the grid covers
-//! `[0, 1]³`, sampled at cell centers. Distances are exact near the surface
-//! and clamped at `+0.12` in the far field (far beyond the shader's cutoff).
+
+mod format;
 
 use {
+    anyhow::Result,
+    clap::{Parser, ValueEnum},
+    rand::prelude::*,
     space_filling::{
-        geometry::{Shape, Circle, Point, Vector, VectorExt},
+        geometry::{Circle, Point, Shape, Vector, VectorExt},
         sdf::SDF,
-        solver::{LineSearch, ADF, Primitive},
+        solver::{LineSearch, Primitive, ADF},
         util
     },
-    anyhow::Result,
-    rand::prelude::*,
-    rayon::prelude::*,
-    std::{fs::File, io::{BufWriter, Write}, sync::RwLock, time::Instant}
+    std::{path::PathBuf, sync::RwLock, time::Instant}
 };
+use format::{obj, vol};
 
 type P3 = Point<f64, 3>;
 type V3 = Vector<f64, 3>;
 
-/// Far-field clamp of the exported distances; the shader cuts off at +0.012.
-const FAR: f64 = 0.12;
+#[derive(Copy, Clone, PartialEq, ValueEnum)]
+enum Format {
+    /// volumetric signed-distance grid (`SFVD`, for `src/08_embedded_3d_vdb.py`)
+    Vol,
+    /// Wavefront OBJ: one UV-sphere mesh per sphere, smooth normals
+    Obj,
+}
+
+/// Two-level embedded space filling in 3D (the `03_embedded` scene, via ADF),
+/// exported as a volumetric distance grid or an OBJ mesh.
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// First-generation host spheres (never exported)
+    #[arg(long, default_value_t = 64)]
+    hosts: usize,
+    /// Second-generation spheres, embedded inside the hosts
+    #[arg(long, default_value_t = 4096)]
+    embedded: usize,
+    /// Output format
+    #[arg(short, long, value_enum, default_value_t = Format::Vol)]
+    format: Format,
+    /// Output path [default: out.vol | out.obj, by format]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+    /// Grid resolution per axis (vol)
+    #[arg(long, default_value_t = 256)]
+    resolution: usize,
+    /// Longitude segments of the largest sphere mesh (obj)
+    #[arg(long, default_value_t = 48)]
+    segments: u32,
+    /// Spheres smaller than this radius are placed, but not exported
+    #[arg(long, default_value_t = 0.005)]
+    min_radius: f64,
+    /// RNG seed
+    #[arg(long, default_value_t = 3)]
+    seed: u64,
+}
 
 /// `min_i (|p − cᵢ| − rᵢ)` — the exact union SDF of a set of spheres.
 fn sphere_union(spheres: &[(P3, f64)]) -> impl Fn(P3) -> f64 + Clone + Send + Sync + use<> {
@@ -48,15 +84,10 @@ fn sphere_union(spheres: &[(P3, f64)]) -> impl Fn(P3) -> f64 + Clone + Send + Sy
 }
 
 fn main() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    let n_hosts: usize = args.next().map(|s| s.parse()).transpose()?.unwrap_or(64);
-    let n_embedded: usize = args.next().map(|s| s.parse()).transpose()?.unwrap_or(4096);
-    let res: usize = args.next().map(|s| s.parse()).transpose()?.unwrap_or(256);
-    let path = args.next().unwrap_or_else(|| "out.vol".to_string());
+    let args = Args::parse();
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(args.seed);
 
-    let mut rng = rand_pcg::Pcg64::seed_from_u64(3);
-
-    // ---- the domain: an irregular cluster — a union of balls drifting +x ----
+    // ---- the domain ----
     let domain_balls: Vec<(P3, f64)> = {
         vec![(P3::new(0.5, 0.5, 0.5), 0.5)]
     };
@@ -92,7 +123,7 @@ fn main() -> Result<()> {
         if representation.write().unwrap()
             .insert_at_maximum(local_max, Primitive::from_shape(sphere)) {
             hosts.push((center, r));
-            if hosts.len() >= n_hosts { break; }
+            if hosts.len() >= args.hosts { break; }
         }
     }
     println!("generation 1: {} hosts in {:?}", hosts.len(), t0.elapsed());
@@ -121,13 +152,13 @@ fn main() -> Result<()> {
         let sphere = Circle.translate(local_max.point.coords).scale(r);
         if representation.write().unwrap()
             .insert_at_maximum(local_max, Primitive::from_shape(sphere)) {
-            // sub-voxel spheres still block their spot, but are not exported
-            if r >= 1.25 / res as f64 {
+            // sub-threshold spheres still block their spot, but are not exported
+            if r >= args.min_radius {
                 spheres.push((local_max.point, r));
             }
             placed += 1;
             if placed % 500 == 0 { println!("#{placed}"); }
-            if placed >= n_embedded { break; }
+            if placed >= args.embedded { break; }
         }
     }
     let adf = representation.into_inner().unwrap();
@@ -135,44 +166,19 @@ fn main() -> Result<()> {
              placed, spheres.len(), t1.elapsed());
     println!("{adf:#?}");
 
-    // ---- sample the exact sphere-union SDF on a res³ grid (cell centers) ----
-    // The grid stores the distance to the *embedded generation only* — the
-    // domain and the hosts are scaffolding, visible solely as the swarm shapes.
-    // Per z-slab, only spheres that can reach below `FAR` are tested.
-    let t2 = Instant::now();
-    let mut data = vec![0f32; res * res * res];
-    data.par_chunks_mut(res * res).enumerate().for_each(|(z, slab)| {
-        let pz = (z as f64 + 0.5) / res as f64;
-        let nearby: Vec<(P3, f64)> = spheres.iter()
-            .filter(|&&(c, r)| (c.z - pz).abs() - r < FAR)
-            .copied()
-            .collect();
-        for y in 0..res {
-            for x in 0..res {
-                let p = P3::new(
-                    (x as f64 + 0.5) / res as f64,
-                    (y as f64 + 0.5) / res as f64,
-                    pz);
-                let d = nearby.iter()
-                    .map(|&(c, r)| (p - c).length() - r)
-                    .fold(FAR, f64::min);
-                slab[y * res + x] = d as f32;
-            }
-        }
+    // ---- export the embedded generation only — the domain and the hosts are
+    // scaffolding, visible solely as the swarm shapes ----
+    let output = args.output.unwrap_or_else(|| match args.format {
+        Format::Vol => PathBuf::from("out.vol"),
+        Format::Obj => PathBuf::from("out.obj"),
     });
-    println!("sampled {res}³ voxels: {:?}", t2.elapsed());
-
-    // ---- export ----
-    let mut w = BufWriter::new(File::create(&path)?);
-    w.write_all(b"SFVD")?;
-    for dim in [res, res, res] {
-        w.write_all(&(dim as u32).to_le_bytes())?;
+    match args.format {
+        Format::Vol => {
+            vol::export(&output, args.resolution, &spheres)?;
+            println!("now run:\n  blender --python src/08_embedded_3d_vdb.py -- {}",
+                output.display());
+        }
+        Format::Obj => obj::export(&output, &spheres, args.segments)?,
     }
-    for v in &data {
-        w.write_all(&v.to_le_bytes())?;
-    }
-    w.flush()?;
-    println!("wrote {path} ({} MiB); now run:", (16 + data.len() * 4) >> 20);
-    println!("  blender --python examples/gd_adf/08_volumetric_3d.py -- {path}");
     Ok(())
 }

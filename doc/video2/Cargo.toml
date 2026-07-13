@@ -23,7 +23,7 @@ num-traits = "0.2"
 num-complex = "0.4"
 euclid = "0.22"
 rayon = "1.12"
-clap = "4.6"
+clap = { version = "4.6", features = ["derive"] }
 
 # Own workspace root, so cargo does not try to attach this to the parent crate.
 [workspace]

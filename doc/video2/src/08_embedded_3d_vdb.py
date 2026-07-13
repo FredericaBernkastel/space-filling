@@ -7,8 +7,8 @@ violet interior, transparent free space, turbulent haze), a camera, a soft key
 light, a black world, and Cycles volume settings.
 
 Usage:
-  blender --python embedded_3d_vdb.py -- out.vol
-  blender -b --python embedded_3d_vdb.py -- out.vol --render out.png
+  blender --python 08_embedded_3d_vdb.py -- out.vol
+  blender -b --python 08_embedded_3d_vdb.py -- out.vol --render out.png
 
 Requires an official Blender build (>= 3.0) — those bundle `pyopenvdb`.
 A `.vdb` and a `.blend` are saved next to the input `.vol`.

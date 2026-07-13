@@ -10,3 +10,5 @@
 /doc/video/assets/Adaptively sampled distance fields.pdf
 /doc/video/assets/bourke_zoom.png
 /doc/video/scene10_ae
+*.vol
+*.obj
