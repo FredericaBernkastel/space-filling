@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    geometry::{Shape, Circle, Translation, Scale, P2, V2},
+    geometry::{Shape, Hypersphere, Translation, Scale, P2, V2},
     sdf::{self, SDF},
     solver::{LineSearch, ADF, Primitive},
     drawing::Draw,
@@ -19,7 +19,7 @@ use {
 type AffineT<T> = Scale<Translation<T, f64, 2>, f64>;
 
 // profile: 62ms, 1000 circrles, adf_subdiv = 5, gd_lattice = 1
-fn random_distribution(representation: &RwLock<ADF<f64, 2>>) -> impl Iterator<Item = AffineT<Circle>> + '_  {
+fn random_distribution(representation: &RwLock<ADF<f64, 2>>) -> impl Iterator<Item = AffineT<Hypersphere>> + '_  {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   util::local_maxima_iter(
@@ -36,7 +36,7 @@ fn random_distribution(representation: &RwLock<ADF<f64, 2>>) -> impl Iterator<It
       // polar to cartesian
       let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-      Circle.translate(local_max.point.coords - offset)
+      Hypersphere.translate(local_max.point.coords - offset)
         .scale(r)
     };
     representation.write().unwrap().insert_at_maximum(

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    geometry::{Shape, Circle, Scale, Translation, V2},
+    geometry::{Shape, Hypersphere, Scale, Translation, V2},
     sdf::{self, SDF},
     solver::Argmax2D,
     drawing::Draw,
@@ -26,7 +26,7 @@ pub fn report_progress<'a, I>(iter: impl Iterator<Item = I>) -> impl Iterator<It
     })
 }
 
-pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<Circle, f32>> + '_ {
+pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<Hypersphere, f32>> + '_ {
   use rand::prelude::*;
   let mut rng = rand_pcg::Pcg64::seed_from_u64(1);
 
@@ -44,7 +44,7 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
         let delta = global_max.distance - r;
         let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-        Circle.translate(global_max.point.coords - offset)
+        Hypersphere.translate(global_max.point.coords - offset)
           .scale(r)
       };
       representation.insert_sdf_domain(
@@ -59,7 +59,7 @@ pub fn embedded(representation: &mut Argmax2D) -> impl Iterator<Item = AffineT<C
 
   report_progress(0..).map(|_| {
     let global_max = representation.find_max();
-    let circle = Circle
+    let circle = Hypersphere
       .translate(global_max.point.coords)
       .scale(global_max.distance / 3.0);
 

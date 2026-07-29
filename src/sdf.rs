@@ -61,7 +61,7 @@ impl <S, T, const D: usize> SDF<T, D> for Scale<S, T>
 /// Negation preserves the constant — 1-Lipschitz.
 pub fn boundary_rect<T: Real, const D: usize>(pixel: Point<T, D>) -> T {
   let p5 = T::one() / (T::one() + T::one());
-  -geometry::Rect { size: Vector::repeat(T::one()) }
+  -geometry::Hyperrect { size: Vector::repeat(T::one()) }
     .translate(Vector::repeat(p5))
     .sdf(pixel)
 }

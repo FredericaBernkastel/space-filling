@@ -1,7 +1,7 @@
 use {
   std::sync::{Arc, RwLock},
   space_filling::{
-    geometry::{Shape, Ring, Square, P2, V2},
+    geometry::{Shape, Ring, Hypersquare, P2, V2},
     sdf::{self, SDF},
     solver::{ADF, LineSearch, Primitive},
     drawing::{self, Draw},
@@ -40,7 +40,7 @@ fn polymorphic(representation: &RwLock<ADF<f64, 2>>, texture: Arc<DynamicImage>)
             .texture(texture.clone())
         }),
 
-        1 | _ => Arc::new(Square
+        1 | _ => Arc::new(Hypersquare
           .translate(local_max.point.coords)
           .scale(local_max.distance / 2.0)
           .rotate(Rotation2::new(rng.random_range(0.0..45f64).to_radians()))

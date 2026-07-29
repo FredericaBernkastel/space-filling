@@ -9,7 +9,7 @@
 //! ```no_run
 //! # use {
 //! #   space_filling::{
-//! #     geometry::{Shape, Circle, Scale, Translation},
+//! #     geometry::{Shape, Hypersphere, Scale, Translation},
 //! #     sdf::{self, SDF},
 //! #     solver::Argmax2D,
 //! #     drawing::Draw,
@@ -42,11 +42,11 @@
     //!   // find global maxima of the field
     //!   let global_max = representation.find_max();
     //!   // Make a new circle at the location with highest distance to all other circles.
-    //!   let circle = Circle
+    //!   let circle = Hypersphere
     //!     .translate(global_max.point.coords)
     //!     .scale(global_max.distance / 4.0);
     //!   /** Update the field.
-    //!    * `Circle` implements the `SDF` trait. Only a bounded region of the field
+    //!    * `Hypersphere` implements the `SDF` trait. Only a bounded region of the field
     //!    * changes per insertion: for a global maximum it is contained in a square
     //!    * of side `4 * max_dist` centred at the maximum (`util::domain_global_max`),
     //!    * which is what keeps the update cheap. **/
@@ -66,7 +66,7 @@
 //! ```no_run
 //! # use {
 //! #   space_filling::{
-//! #     geometry::{Shape, Circle, Translation, Scale, P2},
+//! #     geometry::{Shape, Hypersphere, Translation, Scale, P2},
 //! #     sdf::{self, SDF},
 //! #     solver::{line_search::LineSearch, adf::{ADF, Primitive}},
 //! #     drawing::Draw,
@@ -90,7 +90,7 @@
     //!   Box::new(|p: P2<f64>| representation.read().unwrap().sdf(p)),
     //!   32, 0, LineSearch::default()
     //! ).filter_map(|local_max| {
-    //!   let circle = Circle
+    //!   let circle = Hypersphere
     //!     .translate(local_max.point.coords)
     //!     .scale(local_max.distance / 4.0);
     //!   // Update the distance field. An insertion which does not lower the field
@@ -131,8 +131,8 @@
 //! At first, you could think writing:
 //! ```ignore
 //! let shapes: Vec<Box<dyn Shape>> = vec![
-//!   Box::new(Circle.translate(...).scale(...)),
-//!   Box::new(Square.translate(...).scale(...))
+//!   Box::new(Hypersphere.translate(...).scale(...)),
+//!   Box::new(Hypersquare.translate(...).scale(...))
 //! ];
 //! for shape in shapes {
 //!   shape.texture(...)

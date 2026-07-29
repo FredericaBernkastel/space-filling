@@ -1,7 +1,7 @@
 use {
   super::*,
   crate::{
-    geometry::{Circle, Square, VectorExt}
+    geometry::{Hypersphere, Hypersquare, VectorExt}
   },
   nalgebra::Rotation2,
   anyhow::Result,
@@ -10,7 +10,7 @@ use {
 
 #[test] fn texture() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
-  Circle
+  Hypersphere
     .translate(V2::repeat(0.5))
     .scale(0.5)
     .texture(&image::open("doc/embedded.jpg")?)
@@ -22,8 +22,8 @@ use {
 #[test] fn polymorphic_a() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
   let shapes: Vec<Box<dyn Draw<_, _>>> = vec![
-    Box::new(Circle.translate(V2::repeat(0.25)).scale(0.25)),
-    Box::new(Square.translate(V2::repeat(0.75)).scale(0.25))
+    Box::new(Hypersphere.translate(V2::repeat(0.25)).scale(0.25)),
+    Box::new(Hypersquare.translate(V2::repeat(0.75)).scale(0.25))
   ];
   shapes.into_iter()
     .for_each(|shape| shape
@@ -38,11 +38,11 @@ use {
 #[test] fn polymorphic_b() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
   let shapes: Vec<Box<dyn Draw<_, _>>> = vec![
-    Box::new(Circle
+    Box::new(Hypersphere
       .translate(V2::repeat(0.25))
       .scale(0.25)
       .texture(Luma([255u8]).to_rgba())),
-    Box::new(Square
+    Box::new(Hypersquare
       .translate(V2::repeat(0.75))
       .scale(0.25)
       .texture(Luma([127u8]).to_rgba()))
@@ -55,7 +55,7 @@ use {
 
 #[test] fn texture_fn() -> Result<()> {
   let mut image = RgbaImage::new(128, 128);
-  Circle
+  Hypersphere
     .translate(V2::repeat(0.5))
     .scale(0.5)
     .texture(|pixel: P2<f64>| {

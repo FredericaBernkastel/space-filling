@@ -1,7 +1,7 @@
 use {
   super::*,
   crate::{
-    geometry::{Circle, Shape, P2, V2},
+    geometry::{Hypersphere, Shape, P2, V2},
     drawing,
     sdf,
     solver::{ADF, LineSearch},
@@ -19,12 +19,12 @@ use crate::geometry::DistPoint;
   let domain = Aabb::unit();
 
   let t0 = std::time::Instant::now();
-  adf.insert_sdf_domain(domain, Arc::new(|p| Circle
+  adf.insert_sdf_domain(domain, Arc::new(|p| Hypersphere
     .scale(0.25)
     .translate(V2::repeat(0.5))
     .sdf(p)
   ));
-  adf.insert_sdf_domain(domain, Arc::new(|p| Circle
+  adf.insert_sdf_domain(domain, Arc::new(|p| Hypersphere
     .scale(0.125)
     .translate(V2::repeat(0.125))
     .sdf(p)
@@ -64,7 +64,7 @@ use crate::geometry::DistPoint;
         // polar to cartesian
         let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-        Circle.translate(local_max.point.coords - offset)
+        Hypersphere.translate(local_max.point.coords - offset)
           .scale(r)
       };
       // alternately use safe RwLock<ADF> for 1.5x slowdown
@@ -136,7 +136,7 @@ use crate::geometry::DistPoint;
 
     {
       let mut image = image.clone();
-      Circle
+      Hypersphere
         .translate(local_max.point.coords)
         .scale(local_max.distance)
         .texture(Rgba([0x45, 0x8F, 0xF5, 0x7F]))
@@ -153,7 +153,7 @@ use crate::geometry::DistPoint;
       let delta = local_max.distance - r;
       let offset = V2::new(angle.cos(), angle.sin()) * delta;
 
-      Circle.translate(local_max.point.coords - offset)
+      Hypersphere.translate(local_max.point.coords - offset)
         .scale(r)
     };
     let domain = representation.update_domain(local_max);
@@ -164,7 +164,7 @@ use crate::geometry::DistPoint;
     image.save(format!("test/anim/#{}_2.png", i))?;
     {
       let mut image = image.clone();
-      Circle
+      Hypersphere
         .translate(local_max.point.coords)
         .scale(local_max.distance * 4.0)
         .texture(Rgba([0xFF, 0, 0, 0x7F]))
@@ -218,7 +218,7 @@ use crate::geometry::DistPoint;
       let delta = local_max.distance - r;
       let offset = V2::new(angle.cos(), angle.sin()) * delta;
       let center = local_max.point - offset;
-      let circle = Circle.translate(center.coords).scale(r);
+      let circle = Hypersphere.translate(center.coords).scale(r);
       representation.write().unwrap().insert_at_maximum(
         local_max,
         Primitive::from_shape(circle)
@@ -271,7 +271,7 @@ use crate::geometry::DistPoint;
     for m in maxima {
       if spheres.len() >= 100 { break; }
       let r = m.distance / 2.0;
-      let sphere = Circle.translate(m.point.coords).scale(r);
+      let sphere = Hypersphere.translate(m.point.coords).scale(r);
       if adf.insert_at_maximum(m, Primitive::from_shape(sphere)) {
         spheres.push((m.point, r));
       }
@@ -307,14 +307,14 @@ use crate::geometry::DistPoint;
   let mut adf = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
   for angle in [90f64, 210., 330.] {
     let (s, c) = angle.to_radians().sin_cos();
-    let obstacle = Circle.scale(1e-4).translate(x0.coords + V2::new(c, s) * d);
+    let obstacle = Hypersphere.scale(1e-4).translate(x0.coords + V2::new(c, s) * d);
     adf.insert_sdf_domain(full, Arc::new(move |p| obstacle.sdf(p)));
   }
 
   let local_max = DistPoint { point: x0, distance: adf.sdf(x0) };
   // pipeline-style placement: a circle inside the maximal ball, pushed toward w
   let r = 0.01;
-  let circle = Circle.scale(r)
+  let circle = Hypersphere.scale(r)
     .translate(x0.coords + V2::new(0.0, -1.0) * (local_max.distance - r));
   let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
 
@@ -374,7 +374,7 @@ use crate::geometry::DistPoint;
           let r = (rng.random_range(1e-6..1.0f64).powf(5.0) * m.distance).min(1.0 / 6.0);
           let delta = m.distance - r;
           let offset = V2::new(angle.cos(), angle.sin()) * delta;
-          Circle.translate(m.point.coords - offset).scale(r)
+          Hypersphere.translate(m.point.coords - offset).scale(r)
         };
         attempts += 1;
         if !adf.insert_at_maximum(m, Primitive::from_shape(circle)) {
@@ -435,7 +435,7 @@ use crate::geometry::DistPoint;
         let r = (rng.random_range(0f64..1.0).powf(1.0) * m.distance).min(1.0 / 6.0);
         let delta = m.distance - r;
         let offset = V2::new(angle.cos(), angle.sin()) * delta;
-        Circle.translate(m.point.coords - offset).scale(r)
+        Hypersphere.translate(m.point.coords - offset).scale(r)
       };
       let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
       attempts += 1;

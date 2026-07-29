@@ -24,7 +24,7 @@ use {
     clap::{Parser, ValueEnum},
     rand::prelude::*,
     space_filling::{
-        geometry::{Circle, Point, Shape, Vector, VectorExt},
+        geometry::{Hypersphere, Point, Shape, Vector, VectorExt},
         sdf::SDF,
         solver::{LineSearch, Primitive, ADF},
         util
@@ -119,7 +119,7 @@ fn main() -> Result<()> {
             .min(1.0 / 4.0);
         // anywhere inside the free ball, pushed `delta` away from its center
         let center = local_max.point - dir * (local_max.distance - r);
-        let sphere = Circle.translate(center.coords).scale(r);
+        let sphere = Hypersphere.translate(center.coords).scale(r);
         if representation.write().unwrap()
             .insert_at_maximum(local_max, Primitive::from_shape(sphere)) {
             hosts.push((center, r));
@@ -149,7 +149,7 @@ fn main() -> Result<()> {
     ) {
         // the `03_embedded` rule: centered at the maximum, a third of the free ball
         let r = local_max.distance / 3.0;
-        let sphere = Circle.translate(local_max.point.coords).scale(r);
+        let sphere = Hypersphere.translate(local_max.point.coords).scale(r);
         if representation.write().unwrap()
             .insert_at_maximum(local_max, Primitive::from_shape(sphere)) {
             // sub-threshold spheres still block their spot, but are not exported

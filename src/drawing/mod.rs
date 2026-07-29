@@ -165,7 +165,7 @@ impl <Data, _Float: Real> Quadtree<Data, _Float, 2> {
       if node.is_leaf() && node.rect.intersects(&domain) {
         let center = node.rect.center().map(|x| x.to_f64().unwrap());
         let size = node.rect.size().map(|x| x.to_f64().unwrap());
-        geometry::Rect { size }
+        geometry::Hyperrect { size }
           .translate(center.coords)
           .texture(Rgba([0xFF, 0, 0, 0x7F]))
           .draw(image)
@@ -188,7 +188,7 @@ impl <_Float: Real + Signed + AsPrimitive<f64> + Send + Sync> ADF<_Float, 2> {
         let size = node.rect.size().map(|x| x.to_f64().unwrap());
         let alpha = (((node.data.len() - 1) as f64 / 3.0).powf(1.75)
           * 0.33 * 255.0) as u8;
-        geometry::Rect { size }
+        geometry::Hyperrect { size }
           .translate(center.coords)
           .texture(Rgba([0x7F, 0xFF, 0, alpha]))
           .draw(image)
