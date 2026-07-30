@@ -16,8 +16,20 @@ use {
   }
 };
 
-impl<Ty, P: Scalar> SDF<P, 2> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn sdf(&self, pixel: P2<P>) -> P { self.as_ref().sdf(pixel) } }
-impl<Ty, P: Scalar> BoundingBox<P, 2> for Ty where Ty: AsRef<dyn Draw<P, RgbaImage>> { fn bounding_box(&self) -> Aabb<P, 2> { self.as_ref().bounding_box() } }
+// Keep composing after boxing: a `Box<dyn Draw>` is itself a field, so it can be
+// rotated, textured and drawn like any other shape.
+//
+// Deliberately concrete rather than a blanket `impl<Ty: AsRef<dyn Draw<..>>>`.
+// `SDF` belongs to the distance-field layer, so a blanket impl over an uncovered
+// type parameter would be an orphan-rule violation the moment that layer becomes
+// its own crate; `Box` is a fundamental type, which makes `Box<dyn Draw<..>>`
+// count as local and this impl legal either way. Other smart pointers have no
+// such exemption — reach through them with `.as_ref()`, which works because
+// `dyn Draw` inherits `sdf` from its `Shape` supertrait.
+impl<P: Scalar> SDF<P, 2> for Box<dyn Draw<P, RgbaImage>> {
+  fn sdf(&self, pixel: P2<P>) -> P { (**self).sdf(pixel) } }
+impl<P: Scalar> BoundingBox<P, 2> for Box<dyn Draw<P, RgbaImage>> {
+  fn bounding_box(&self) -> Aabb<P, 2> { (**self).bounding_box() } }
 
 impl <Cutie, P: Float + Scalar> Draw<P, RgbaImage> for Texture<Cutie, Rgba<u8>>
   where Cutie: Shape<P, 2> + Clone,

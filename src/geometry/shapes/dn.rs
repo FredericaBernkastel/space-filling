@@ -332,13 +332,13 @@ impl<T: Real, const D: usize> HalfSpace<T, D> {
 /// field.
 ///
 /// Convex only — a non-convex region is an intersection of no half-space set;
-/// build one with [`Shape::subtraction`](crate::geometry::Shape::subtraction)
-/// or [`union`](crate::geometry::Shape::union) instead.
+/// build one with [`Combinator::subtraction`](crate::geometry::Combinator::subtraction)
+/// or [`union`](crate::geometry::Combinator::union) instead.
 ///
 /// [`Self::bounding_box`] reports the unit box, following this module's
 /// unit-shape convention: define the polytope inside the unit sphere (offsets
 /// `≤ 1`, as `NGonC` does with `cos(π/n)`) and position it with
-/// [`scale`](crate::geometry::Shape::scale) / etc. A polytope that reaches
+/// [`scale`](crate::geometry::Combinator::scale) / etc. A polytope that reaches
 /// beyond `[-1, 1]^D` still has the correct field, but under-reports its
 /// bounds — which affects only drawing and the transform pivots, never the
 /// solvers.
@@ -511,7 +511,7 @@ pub fn simplex_vertices<T: Real, const D: usize>() -> Vec<Vector<T, D>> {
 /// The facet opposite each vertex has that vertex's direction as its *inward*
 /// normal and, at unit circumradius, sits `1/D` from the centre. Exact inside,
 /// conservative outside, 1-Lipschitz (see [`Polytope`]); round it with
-/// [`Combinator::offset`] to be exact everywhere.
+/// [`offset`](crate::geometry::Combinator::offset) to be exact everywhere.
 pub fn simplex<T: Real, const D: usize>() -> Polytope<Vec<HalfSpace<T, D>>> {
   let verts = simplex_vertices::<T, D>();
   convex_hull(verts.iter().map(|v| v.map(|x| -x)), &verts)
@@ -624,7 +624,7 @@ impl<T: Real, const D: usize> SDF<T, D> for LpBall<T, D> {
 /// `sdf(p) = minᵢ dist(p, [vᵢ, vᵢ₊₁]) - thickness/2`: exact outside, since the
 /// distance to a union is the minimum of the distances, and an underestimate of
 /// the interior depth where consecutive capsules overlap — exactly as
-/// [`Shape::union`](crate::geometry::Shape::union). 1-Lipschitz. Fewer than two
+/// [`Combinator::union`](crate::geometry::Combinator::union). 1-Lipschitz. Fewer than two
 /// vertices gives the constant "no shape" field.
 ///
 /// Useful for skeletal and filamentary structures, and for curves with no
@@ -679,7 +679,7 @@ impl<T, U, const D: usize> SDF<T, D> for Polyline<U, T>
 /// block's radius independently, and 1-Lipschitz since the blocks act on
 /// disjoint axes.
 ///
-/// Blocks are contiguous; [`rotate`](crate::geometry::Shape::rotate) the shape
+/// Blocks are contiguous; [`rotate`](crate::geometry::Combinator::rotate) the shape
 /// if you need interleaved axes.
 #[derive(Debug, Copy, Clone)]
 pub struct ProductBall<U> {
@@ -759,17 +759,16 @@ impl<T: Real, const D: usize> SDF<T, D> for Torus<T> {
 /// in any dimension its cyclic analogue.
 ///
 /// The shape is one of the two interpenetrating labyrinths, `{f ≤ 0}` — a
-/// genuine solid filling half of space. [`Combinator::shell`]
+/// genuine solid filling half of space. [`shell`](crate::geometry::Combinator::shell)
 /// turns it into the thickened *surface* instead: a single connected sheet
 /// winding through space, which makes a far more interesting ADF workload than
 /// a bag of balls.
 ///
 /// ```
 /// # use space_filling::{geometry::*, sdf::SDF};
-/// // spelled out because a `shell(..)` wrapper names neither the scalar nor the
-/// // dimension, and `intersection` infers both from its receiver
-/// let labyrinth = Shape::<f64, 3>::intersection(
-///   Hypersquare::<3>, Gyroid { frequency: 8.0 }.shell(0.03));
+/// let labyrinth = Gyroid { frequency: 8.0 }
+///   .shell(0.03f64)
+///   .intersection(Hypersquare::<3>);
 /// assert!(labyrinth.sdf(Point::<f64, 3>::from([0.4, 0.1, -0.2])).is_finite());
 /// ```
 ///

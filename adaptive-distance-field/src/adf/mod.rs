@@ -24,7 +24,7 @@ use {
 };
 
 #[cfg(test)] mod tests;
-pub(crate) mod quadtree;
+pub mod quadtree;
 
 /// An SDF primitive stored in the tree: the field function together with its
 /// declared Lipschitz constant.
@@ -107,7 +107,7 @@ fn bucket_lipschitz<_Float: Real, const D: usize>(bucket: &[Primitive<_Float, D>
 /// is reached by descent — no fixed grid or GD schedule. Larger constants are
 /// conservative: certification just needs deeper refinement, and an overly large
 /// bound degrades into "only a real witness ever decides", never unsoundness.
-fn sdf_geq_everywhere<_Float, F, G, const D: usize>(
+pub fn sdf_geq_everywhere<_Float, F, G, const D: usize>(
   f: F,
   g: G,
   domain: Aabb<_Float, D>,
@@ -301,7 +301,7 @@ where
   }
 
   /// The insertion domain for a primitive placed at a **local maximum** `p` of
-  /// the field — a sound replacement for [`crate::util::domain_empirical`].
+  /// the field — the sound replacement for the historical `4·√2·d` rectangle.
   ///
   /// Any primitive `S ⊆ B̄(x₀, d)` (which all `offset = d − r` style placements
   /// satisfy) obeys `f(v) ≥ |v − x₀| − d`, so it can only lower the field inside
@@ -337,7 +337,7 @@ where
       },
       |leaf| {
         bounds = Some(match bounds {
-          Some(b) => b.union(&leaf.rect),
+          Some(b) => b.merge(&leaf.rect),
           None => leaf.rect,
         });
       },

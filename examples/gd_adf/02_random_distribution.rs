@@ -4,10 +4,10 @@ use std::time::Instant;
 
 use {
   space_filling::{
-    geometry::{Shape, Hypersphere, Translation, Scale, P2, V2},
+    geometry::{Combinator, Hypersphere, Translation, Scale, P2, V2},
     sdf::{self, SDF},
     solver::{LineSearch, ADF, Primitive},
-    drawing::Draw,
+    drawing::{Draw, Shape},
     util
   },
   image::{Luma, Pixel},

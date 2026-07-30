@@ -214,7 +214,7 @@ pub type Octagon = NGonC<8>;
 ///
 /// `min` of two exact box fields — exact in free space, underestimates the
 /// interior depth where the rectangles overlap; 1-Lipschitz (see
-/// [`Shape::union`](crate::geometry::Shape::union)). Pinned to `f64` and the
+/// [`Combinator::union`](crate::geometry::Combinator::union)). Pinned to `f64` and the
 /// plane because a `static` needs a concrete type; the [`Hyperrect`]s
 /// underneath it are dimension-generic.
 pub static HolyCross: Union <

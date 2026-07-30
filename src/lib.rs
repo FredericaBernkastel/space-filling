@@ -1,18 +1,28 @@
 //! This is a library for generalized space filling in ℝᴺ (do not mix with _packing_).
 //!
-//! It is split into two main modules: [`solver`] for generating a distribution of shapes,
-//! and [`drawing`] for displaying it (requires the `drawing` feature).
-//! Here, "shape" denotes one or multiple regions of ℝ² space, that can be represented by a
-//! signed distance function.
+//! It is split into [`solver`] for generating a distribution of shapes,
+//! [`geometry::shapes`] for the shapes themselves, and [`drawing`] for displaying
+//! them (requires the `drawing` feature). Here, "shape" denotes one or multiple
+//! regions of ℝᴺ space that can be represented by a signed distance function.
+//!
+//! The distance-field machinery underneath lives in its own crate,
+//! [`adaptive_distance_field`] — the [`SDF`](sdf::SDF) and
+//! [`Lipschitz`](sdf::Lipschitz) traits, the [`Combinator`](geometry::Combinator)
+//! algebra, the [`ADF`](solver::ADF) and its tree, and the
+//! [`LineSearch`](solver::LineSearch) ascent, none of which has anything to do
+//! with space filling specifically. This crate re-exports all of it through
+//! [`sdf`], [`geometry`] and [`solver`], so those paths need not be thought
+//! about; reach for the other crate directly if you want the distance field
+//! without the shape catalogue.
 //!
 //! # Basic usage, Argmax2D solver
 //! ```no_run
 //! # use {
 //! #   space_filling::{
-//! #     geometry::{Shape, Hypersphere, Scale, Translation},
+//! #     geometry::{Combinator, Hypersphere, Scale, Translation},
 //! #     sdf::{self, SDF},
 //! #     solver::Argmax2D,
-//! #     drawing::Draw,
+//! #     drawing::{Draw, Shape},
 //! #     util
 //! #   },
 //! #   anyhow::Result,
@@ -66,10 +76,10 @@
 //! ```no_run
 //! # use {
 //! #   space_filling::{
-//! #     geometry::{Shape, Hypersphere, Translation, Scale, P2},
+//! #     geometry::{Combinator, Hypersphere, Translation, Scale, P2},
 //! #     sdf::{self, SDF},
 //! #     solver::{line_search::LineSearch, adf::{ADF, Primitive}},
-//! #     drawing::Draw,
+//! #     drawing::{Draw, Shape},
 //! #     util
 //! #   },
 //! #   image::{Luma, Pixel},
@@ -117,9 +127,13 @@
 //! Drawing was intended to be a rudimentary module for displaying sdf shapes. It is not highly
 //! optimized, and you are free to use third-party libraries for this purpose.
 //!
-//! There are two traits related to drawing:
-//! - `trait `[`Shape`](`geometry::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
-//! - `trait `[`Draw`](`drawing::Draw`)`:`[`Shape`](`geometry::Shape`)`
+//! Two traits, both belonging to this module — [`Shape`](`drawing::Shape`) is
+//! here rather than in `geometry` precisely because drawing is all it is for.
+//! Composing fields is [`Combinator`](`geometry::Combinator`)'s job, and what
+//! the solvers consume is [`SDF`](`sdf::SDF`) plus
+//! [`Lipschitz`](`sdf::Lipschitz`):
+//! - `trait `[`Shape`](`drawing::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
+//! - `trait `[`Draw`](`drawing::Draw`)`: `[`Shape`](`drawing::Shape`)`
 //!
 //! Draw is primarily implemented on [`Texture`](`drawing::Texture`):
 //! ```text

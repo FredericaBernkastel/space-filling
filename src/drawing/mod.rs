@@ -5,7 +5,7 @@ use {
       Argmax2D, adf::{ADF, quadtree::Quadtree}
     },
     geometry::{
-      self, BoundingBox, Shape, Real,
+      self, BoundingBox, Combinator, Real,
       DistPoint, Translation, Rotation, Scale,
       Aabb, Point, P2, V2
     },
@@ -20,6 +20,26 @@ use {
 
 mod impl_draw_rgbaimage;
 #[cfg(test)] mod tests;
+
+/// A field that can be drawn: a signed distance function together with the
+/// bounds telling the rasterizer which pixels to visit.
+///
+/// This trait exists purely for drawing's benefit, which is why it lives here
+/// and follows the `drawing` feature. It is *not* the crate's notion of "a
+/// shape" — that is [`SDF`] plus, where a bound is needed,
+/// [`Lipschitz`](crate::sdf::Lipschitz), which is what
+/// [`Primitive`](crate::solver::Primitive) stores and what the solvers consume.
+/// Composing fields is [`geometry::Combinator`]'s job.
+/// Blanket-implemented, so every `SDF + BoundingBox` type is drawable.
+pub trait Shape<T: Scalar, const D: usize>: SDF<T, D> + BoundingBox<T, D> {
+  /// Pair the shape with a texture, producing the one type [`Draw`] is
+  /// implemented on.
+  fn texture<Tex>(self, texture: Tex) -> Texture<Self, Tex> where Self: Sized {
+    Texture { shape: self, texture }
+  }
+}
+impl <T: Scalar, Sh, const D: usize> Shape<T, D> for Sh
+  where Sh: SDF<T, D> + BoundingBox<T, D> {}
 
 pub trait Draw<Float: Scalar, Backend>: Shape<Float, 2> {
   fn draw(&self, image: &mut Backend);
@@ -66,8 +86,8 @@ fn rescale_bounding_box(
       (bounding_box.min * min_side).map(f64::floor),
       (bounding_box.max * min_side).map(f64::ceil),
     )
-    .translate(offset)
-    .intersection(&Aabb::new(P2::new(0.0, 0.0), P2::from(res_f)))
+    .shift(offset)
+    .clip(&Aabb::new(P2::new(0.0, 0.0), P2::from(res_f)))
     .map(|b| Aabb::new(b.min.map(|x| x as u32), b.max.map(|x| x as u32)));
   (bounding_box, offset, min_side)
 }
@@ -127,8 +147,20 @@ impl Argmax2D {
   }
 }
 
-impl <Data, _Float: Real> Quadtree<Data, _Float, 2> {
-  pub fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
+/// Debug rendering for the ADF's backing tree.
+///
+/// An extension trait rather than an inherent impl: [`Quadtree`] belongs to the
+/// distance-field layer, and only the trait form survives that layer becoming a
+/// separate crate.
+pub trait QuadtreeDraw<T: Scalar> {
+  /// Outline every leaf, fading with depth.
+  fn draw_layout(&self, image: &mut RgbaImage) -> &Self;
+  /// Fill the leaves meeting `domain` — the insertion region, made visible.
+  fn draw_bounding(&self, domain: Aabb<T, 2>, image: &mut RgbaImage) -> &Self;
+}
+
+impl <Data, _Float: Real> QuadtreeDraw<_Float> for Quadtree<Data, _Float, 2> {
+  fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
     use geometry::Line;
 
     let px = 1.0 / image.width() as f64;
@@ -160,7 +192,7 @@ impl <Data, _Float: Real> Quadtree<Data, _Float, 2> {
     self
   }
 
-  pub fn draw_bounding(&self, domain: Aabb<_Float, 2>, image: &mut RgbaImage) -> &Self {
+  fn draw_bounding(&self, domain: Aabb<_Float, 2>, image: &mut RgbaImage) -> &Self {
     self.traverse(&mut |node| {
       if node.is_leaf() && node.rect.intersects(&domain) {
         let center = node.rect.center().map(|x| x.to_f64().unwrap());
@@ -176,12 +208,20 @@ impl <Data, _Float: Real> Quadtree<Data, _Float, 2> {
   }
 }
 
-impl <_Float: Real + Signed + AsPrimitive<f64> + Send + Sync> ADF<_Float, 2> {
-  pub fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self {
+/// Debug rendering for an [`ADF`] itself — same reasoning as [`QuadtreeDraw`].
+pub trait AdfDraw {
+  /// Render the composed field as a greyscale ramp with the zero set picked out.
+  fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self;
+  /// Tint each leaf by how many primitives its bucket holds.
+  fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self;
+}
+
+impl <_Float: Real + Signed + AsPrimitive<f64> + Send + Sync> AdfDraw for ADF<_Float, 2> {
+  fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self {
     display_sdf(|p| self.sdf(p.map(|x| _Float::from(x).unwrap())).to_f64().unwrap(), image, brightness);
     self
   }
-  pub fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
+  fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self {
     self.tree.traverse(&mut |node| {
       if node.is_leaf() {
         let center = node.rect.center().map(|x| x.to_f64().unwrap());

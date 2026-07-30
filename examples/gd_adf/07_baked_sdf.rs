@@ -18,8 +18,8 @@ use {
   space_filling::{
     sdf::{self, SDF, Lipschitz},
     solver::{ADF, LineSearch, Primitive},
-    drawing::Draw,
-    geometry::{BoundingBox, Shape, Scale, Translation, Aabb, P2, V2, Real, VectorExt},
+    drawing::{Draw, Shape},
+    geometry::{BoundingBox, Combinator, Scale, Translation, Aabb, P2, V2, Real, VectorExt},
     util
   },
   nalgebra::Rotation2,
@@ -43,7 +43,9 @@ impl <T: Real> SDF<T, 2> for MandlelDE {
     let mut is_inside = true;
     for _ in 0..256 {
       let z_new = z.powi(2) + c;
-      let dz_new = z.scale(T::from(2.0).unwrap()) * dz + T::one();
+      // UFCS: `Combinator::scale` is blanket-implemented and takes `self` by
+      // value, so it would otherwise shadow `Complex::scale`, which takes `&self`
+      let dz_new = Complex::scale(&z, T::from(2.0).unwrap()) * dz + T::one();
       z = z_new;
       dz = dz_new;
       if z.norm_sqr() > T::from(1e9).unwrap() {

@@ -24,7 +24,7 @@ use {
     clap::{Parser, ValueEnum},
     rand::prelude::*,
     space_filling::{
-        geometry::{Hypersphere, Point, Shape, Vector, VectorExt},
+        geometry::{Combinator, Hypersphere, Point, Vector, VectorExt},
         sdf::SDF,
         solver::{LineSearch, Primitive, ADF},
         util

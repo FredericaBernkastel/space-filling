@@ -25,7 +25,7 @@
 //! # Building shapes out of shapes
 //!
 //! The catalogue above is deliberately small, because most interesting shapes
-//! are compositions. Beyond the transforms and booleans on [`Shape`](crate::geometry::Shape), four
+//! are compositions. Beyond the transforms and booleans on [`Shape`](crate::drawing::Shape), four
 //! combinators change a shape's *character*, and all four are exact and
 //! Lipschitz-preserving:
 //!
@@ -40,33 +40,82 @@
 //! useful in space: every star, polygon and n-gon becomes either a prism or a
 //! ring of that cross-section.
 //!
+//! `shell` hollows a solid out, in any dimension — it is [`Ring`] generalized to
+//! everything:
+//!
 //! ```
 //! # use space_filling::{geometry::*, sdf::SDF};
-//! // a star-sectioned torus: 2D profile, held off the axis, swept around it
-//! let star_ring = Pentagram.scale(0.25f64).revolve(0.7);
+//! let frame = Hypersquare::<3>.scale(0.5).shell(0.02);       // a box frame
+//! assert!(frame.sdf(Point::from([0.0, 0.0, 0.0])) > 0.0);    // centre is outside
+//! assert!(Hypersphere.shell(0.25).sdf(P2::new(0.9, 0.0)) < 0.0);            // annulus
+//! assert!(Moon { phase: 0.4 }.shell(0.05).sdf(P2::new(0.0, 0.99)) < 0.0);   // rind
+//! ```
 //!
-//! // a hollow icosahedron frame — rounded so the field is exact everywhere
+//! `offset` grows a shape, rounding every corner — and repairs the
+//! conservative-outside underestimate of the half-space shapes ([`Polytope`],
+//! [`NGonC`]), since it moves the true surface out to where the face-plane
+//! maximum is exact:
+//!
+//! ```
+//! # use space_filling::{geometry::*, sdf::SDF};
+//! let rounded = Hyperrect { size: V2::new(1.4, 0.8) }.offset(0.1);
+//! assert!(rounded.sdf(P2::new(0.7, 0.4)) < 0.0);   // the old sharp corner, now interior
+//! assert!(Cross { thickness: 0.2 }.offset(0.05).sdf(P2::new(1.0, 0.2)) < 0.0);
+//! ```
+//!
+//! `extrude` carries a profile along a new axis, and nests one axis at a time:
+//!
+//! ```
+//! # use space_filling::{geometry::*, sdf::SDF};
+//! let column = Pentagram.extrude(0.3);                        // a star-shaped column
+//! assert!(column.sdf(Point::from([0.0, 0.0, 0.0])) < 0.0);    // inside the star
+//! assert!(column.sdf(Point::from([0.0, 0.0, 0.5])) > 0.0);    // past the end cap
+//! let slab = Polygon { vertices: [
+//!   P2::new(-0.9, -0.5), P2::new(0.8, -0.7), P2::new(0.5, 0.9),
+//! ]}.extrude(0.2);
+//! let hyperslab = slab.extrude(0.1);                          // now 4-dimensional
+//! assert!(hyperslab.sdf(Point::from([0.0, 0.0, 0.0, 0.0])) < 0.0);
+//! ```
+//!
+//! `revolve` sweeps a 2D profile around axis 0, held `radius` clear of it — which
+//! turns any plane shape into a ring of that cross-section:
+//!
+//! ```
+//! # use space_filling::{geometry::*, sdf::SDF};
+//! let torus = Hypersphere.scale(0.3f64).revolve(0.7);
+//! // the tube's core circle sits one minor radius inside the surface
+//! assert!((torus.sdf(Point::from([0.0, 0.7, 0.0])) + 0.3).abs() < 1e-12);
+//! assert!(torus.sdf(Point::from([0.0, 0.0, 0.0])) > 0.0);     // the hole
+//! let star_ring = Pentagram.scale(0.25f64).revolve(0.7);
+//! let pipe = Hypersquare.scale(0.2f64).revolve(0.7);          // a square-section pipe
+//! assert!(pipe.sdf(Point::from([0.0, 0.7, 0.0])) < 0.0);
+//! ```
+//!
+//! They compose, of course, and with the booleans too:
+//!
+//! ```
+//! # use space_filling::{geometry::*, sdf::SDF};
+//! // a hollow icosahedron frame — rounded first, so the field is exact everywhere
 //! let frame = icosahedron::<f64>().offset(0.02).shell(0.01);
 //!
 //! // a gyroid labyrinth: a minimal surface, thickened, clipped to a container
-//! let labyrinth = Shape::<f64, 3>::intersection(
-//!   Hypersquare::<3>, Gyroid { frequency: 9.0 }.shell(0.03));
+//! let labyrinth = Gyroid { frequency: 9.0 }
+//!   .shell(0.03f64)
+//!   .intersection(Hypersquare::<3>);
 //!
 //! // the shell of a cube minus an inscribed ball: a cube's edges, as it were
-//! let cage = Shape::<f64, 3>::subtraction(
-//!   Hypersquare::<3>.shell(0.05), Hypersphere::<3>.scale(0.95));
+//! let cage = Hypersquare::<3>.shell(0.05)
+//!   .subtraction(Hypersphere::<3>.scale(0.95));
 //!
-//! # for s in [&star_ring as &dyn SDF<f64, 3>, &frame, &labyrinth, &cage] {
+//! # for s in [&frame as &dyn SDF<f64, 3>, &labyrinth, &cage] {
 //! #   assert!(s.sdf(Point::from([0.31, -0.22, 0.13])).is_finite());
 //! # }
 //! ```
 //!
-//! (Note the last two. A [`Shape`](crate::geometry::Shape) combinator whose return type mentions neither
-//! the scalar nor `D` — `union`, `subtraction`, `intersection`, `smooth_min`,
-//! `scale` — infers both from its *receiver*, and a wrapper such as `shell(..)`
-//! supplies neither; hand it to `Shape::<f64, 3>::subtraction` instead of making
-//! it the receiver. The four combinators in the table never have this problem,
-//! which is exactly why they live on the dimension-free [`Combinator`](crate::geometry::Combinator).)
+//! Every one of those chains composes without a turbofish: the
+//! [`Combinator`](crate::geometry::Combinator) trait takes its scalar and
+//! dimension as method generics, so a wrapper like `shell(..)` can be a receiver
+//! as happily as a `Hypersphere::<3>` can.
 //!
 //! Two shapes are worth calling out as *sources* rather than results.
 //! [`Polytope`] takes any set of half-spaces, so a polytope you can tabulate is
@@ -99,7 +148,7 @@ mod tests {
   use {
     super::*,
     crate::{
-      geometry::{Combinator, Point, Shape, Vector, VectorExt, P2, V2},
+      geometry::{Combinator, Point, Vector, VectorExt, P2, V2},
       sdf::{self, Lipschitz, SDF},
     },
     nalgebra::Rotation2,
@@ -149,6 +198,27 @@ mod tests {
     for _ in 0..n {
       body(Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(-span..span))));
     }
+  }
+
+  /// `sdf::boundary_rect` is written out by hand rather than composed from
+  /// [`Hyperrect`], so that it can live alongside the ADF without depending on
+  /// the shape catalogue. It must still be exactly the field it replaced.
+  #[test] fn boundary_rect_matches_composed_hyperrect() {
+    fn check<const D: usize>() {
+      let composed = Hyperrect { size: Vector::<f64, D>::repeat(1.0) }
+        .translate(Vector::repeat(0.5));
+      sample::<D>(20000, 1.5, |p| {
+        let (got, want) = (sdf::boundary_rect(p), -composed.sdf(p));
+        assert!((got - want).abs() < 1e-15, "D={D} at {p:?}: {got} vs {want}");
+      });
+    }
+    check::<2>();
+    check::<3>();
+    check::<4>();
+    // positive inside, zero on a wall, negative outside
+    assert!((sdf::boundary_rect(P2::new(0.5, 0.5)) - 0.5).abs() < 1e-15);
+    assert!(sdf::boundary_rect(P2::new(0.0, 0.5)).abs() < 1e-15);
+    assert!(sdf::boundary_rect(P2::new(-0.25, 0.5)) < 0.0);
   }
 
   #[test] fn lipschitz_shapes() {
@@ -438,12 +508,10 @@ mod tests {
     // boolean ops: min/max of L-Lipschitz fields is max(L₁, L₂)-Lipschitz
     check_2d("union", 1.0, |p| Hypersphere.translate(V2::new(0.4, 0.0))
       .union(Hypersquare.scale(0.6)).sdf(p));
-    // a `D`-generic receiver cannot infer `D` for a `Shape<T, D>` method whose
-    // return type does not mention it, hence the turbofish
-    check_2d("subtraction", 1.0, |p| Shape::<f64, 2>::subtraction(
-      Hypersquare, Hypersphere.scale(0.7).translate(V2::new(0.5, 0.5))).sdf(p));
-    check_2d("intersection", 1.0, |p| Shape::<f64, 2>::intersection(
-      Hypersphere, Hypersquare.rotate(Rotation2::new(20f64.to_radians()))).sdf(p));
+    check_2d("subtraction", 1.0, |p| Hypersquare
+      .subtraction(Hypersphere.scale(0.7).translate(V2::new(0.5, 0.5))).sdf(p));
+    check_2d("intersection", 1.0, |p| Hypersphere
+      .intersection(Hypersquare.rotate(Rotation2::new(20f64.to_radians()))).sdf(p));
     // smooth_min: ∇ = w·∇f + (1−w)·∇g with w ∈ (0, 1) — a convex combination
     check_2d("smooth_min", 1.0, |p| Hypersphere.translate(V2::new(-0.4, 0.1))
       .smooth_min(Hypersquare.scale(0.5).translate(V2::new(0.5, 0.0)), 32.0).sdf(p));
@@ -460,13 +528,12 @@ mod tests {
       .rotate(Rotation2::new(37f64.to_radians()))
       .translate(V2::new(0.3, -0.2));
     assert_eq!(chain.lipschitz(), 1.0);
-    let boolean = Shape::<f64, 2>::union(
-      Hypersphere, Shape::<f64, 2>::subtraction(Hypersquare, Ring::<f64, 2> { inner_r: 0.5 }));
+    let boolean = Hypersphere::<2>
+      .union(Hypersquare::<2>.subtraction(Ring::<f64, 2> { inner_r: 0.5 }));
     assert_eq!(Lipschitz::<f64>::lipschitz(&boolean), 1.0);
     // and one dimension up, through the N-D shapes
-    let nd = Shape::<f64, 3>::union(
-      Hypersphere::<3>.scale(0.5),
-      Shape::<f64, 3>::subtraction(Cross { thickness: 0.2 }, Kakera { width: 0.4 }));
+    let nd = Hypersphere::<3>.scale(0.5)
+      .union(Cross { thickness: 0.2 }.subtraction(Kakera { width: 0.4 }));
     assert_eq!(Lipschitz::<f64>::lipschitz(&nd), 1.0);
   }
 

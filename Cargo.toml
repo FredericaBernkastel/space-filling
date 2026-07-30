@@ -17,15 +17,16 @@ name = "space_filling"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0"
+# the distance-field layer: SDF algebra, the ADF and its tree, gradient ascent
+adaptive-distance-field = { version = "0.1.0", path = "adaptive-distance-field" }
+anyhow = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
-rand = { version = "0.10", default-features = false }
-rand_pcg = { version = "0.10" }
-rayon = "1.12"
-nalgebra = "0.35"
-num-traits = "0.2"
+rand = { workspace = true }
+rand_pcg = { workspace = true }
+rayon = { workspace = true }
+nalgebra = { workspace = true }
+num-traits = { workspace = true }
 itertools = "0.15"
-humansize = "1.1"
 
 [dev-dependencies]
 regex = "1.4"
@@ -37,6 +38,20 @@ num-complex = "0.4"
 [features]
 default = []
 drawing = ["image"]
+
+[workspace]
+members = ["adaptive-distance-field"]
+# `doc/video*` are standalone helper crates with their own workspaces
+exclude = ["doc"]
+
+# single source of truth for the versions both crates share
+[workspace.dependencies]
+nalgebra = "0.35"
+num-traits = "0.2"
+rayon = "1.12"
+anyhow = "1.0"
+rand = { version = "0.10", default-features = false }
+rand_pcg = "0.10"
 
 [profile.release]
 

@@ -1,192 +1,17 @@
+//! ADF benchmarks driven by the shape catalogue, but not by the rasterizer.
+//!
+//! All `#[ignore]`d: they are diagnostics, run on demand with
+//! `cargo test -p space-filling --release -- --ignored`.
+
 use {
-  super::*,
-  crate::{
-    geometry::{Hypersphere, Shape, P2, V2},
-    drawing,
-    sdf,
-    solver::{ADF, LineSearch},
-    util
+  space_filling::{
+    geometry::{Aabb, Combinator, Hypersphere, P2, V2},
+    sdf::{self, SDF},
+    solver::{ADF, LineSearch, Primitive},
+    util,
   },
-  anyhow::Result,
-  image::{Rgba, RgbaImage},
-  std::cell::Cell
+  std::sync::Arc,
 };
-use crate::geometry::DistPoint;
-
-#[test] fn draw_layout() -> Result<()> {
-  let mut image = RgbaImage::new(512, 512);
-  let mut adf = ADF::<f64, 2>::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
-  let domain = Aabb::unit();
-
-  let t0 = std::time::Instant::now();
-  adf.insert_sdf_domain(domain, Arc::new(|p| Hypersphere
-    .scale(0.25)
-    .translate(V2::repeat(0.5))
-    .sdf(p)
-  ));
-  adf.insert_sdf_domain(domain, Arc::new(|p| Hypersphere
-    .scale(0.125)
-    .translate(V2::repeat(0.125))
-    .sdf(p)
-  ));
-  println!("{}us", t0.elapsed().as_micros());
-
-  drawing::display_sdf(|p| adf.sdf(p), &mut image, 4.0);
-  adf.tree.draw_layout(&mut image);
-  image.save("test/test_adf.png")?;
-  Ok(())
-}
-
-// profile: 4.85s, 100k circles, adf_subdiv = 7
-#[test] #[ignore] fn gradient_adf() -> Result<()> {
-  use rand::prelude::*;
-
-  let mut image = RgbaImage::new(1024, 1024);
-  let representation = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
-  let mut primitives = vec![];
-  let trials = Cell::new(0u64);
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-
-  let t0 = std::time::Instant::now();
-
-  util::local_maxima_iter(
-    Box::new(|p: P2<f64>| representation.sdf(p)),
-    32, 0, LineSearch::default()
-  ).inspect(|_| trials.set(trials.get() + 1))
-    .filter_map(|local_max| {
-      let circle = {
-        use std::f64::consts::PI;
-
-        let angle = rng.random_range(-PI..=PI);
-        let r = (rng.random_range(1e-6..1.0f64).powf(5.0) * local_max.distance)
-          .min(1.0 / 6.0);
-        let delta = local_max.distance - r;
-        // polar to cartesian
-        let offset = V2::new(angle.cos(), angle.sin()) * delta;
-
-        Hypersphere.translate(local_max.point.coords - offset)
-          .scale(r)
-      };
-      // alternately use safe RwLock<ADF> for 1.5x slowdown
-      unsafe { representation.as_mut() }.insert_at_maximum(
-        local_max,
-        Primitive::from_shape(circle)
-      ).then(|| circle)
-    })
-    .enumerate()
-    .take(100000)
-    .for_each(|(i, c)| {
-      if i % 1000 == 0 { println!("#{}", i); };
-      primitives.push(c);
-    });
-
-  println!("profile: {}ms", t0.elapsed().as_millis());
-  // `adf_error_margin` is the fraction of located maxima whose insertion did not
-  // lower the field (`insert_at_maximum` returned `false`) — e.g. a near-duplicate
-  // maximum, or a candidate lost to the optimizer's numeric tolerance.
-  println!("adf_error_margin: {:+.3e}", trials.get() as f64 / primitives.len() as f64 - 1.0);
-  println!("{representation:#?}");
-  use {image::Pixel, drawing::Draw};
-  representation
-    .texture(image::Luma([255]).to_rgba())
-    .draw(&mut image);
-
-  image.save("test/test_adf.png")?;
-  Ok(())
-}
-
-#[test] #[ignore] fn animation() -> Result<()> {
-  use rand::prelude::*;
-  use drawing::Draw;
-
-  std::fs::create_dir("test\\anim").ok();
-
-  let mut representation = ADF::<f64, 2>::new(11, vec![Primitive::new(sdf::boundary_rect)]);
-  let mut circles = vec![];
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
-
-  let mut i = 0;
-  'main: while i < 32 {
-    let mut local_max = None;
-    for _ in 0..50 {
-      let p0 = P2::new(
-        rng.random_range(0.0..1.0),
-        rng.random_range(0.0..1.0),
-      );
-      let ret = LineSearch::default().optimize(|p| representation.sdf(p), p0);
-      let ret = DistPoint { distance: representation.sdf(ret), point: ret};
-      if ret.distance > 0.0 { local_max = Some(ret); break; }
-    };
-    let local_max = match local_max {
-      Some(r) => r,
-      None => {
-        println!("failed to find local max, breaking");
-        break 'main;
-      }
-    };
-
-    let mut image = RgbaImage::new(512, 512);
-    representation
-      .display_sdf(&mut image, 3.5)
-      .draw_bucket_weights(&mut image)
-      .tree
-      .draw_layout(&mut image);
-    image.save(format!("test/anim/#{}_0.png", i))?;
-
-
-    {
-      let mut image = image.clone();
-      Hypersphere
-        .translate(local_max.point.coords)
-        .scale(local_max.distance)
-        .texture(Rgba([0x45, 0x8F, 0xF5, 0x7F]))
-        .draw(&mut image);
-      image.save(format!("test/anim/#{}_1.png", i))?;
-    }
-
-    let circle = {
-      use std::f64::consts::PI;
-
-      let angle = rng.random_range::<f64, _>(-PI..=PI);
-      let r = (rng.random_range::<f64, _>(0.0..1.0).powf(1.0) * local_max.distance)
-        .min(1.0 / 6.0);
-      let delta = local_max.distance - r;
-      let offset = V2::new(angle.cos(), angle.sin()) * delta;
-
-      Hypersphere.translate(local_max.point.coords - offset)
-        .scale(r)
-    };
-    let domain = representation.update_domain(local_max);
-
-    circle.texture(Rgba([0x45, 0x8F, 0xF5, 0xFF]))
-      .draw(&mut image);
-
-    image.save(format!("test/anim/#{}_2.png", i))?;
-    {
-      let mut image = image.clone();
-      Hypersphere
-        .translate(local_max.point.coords)
-        .scale(local_max.distance * 4.0)
-        .texture(Rgba([0xFF, 0, 0, 0x7F]))
-        .draw(&mut image);
-      image.save(format!("test/anim/#{}_3.png", i))?;
-    }
-    representation.tree.draw_bounding(domain, &mut image);
-    image.save(format!("test/anim/#{}_4.png", i))?;
-
-    representation.insert_at_maximum(
-      local_max,
-      Primitive::from_shape(circle)
-    ).then(|| {
-      circles.push(circle);
-      i += 1;
-    });
-  };
-
-  println!("{representation:#?}");
-
-  Ok(())
-}
 
 // Mirrors `02_random_distribution`'s insertion loop at small scale, then
 // counts pairwise circle intersections exactly, in O(n²). Every circle is
@@ -199,7 +24,7 @@ use crate::geometry::DistPoint;
 #[test] #[ignore] fn bench_circle_intersections() {
   use rand::prelude::*;
   use std::f64::consts::PI;
-  use crate::geometry::VectorExt;
+  use space_filling::geometry::VectorExt;
 
   use {rayon::prelude::*, std::sync::RwLock};
 
@@ -256,92 +81,6 @@ use crate::geometry::DistPoint;
 // The whole pipeline in three dimensions: an octree-backed ADF over the unit
 // cube, N-dimensional gradient ascent, and the D*-pruned insertion walk. The
 // balls are placed at located maxima with radius d/2, so no two may ever
-// intersect — an overlap would prove a corrupted field or a broken walk.
-#[test] fn sphere_packing_3d() {
-  use rand::prelude::*;
-  use crate::geometry::VectorExt;
-
-  let mut adf = ADF::<f64, 3>::new(4, vec![Primitive::new(sdf::boundary_rect)]);
-  let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
-  let mut spheres: Vec<(crate::geometry::Point<f64, 3>, f64)> = vec![];
-
-  while spheres.len() < 100 {
-    let maxima = util::find_max_parallel(
-      |p| adf.sdf(p), 16, &mut rng, LineSearch::default());
-    for m in maxima {
-      if spheres.len() >= 100 { break; }
-      let r = m.distance / 2.0;
-      let sphere = Hypersphere.translate(m.point.coords).scale(r);
-      if adf.insert_at_maximum(m, Primitive::from_shape(sphere)) {
-        spheres.push((m.point, r));
-      }
-    }
-  }
-
-  for i in 0..spheres.len() {
-    for j in i + 1..spheres.len() {
-      let ((c1, r1), (c2, r2)) = (spheres[i], spheres[j]);
-      let gap = (c1 - c2).length() - (r1 + r2);
-      assert!(gap > -1e-9, "spheres {i} and {j} intersect by {:.3e}", -gap);
-    }
-  }
-  // and the field itself remembers them: at each centre it reads exactly -r
-  for &(c, r) in &spheres {
-    assert!((adf.sdf(c) + r).abs() < 1e-9);
-  }
-}
-
-// Constructive proof that no constant-sized insertion domain is sound for
-// local maxima. Three point-like obstacles at 90°, 210°, 330° around x0 form a
-// strict local maximum (contact gaps 120° < 180°). Along the escape bisector
-// w = 270°, the field grows as g(x0 + R·w) = √(R² − R·d + d²) ≈ R − d/2, while
-// a primitive confined to B̄(x0, d) reaches f(v) ≥ R − d — strictly below g for
-// every R (until the outer boundary caps it). Hence the update region extends
-// arbitrarily many multiples of d, and the historical 4√2·d square provably
-// leaves stale field behind; `ADF::update_domain` covers it exactly.
-#[test] fn insertion_domain() {
-  let x0 = P2::new(0.5, 0.75);
-  let d = 0.05;
-  let full = Aabb::unit();
-
-  let mut adf = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
-  for angle in [90f64, 210., 330.] {
-    let (s, c) = angle.to_radians().sin_cos();
-    let obstacle = Hypersphere.scale(1e-4).translate(x0.coords + V2::new(c, s) * d);
-    adf.insert_sdf_domain(full, Arc::new(move |p| obstacle.sdf(p)));
-  }
-
-  let local_max = DistPoint { point: x0, distance: adf.sdf(x0) };
-  // pipeline-style placement: a circle inside the maximal ball, pushed toward w
-  let r = 0.01;
-  let circle = Hypersphere.scale(r)
-    .translate(x0.coords + V2::new(0.0, -1.0) * (local_max.distance - r));
-  let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
-
-  let probe = P2::new(0.48, 0.45); // R = 6·d down the escape ray
-  let truth = f(probe).min(adf.sdf(probe));
-  assert!(f(probe) < adf.sdf(probe), "the insertion must lower the field at the probe");
-
-  { // the 4√2·d rectangle misses the probe's leaf → stale field
-    let mut adf = adf.clone();
-    #[allow(deprecated)]
-    adf.insert_sdf_domain(util::domain_empirical(local_max), f.clone());
-    assert!(adf.sdf(probe) - truth > 0.02,
-      "expected the historical constant domain to corrupt the field");
-  }
-
-  { // the adaptive domain covers D* → exact field
-    let mut adf = adf.clone();
-    adf.insert_sdf_domain(adf.update_domain(local_max), f.clone());
-    assert!((adf.sdf(probe) - truth).abs() < 1e-12);
-  }
-
-  { // the fused D*-pruned walk is exact as well
-    let mut adf = adf.clone();
-    adf.insert_at_maximum(local_max, Primitive { f: f.clone(), lipschitz: 1.0 });
-    assert!((adf.sdf(probe) - truth).abs() < 1e-12);
-  }
-}
 
 // Counts how often `insert_sdf_domain` returns `false` (the tree was not
 // changed) under realistic circle-packing insertion. A `false` means the

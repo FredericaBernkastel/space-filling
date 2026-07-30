@@ -65,6 +65,12 @@ speed/precision trade-offs, in both single and double precision.
 
 ## Implementation
 
+The distance-field machinery described below — the SDF trait algebra, the `ADF` and its `2^N`-tree, and the
+gradient ascent — lives in its own crate, [`adaptive-distance-field`](adaptive-distance-field), since none of it
+is specific to space filling. `space-filling` depends on it and adds the shape catalogue, the `Argmax2D` solver,
+batched maxima search, and 2D drawing. Both are members of one workspace, and `space-filling` re-exports the
+whole distance-field API through its own `sdf`, `geometry` and `solver` modules.
+
 Let a *primitive* be a pair `(f, L)` of a field `f` and a declared Lipschitz constant `L` (`L = 1` is exact for a
 true SDF; approximate estimators declare a larger bound). A bucket `B = {(fᵢ, Lᵢ)}` represents the field
 `g_B = min_i fᵢ`, which is `max_i Lᵢ`-Lipschitz. Shape types declare their bound through the `Lipschitz` trait —

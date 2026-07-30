@@ -1,7 +1,7 @@
 use {
   super::*,
   crate::{
-    geometry::{Hypersphere, Hypersquare, VectorExt}
+    geometry::{Combinator, Hypersphere, Hypersquare, VectorExt}
   },
   nalgebra::Rotation2,
   anyhow::Result,

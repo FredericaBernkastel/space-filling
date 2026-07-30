@@ -4,8 +4,8 @@
 use {
   space_filling::{
     solver::Argmax2D,
-    drawing::{self, Draw},
-    geometry::{Shape, BoundingBox}
+    drawing::{self, Draw, Shape},
+    geometry::BoundingBox
   },
   embedded::embedded,
   anyhow::Result,

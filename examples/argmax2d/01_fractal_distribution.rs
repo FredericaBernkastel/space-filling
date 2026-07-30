@@ -3,10 +3,10 @@
 
 use {
   space_filling::{
-    geometry::{Shape, Hypersphere},
+    geometry::{Combinator, Hypersphere},
     sdf::{self, SDF},
     solver::Argmax2D,
-    drawing::Draw,
+    drawing::{Draw, Shape},
     util
   },
   anyhow::Result,

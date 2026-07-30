@@ -1,10 +1,10 @@
 use {
   std::sync::{Arc, RwLock},
   space_filling::{
-    geometry::{Shape, Ring, Hypersquare, P2, V2},
+    geometry::{Combinator, Ring, Hypersquare, P2, V2},
     sdf::{self, SDF},
     solver::{ADF, LineSearch, Primitive},
-    drawing::{self, Draw},
+    drawing::{self, Draw, Shape},
     util
   },
   image::{RgbaImage, Rgba, Luma, Pixel, DynamicImage},
@@ -56,7 +56,9 @@ fn polymorphic(representation: &RwLock<ADF<f64, 2>>, texture: Arc<DynamicImage>)
         local_max,
         Primitive::new({
           let shape = shape.clone();
-          move |v| shape.sdf(v)
+          // `.as_ref()` reaches the trait object, which inherits `sdf` from
+          // `Shape`; `Arc` is not a fundamental type, so it carries no `SDF` impl
+          move |v| shape.as_ref().sdf(v)
         })
       ).then(|| shape)
   })
