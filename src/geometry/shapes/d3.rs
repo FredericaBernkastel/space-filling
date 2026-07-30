@@ -76,12 +76,16 @@ pub fn dodecahedron_vertices<T: Real>() -> Vec<Vector<T, 3>> {
 
 /// Regular icosahedron inscribed in the unit sphere — 20 triangular facets,
 /// whose normals are the [`dodecahedron_vertices`] (the dual).
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/icosahedron.webp" alt="z-slices of an icosahedron" width="256">
 pub fn icosahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(dodecahedron_vertices::<T>(), &icosahedron_vertices::<T>())
 }
 
 /// Regular dodecahedron inscribed in the unit sphere — 12 pentagonal facets,
 /// whose normals are the [`icosahedron_vertices`] (the dual).
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/dodecahedron.webp" alt="z-slices of a dodecahedron" width="256">
 pub fn dodecahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(icosahedron_vertices::<T>(), &dodecahedron_vertices::<T>())
 }
@@ -89,6 +93,8 @@ pub fn dodecahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
 /// Truncated octahedron — 14 facets (6 square, 8 hexagonal), the Voronoi cell
 /// of the BCC lattice, and one of the few polyhedra that **tiles 3-space
 /// alone**.
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/truncated_octahedron.webp" alt="z-slices of a truncated octahedron" width="256">
 ///
 /// Vertices are all permutations of `(0, ±1, ±2)`; facet normals are the 6 axis
 /// directions and the 8 cube diagonals. Identical up to scale to the 3D
@@ -110,6 +116,8 @@ pub fn truncated_octahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
 /// Rhombic dodecahedron — 12 rhombic facets, the Voronoi cell of the FCC
 /// lattice, and the other polyhedron that **tiles 3-space alone**.
 ///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/rhombic_dodecahedron.webp" alt="z-slices of a rhombic dodecahedron" width="256">
+///
 /// Vertices are `(±1, ±1, ±1)` together with `(±2, 0, 0)` and its permutations
 /// — two orbits at different radii, so only the six axial vertices reach the
 /// unit sphere. Facet normals are the 12 permutations of `(±1, ±1, 0)`.
@@ -128,6 +136,8 @@ pub fn rhombic_dodecahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
 
 /// A `(p, q)` torus knot, sampled into a closed [`Polyline`] of `segments`
 /// capsules.
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/torus_knot.webp" alt="z-slices of a (2,3) torus knot" width="256">
 ///
 /// The knot winds `p` times around the torus's axis while looping `q` times
 /// through its hole; `(2, 3)` is the trefoil. Curves like this have no

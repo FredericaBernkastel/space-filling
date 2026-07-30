@@ -1,0 +1,31 @@
+# Doc-asset generator: samples every shape and combinator's real signed distance
+# field onto a grid and dumps the raw values. `encode.py` then colours them with
+# the same ramp the explainer video uses and writes doc/shapes/*.webp.
+#
+# Not part of either library — it exists so the images in the API docs are
+# generated from the actual fields rather than drawn by hand. To regenerate:
+#
+#     cd doc/shape_gallery && cargo run --release
+#     cd ../video && uv run python ../shape_gallery/encode.py
+#
+# The first step leaves ~550 MiB of raw f32 grids in doc/shapes/_raw; delete it
+# once the second step has consumed them.
+[package]
+name = "shape-gallery"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "shape-gallery"
+path = "src/main.rs"
+
+[dependencies]
+space-filling = { path = "../.." }
+adaptive-distance-field = { path = "../../adaptive-distance-field" }
+nalgebra = "0.35"
+rayon = "1.12"
+anyhow = "1.0"
+
+# own workspace root, so cargo does not attach this to the parent
+[workspace]

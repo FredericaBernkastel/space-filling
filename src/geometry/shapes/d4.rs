@@ -111,6 +111,8 @@ pub fn cell_120_vertices<T: Real>() -> Vec<Vector<T, 4>> {
 /// The **24-cell** inscribed in the unit sphere — 24 octahedral facets, and the
 /// Voronoi cell of the `D₄` lattice, so it tiles 4-space.
 ///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_24.webp" alt="slices of a 24-cell along its fourth axis" width="256">
+///
 /// Self-dual: its 24 facet normals are the 8 axis directions and the 16
 /// half-diagonals — which is the same set of 24 directions as its vertices, up
 /// to the rotation that carries the polytope to its dual.
@@ -129,12 +131,16 @@ pub fn cell_24<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
 
 /// The **120-cell** inscribed in the unit sphere — 120 dodecahedral facets,
 /// whose normals are the [`cell_600_vertices`] (the dual).
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_120.webp" alt="slices of a 120-cell along its fourth axis" width="256">
 pub fn cell_120<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
   convex_hull(cell_600_vertices::<T>(), &cell_120_vertices::<T>())
 }
 
 /// The **600-cell** inscribed in the unit sphere — 600 tetrahedral facets,
 /// whose normals are the [`cell_120_vertices`] (the dual).
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_600.webp" alt="slices of a 600-cell along its fourth axis" width="256">
 ///
 /// The most expensive shape in the crate to evaluate: 600 half-spaces per
 /// sample. Consider baking it if you need it in a hot loop.
@@ -145,6 +151,8 @@ pub fn cell_600<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
 /// Duocylinder: the product of two discs, `‖p₀₁‖ ≤ r1` and `‖p₂₃‖ ≤ r2` — a
 /// shape that needs a 2 + 2 split of the axes and so exists only in 4D.
 ///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/duocylinder.webp" alt="slices of a duocylinder, morphing from a disc to a rectangle as the slicing plane tilts from one factor into the other" width="256">
+///
 /// A thin wrapper over [`ProductBall`], hence the exact signed distance and
 /// 1-Lipschitz. Its boundary is two 3-manifolds meeting along the
 /// [`CliffordTorus`].
@@ -154,6 +162,8 @@ pub fn duocylinder<T: Real>(r1: T, r2: T) -> ProductBall<[(usize, T); 2]> {
 
 /// Clifford torus: the flat 2-torus `‖p₀₁‖ = r1`, `‖p₂₃‖ = r2`, given
 /// `thickness` — the ridge where the [`duocylinder`]'s two boundary pieces meet.
+///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/clifford_torus.webp" alt="slices of a Clifford torus, morphing from an annulus into four blobs as the slicing plane tilts from one factor into the other" width="256">
 ///
 /// `sdf(p) = ‖(‖p₀₁‖ - r1, ‖p₂₃‖ - r2)‖ - thickness/2`, the **exact** signed
 /// distance: the nearest point is found by moving each 2-block radially to its

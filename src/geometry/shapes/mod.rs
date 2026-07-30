@@ -22,6 +22,15 @@
 //! `geometry::shapes::dn::Hypersphere` name the same type — import from this
 //! module unless you deliberately want to restrict yourself to one tier.
 //!
+//! # Reading the pictures
+//!
+//! Every shape below carries a plot of its own field, generated from that field
+//! rather than drawn by hand (`doc/shape_gallery`). Brightness rises with the
+//! distance, so the interior is dark and far-away maxima glow; thin contour lines
+//! mark every 0.12 units, and the white line is the zero level — the shape's
+//! actual boundary. Shapes with no analogue in the plane are shown as an animated
+//! stack of 2D slices through the real N-dimensional field.
+//!
 //! # Building shapes out of shapes
 //!
 //! The catalogue above is deliberately small, because most interesting shapes

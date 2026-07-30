@@ -60,6 +60,8 @@ impl <S, T, const D: usize> SDF<T, D> for Scale<S, T>
 
 /// Distance to the walls of the unit hypercube `[0, 1]^D`, positive inside.
 ///
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/boundary_rect.webp" alt="the walls of the unit square, positive inside" width="256">
+///
 /// The negation of the exact cube SDF centred on `(½, …, ½)`, written out rather
 /// than composed from a shape so that it stands alone: this is the canonical
 /// seed for an [`ADF`](crate::adf::ADF), and the shape catalogue is a layer

@@ -208,8 +208,17 @@ pub trait BoundingBox<T: Scalar, const D: usize> {
 /// on unrelated types. That is why [`Aabb`] calls its set operations
 /// [`merge`](Aabb::merge) and [`clip`](Aabb::clip), and why
 /// `num_complex::Complex::scale` needs UFCS when this trait is in scope.
+///
+/// Each method below is illustrated with a plot of the field it actually
+/// produces, generated from that field rather than drawn by hand. Brightness
+/// rises with the distance, so the interior is dark and far-away maxima glow;
+/// thin contour lines mark every 0.12 units, and the white line is the zero
+/// level. The two dimension-changing combinators, and the 3D rotation, are shown
+/// as an animated stack of 2D slices through the result.
 pub trait Combinator: Sized {
   /// Translate by `offset`.
+  ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/translation.webp" alt="a square moved off the origin" width="256">
   ///
   /// `sdf'(p) = sdf(p - offset)` — precomposition with an isometry; preserves
   /// the Lipschitz constant exactly.
@@ -220,6 +229,9 @@ pub trait Combinator: Sized {
   /// Rotate around the center of the shape's bounding box; any
   /// [`nalgebra::Rotation`] — for 2D, `Rotation2::new(angle)`.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/rotation.webp" alt="a rectangle turned 30 degrees" width="256">
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/rotation_3d.webp" alt="z-slices of a box under a 3D rotation" width="256">
+  ///
   /// `sdf'(p) = sdf(R(p - c) + c)` — precomposition with an isometry;
   /// preserves the Lipschitz constant exactly.
   fn rotate<T: Scalar, const D: usize>(self, rotation: NaRotation<T, D>)
@@ -227,6 +239,8 @@ pub trait Combinator: Sized {
     Rotation { shape: self, rotation }
   }
   /// Scale around the center of shape's bounding box.
+  ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/scale.webp" alt="a pentagram at 0.55 scale" width="256">
   ///
   /// `sdf'(p) = s · sdf((p - c)/s + c)` — the value re-scale cancels the
   /// coordinate re-scale (`s·L·δ/s = L·δ`), preserving the Lipschitz constant
@@ -237,6 +251,8 @@ pub trait Combinator: Sized {
   }
   /// Union of two SDFs.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/union.webp" alt="a disc and a square merged" width="256">
+  ///
   /// `sdf'(p) = min(s1, s2)` — exact in free space, underestimates interior
   /// depth where the operands overlap; `max(L₁, L₂)`-Lipschitz, since `min`
   /// of Lipschitz fields never steepens.
@@ -246,6 +262,8 @@ pub trait Combinator: Sized {
   /// Subtraction of two SDFs. Note that this operation is *not* commutative,
   /// i.e. `Subtraction {a, b} =/= Subtraction {b, a}`.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/subtraction.webp" alt="a square carved out of a disc" width="256">
+  ///
   /// `sdf'(p) = max(s1, -s2)` — a conservative bound of the true distance
   /// (an underestimate near the carved boundary), not the exact SDF;
   /// negation and `max` both preserve constants, so `max(L₁, L₂)`-Lipschitz.
@@ -254,6 +272,8 @@ pub trait Combinator: Sized {
   }
   /// Intersection of two SDFs.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/intersection.webp" alt="the overlap of a disc and a square" width="256">
+  ///
   /// `sdf'(p) = max(s1, s2)` — a conservative bound (underestimates the
   /// distance outside re-entrant corners), not the exact SDF;
   /// `max(L₁, L₂)`-Lipschitz.
@@ -261,6 +281,8 @@ pub trait Combinator: Sized {
     Intersection { s1: self, s2: other }
   }
   /// Takes the minimum of two SDFs, smoothing between them when they are close.
+  ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/smooth_min.webp" alt="a disc and a square blended at k = 8" width="256">
   ///
   /// `k` controls the radius/distance of the smoothing. 32 is a good default value.
   ///
@@ -275,6 +297,8 @@ pub trait Combinator: Sized {
   /// Hollow the shape out into a `2·half_width`-thick shell around its
   /// boundary: `sdf'(p) = |sdf(p)| - half_width`.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/shell.webp" alt="a square frame" width="256">
+  ///
   /// Turns any solid into a surface: an annulus from a disc, a frame from a cube,
   /// a thickened sheet from an implicit surface. `|·|` is 1-Lipschitz, so the
   /// constant is preserved exactly, and the result is the exact signed distance
@@ -283,6 +307,8 @@ pub trait Combinator: Sized {
     Shell { shape: self, half_width }
   }
   /// Grow the shape by `radius` in every direction: `sdf'(p) = sdf(p) - radius`.
+  ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/offset.webp" alt="a cross with rounded corners" width="256">
   ///
   /// Rounds off corners, since the offset surface of a corner is a sphere arc —
   /// the standard way to get a rounded box, rounded cross or rounded polytope.
@@ -300,6 +326,8 @@ pub trait Combinator: Sized {
   /// Lift a `(D-1)`-dimensional shape into `D` dimensions by giving it
   /// `2·half_height` of thickness along the last axis — a prism.
   ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/extrude.webp" alt="slices of a pentagram prism" width="256">
+  ///
   /// The field is the box construction with the base field standing in for one
   /// axis, so it is the exact signed distance whenever the base's is, and
   /// `max(L, 1)`-Lipschitz (base and axial terms act on disjoint axes, so their
@@ -313,6 +341,8 @@ pub trait Combinator: Sized {
   }
   /// Sweep a 2D profile around axis 0, offset `radius` from it — a solid of
   /// revolution in any dimension.
+  ///
+  /// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/revolve.webp" alt="a pentagram profile revolved into a ring, sliced by a plane through the axis" width="256">
   ///
   /// `self` is read as a profile in the `(axial, radial)` half-plane: its `x`
   /// is the coordinate along the axis of revolution, its `y` the distance from

@@ -11,3 +11,5 @@
 /doc/video/assets/bourke_zoom.png
 /doc/video/scene10_ae
 *.blend
+/doc/shape_gallery/target
+/doc/shape_gallery/Cargo.lock
