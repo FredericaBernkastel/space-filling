@@ -1,6 +1,9 @@
 use {
   crate::{
-    geometry::{self, Point, Vector, Real, Aabb, Shape, Rotation, Scale, Translation, BoundingBox},
+    geometry::{
+      self, Point, Vector, Real, Aabb, Shape, Rotation, Scale, Translation,
+      BoundingBox, VectorExt, P2, V2
+    },
   },
   nalgebra::Scalar,
   num_traits::Float,
@@ -204,4 +207,157 @@ impl<T, S1, S2> Lipschitz<T> for SmoothMin<T, S1, S2>
         S2: Lipschitz<T> {
   fn lipschitz(&self) -> T {
     self.s1.lipschitz().max(self.s2.lipschitz())
+  }}
+
+/// Hollow shape: the `half_width`-thick shell around another shape's boundary.
+/// See [`Combinator::shell`](crate::geometry::Combinator::shell); `L`-Lipschitz, exactly as its operand.
+#[derive(Clone, Copy, Debug)]
+pub struct Shell<S, T> {
+  pub shape: S,
+  pub half_width: T
+}
+
+impl<T, S, const D: usize> SDF<T, D> for Shell<S, T>
+  where T: Real,
+        S: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    self.shape.sdf(pixel).abs() - self.half_width
+  }}
+
+impl<T, S, const D: usize> BoundingBox<T, D> for Shell<S, T>
+  where T: Real,
+        S: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    // the shell reaches `half_width` outward from the original surface
+    self.shape.bounding_box().inflate(self.half_width)
+  }}
+
+impl<T, S> Lipschitz<T> for Shell<S, T>
+  where T: Float,
+        S: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.shape.lipschitz()
+  }}
+
+/// Uniformly grown (or shrunk) shape — rounded corners for free.
+/// See [`Combinator::offset`](crate::geometry::Combinator::offset); `L`-Lipschitz, exactly as its operand.
+#[derive(Clone, Copy, Debug)]
+pub struct Offset<S, T> {
+  pub shape: S,
+  pub radius: T
+}
+
+impl<T, S, const D: usize> SDF<T, D> for Offset<S, T>
+  where T: Real,
+        S: SDF<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    self.shape.sdf(pixel) - self.radius
+  }}
+
+impl<T, S, const D: usize> BoundingBox<T, D> for Offset<S, T>
+  where T: Real,
+        S: BoundingBox<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    self.shape.bounding_box().inflate(self.radius)
+  }}
+
+impl<T, S> Lipschitz<T> for Offset<S, T>
+  where T: Float,
+        S: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.shape.lipschitz()
+  }}
+
+/// A `(D−1)`-dimensional shape given thickness along the last axis — a prism.
+/// See [`Combinator::extrude`](crate::geometry::Combinator::extrude).
+///
+/// Implemented for base/target dimension pairs up to `(5, 6)`; `max(L, 1)`-Lipschitz.
+#[derive(Clone, Copy, Debug)]
+pub struct Extrude<S, T> {
+  pub shape: S,
+  pub half_height: T
+}
+
+macro_rules! impl_extrude {($(($base:literal, $dim:literal))*) => {$(
+  impl<T, S> SDF<T, $dim> for Extrude<S, T>
+    where T: Real,
+          S: SDF<T, $base> {
+    fn sdf(&self, pixel: Point<T, $dim>) -> T {
+      // exactly the box construction, with the base field standing in for one
+      // of the two axes: exact whenever the base field is
+      let base: Point<T, $base> = Point::from(std::array::from_fn(|a| pixel[a]));
+      let w = V2::new(
+        self.shape.sdf(base),
+        pixel[$dim - 1].abs() - self.half_height);
+      let outside = V2::new(w.x.max(T::zero()), w.y.max(T::zero())).length();
+      let inside = w.x.max(w.y).min(T::zero());
+      outside + inside
+    }}
+
+  impl<T, S> BoundingBox<T, $dim> for Extrude<S, T>
+    where T: Real,
+          S: BoundingBox<T, $base> {
+    fn bounding_box(&self) -> Aabb<T, $dim> {
+      let b = self.shape.bounding_box();
+      let (mut min, mut max) = ([T::zero(); $dim], [T::zero(); $dim]);
+      for a in 0..$base {
+        min[a] = b.min[a];
+        max[a] = b.max[a];
+      }
+      min[$dim - 1] = -self.half_height;
+      max[$dim - 1] = self.half_height;
+      Aabb::new(Point::from(min), Point::from(max))
+    }}
+)*}}
+impl_extrude!((1, 2) (2, 3) (3, 4) (4, 5) (5, 6));
+
+impl<T, S> Lipschitz<T> for Extrude<S, T>
+  where T: Float,
+        S: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    // the base field and the `|p_last| − h` term act on disjoint axes, so their
+    // gradients are orthogonal and the combined bound is the larger of the two
+    self.shape.lipschitz().max(T::one())
+  }}
+
+/// A 2D profile swept around axis 0 — a solid of revolution, offset `radius`
+/// from the axis. See [`Combinator::revolve`](crate::geometry::Combinator::revolve); `L`-Lipschitz, exactly as its operand.
+#[derive(Clone, Copy, Debug)]
+pub struct Revolve<S, T> {
+  pub shape: S,
+  pub radius: T
+}
+
+impl<T, S, const D: usize> SDF<T, D> for Revolve<S, T>
+  where T: Real,
+        S: SDF<T, 2> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    // (axial, radial − radius); the reduction is exact and 1-Lipschitz, see
+    // `geometry::shapes::dn::revolve`
+    let radial = (1..D)
+      .fold(T::zero(), |acc, a| acc + pixel[a] * pixel[a])
+      .sqrt();
+    self.shape.sdf(P2::new(pixel[0], radial - self.radius))
+  }}
+
+impl<T, S, const D: usize> BoundingBox<T, D> for Revolve<S, T>
+  where T: Real,
+        S: BoundingBox<T, 2> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    let b = self.shape.bounding_box();
+    // the profile's radial span, shifted out by `radius`, sweeps a disc of this
+    // radius across every axis but the first
+    let reach = (b.min[1] + self.radius).abs()
+      .max((b.max[1] + self.radius).abs());
+    let (mut min, mut max) = ([-reach; D], [reach; D]);
+    min[0] = b.min[0];
+    max[0] = b.max[0];
+    Aabb::new(Point::from(min), Point::from(max))
+  }}
+
+impl<T, S> Lipschitz<T> for Revolve<S, T>
+  where T: Float,
+        S: Lipschitz<T> {
+  fn lipschitz(&self) -> T {
+    self.shape.lipschitz()
   }}

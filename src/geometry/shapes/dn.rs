@@ -381,3 +381,447 @@ impl<T: Float> Lipschitz<T> for Moon<T> { fn lipschitz(&self) -> T { T::one() } 
 impl<T: Float> Lipschitz<T> for Kakera<T> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float> Lipschitz<T> for Cross<T> { fn lipschitz(&self) -> T { T::one() } }
 impl<T: Float, U> Lipschitz<T> for Polytope<U> { fn lipschitz(&self) -> T { T::one() } }
+
+/// The convex hull of `vertices`, expressed as the intersection of the
+/// half-spaces with the given facet `normals` — an H-representation built from
+/// a V-representation.
+///
+/// Each offset is the *support function* `h(n) = max_v n·v`, which is by
+/// definition the hull's supporting plane in direction `n`; supply every facet
+/// normal (typically the vertex directions of the dual polytope) and the result
+/// is exactly the hull, while too few normals yield a superset. Normals are
+/// normalized for you, so the field is 1-Lipschitz.
+pub fn convex_hull<T: Real, const D: usize>(
+  normals: impl IntoIterator<Item = Vector<T, D>>,
+  vertices: &[Vector<T, D>],
+) -> Polytope<Vec<HalfSpace<T, D>>> {
+  let half_spaces = normals.into_iter()
+    .map(|n| {
+      let normal = n.robust_normalize();
+      let offset = vertices.iter()
+        .fold(T::neg_infinity(), |acc, v| acc.max(normal.dot(v)));
+      HalfSpace { normal, offset }
+    })
+    .collect();
+  Polytope { half_spaces }
+}
+
+/// Scale `vertices` so the farthest lands on the unit sphere, following this
+/// module's unit-shape convention.
+pub(crate) fn unit_circumradius<T: Real, const D: usize>(vertices: &mut [Vector<T, D>]) {
+  let far = vertices.iter().fold(T::zero(), |acc, v| acc.max(v.length()));
+  if far > T::zero() {
+    for v in vertices.iter_mut() { *v /= far; }
+  }
+}
+
+/// Visit every permutation of `slots`, reporting whether it is *even*.
+///
+/// A recursive selection walk with explicit swap counting — the vertex orbits of
+/// the exceptional 4-polytopes are defined over even permutations only, so
+/// unambiguous parity matters more here than speed (`n ≤ 6`).
+pub(crate) fn permutations<T: Copy>(slots: &[T], visit: &mut impl FnMut(&[T], bool)) {
+  fn walk<T: Copy>(
+    buf: &mut [T],
+    pos: usize,
+    swaps: usize,
+    visit: &mut impl FnMut(&[T], bool),
+  ) {
+    if pos + 1 >= buf.len() {
+      visit(buf, swaps % 2 == 0);
+      return;
+    }
+    for j in pos..buf.len() {
+      buf.swap(pos, j);
+      walk(buf, pos + 1, swaps + (j != pos) as usize, visit);
+      buf.swap(pos, j);
+    }
+  }
+  let mut buf = slots.to_vec();
+  walk(&mut buf, 0, 0, visit);
+}
+
+/// Every sign assignment of the non-zero entries of `pattern`, appended to
+/// `out` — the other half of an orbit generator.
+pub(crate) fn sign_orbit<T: Real, const D: usize>(
+  pattern: &[T],
+  out: &mut Vec<Vector<T, D>>,
+) {
+  let flippable: Vec<usize> = (0..D).filter(|&a| pattern[a] != T::zero()).collect();
+  for bits in 0..1u32 << flippable.len() {
+    let mut v = Vector::<T, D>::from_fn(|a, _| pattern[a]);
+    for (i, &a) in flippable.iter().enumerate() {
+      if bits >> i & 1 == 1 { v[a] = -v[a]; }
+    }
+    out.push(v);
+  }
+}
+
+/// All permutations (or only the even ones) of `pattern`, with every sign
+/// assignment — the standard way regular-polytope vertex orbits are tabulated.
+pub(crate) fn orbit<T: Real, const D: usize>(
+  pattern: [T; D],
+  even_only: bool,
+  out: &mut Vec<Vector<T, D>>,
+) {
+  permutations(&pattern, &mut |perm, even| {
+    if even_only && !even { return; }
+    sign_orbit(perm, out);
+  });
+  // permutations of a pattern with repeated entries collide, and so do sign
+  // flips of a zero; both leave duplicates, which are harmless for a support
+  // function but wasteful as half-spaces
+  dedup_directions(out);
+}
+
+/// Drop duplicate vectors (within a tight tolerance), preserving order.
+pub(crate) fn dedup_directions<T: Real, const D: usize>(v: &mut Vec<Vector<T, D>>) {
+  let eps = T::from(1e-9).unwrap();
+  let mut kept: Vec<Vector<T, D>> = Vec::with_capacity(v.len());
+  for &candidate in v.iter() {
+    if !kept.iter().any(|k| (k - candidate).length() < eps) {
+      kept.push(candidate);
+    }
+  }
+  *v = kept;
+}
+
+/// The `D+1` unit vertex directions of a regular simplex: pairwise dot `-1/D`,
+/// summing to zero.
+///
+/// Built by projecting the standard simplex `{e₀ … e_D} ⊂ ℝ^(D+1)` onto the
+/// hyperplane orthogonal to `(1,…,1)` through the Helmert basis, whose `k`-th
+/// row is `(1,…,1,-(k+1),0,…,0)/√((k+1)(k+2))`. Those rows are orthonormal, so
+/// the projection is an isometry and regularity survives it.
+pub fn simplex_vertices<T: Real, const D: usize>() -> Vec<Vector<T, D>> {
+  (0..=D)
+    .map(|i| Vector::<T, D>::from_fn(|k, _| {
+      let k1 = T::from(k + 1).unwrap();
+      let denom = (k1 * (k1 + T::one())).sqrt();
+      if i <= k { T::one() / denom }
+      else if i == k + 1 { -k1 / denom }
+      else { T::zero() }
+    }).robust_normalize())
+    .collect()
+}
+
+/// Regular simplex inscribed in the unit sphere — triangle, tetrahedron,
+/// 5-cell and onward — as a [`Polytope`] of `D+1` half-spaces.
+///
+/// The facet opposite each vertex has that vertex's direction as its *inward*
+/// normal and, at unit circumradius, sits `1/D` from the centre. Exact inside,
+/// conservative outside, 1-Lipschitz (see [`Polytope`]); round it with
+/// [`Combinator::offset`] to be exact everywhere.
+pub fn simplex<T: Real, const D: usize>() -> Polytope<Vec<HalfSpace<T, D>>> {
+  let verts = simplex_vertices::<T, D>();
+  convex_hull(verts.iter().map(|v| v.map(|x| -x)), &verts)
+}
+
+/// Permutohedron: the Voronoi cell of the `A_D*` lattice, and a polytope that
+/// **tiles space by translation** in every dimension — a hexagon in 2D, the
+/// [`truncated_octahedron`](super::d3::truncated_octahedron) in 3D.
+///
+/// It is the convex hull of all permutations of `(0, 1, …, D)`, which lives in
+/// the hyperplane `Σx = const` of `ℝ^(D+1)`; this returns its isometric image in
+/// `ℝ^D` (the same Helmert projection as [`simplex_vertices`]), scaled to unit
+/// circumradius. Facets are indexed by the proper non-empty subsets of the
+/// `D+1` coordinates, so there are `2^(D+1) - 2` of them: 6 in 2D, 14 in 3D,
+/// 30 in 4D.
+///
+/// Exact inside, conservative outside, 1-Lipschitz. Enumerates `(D+1)!`
+/// vertices, so keep `D` modest.
+pub fn permutohedron<T: Real, const D: usize>() -> Polytope<Vec<HalfSpace<T, D>>> {
+  // Helmert row `k` of the projection ℝ^(D+1) → ℝ^D; also centres its argument,
+  // since the component along (1,…,1) is annihilated
+  let project = |w: &[T]| Vector::<T, D>::from_fn(|k, _| {
+    let k1 = T::from(k + 1).unwrap();
+    let denom = (k1 * (k1 + T::one())).sqrt();
+    let head = (0..=k).fold(T::zero(), |acc, i| acc + w[i]);
+    (head - k1 * w[k + 1]) / denom
+  });
+
+  let ladder: Vec<T> = (0..=D).map(|i| T::from(i).unwrap()).collect();
+  let mut vertices = vec![];
+  permutations(&ladder, &mut |perm, _| vertices.push(project(perm)));
+  unit_circumradius(&mut vertices);
+
+  let normals = (1..(1u32 << (D + 1)) - 1).map(|mask| {
+    let indicator: Vec<T> = (0..=D)
+      .map(|i| if mask >> i & 1 == 1 { T::one() } else { T::zero() })
+      .collect();
+    project(&indicator)
+  });
+  convex_hull(normals, &vertices)
+}
+
+/// Cross-polytope (the `ℓ¹` ball): the hypercube's dual — a rhombus in 2D, an
+/// octahedron in 3D, the 16-cell in 4D. Any dimension; defaults to 2.
+///
+/// `sdf(p) = (Σ|pₐ| - 1)/√D`, the closed form of the maximum over all `2^D`
+/// facet planes `(±1,…,±1)/√D`, so this costs `O(D)` where the equivalent
+/// [`Polytope`] would cost `O(2^D)`. Exact in the interior and beside each
+/// facet, an underestimate past an edge or vertex; 1-Lipschitz, its gradient
+/// being the unit vector `(±1,…,±1)/√D`.
+#[derive(Debug, Copy, Clone)]
+pub struct Orthoplex<const D: usize = 2>;
+
+impl<T: Real, const D: usize> BoundingBox<T, D> for Orthoplex<D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
+
+impl<T: Real, const D: usize> SDF<T, D> for Orthoplex<D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let l1 = pixel.coords.iter().fold(T::zero(), |acc, &x| acc + x.abs());
+    (l1 - T::one()) / T::from(D).unwrap().sqrt()
+  }
+}
+
+/// Unit `ℓᵖ` ball — the superellipsoid / Lamé family `{ p : ‖p‖_p ≤ 1 }`.
+///
+/// Interpolates a whole family of rounded boxes: `p = 1` is the [`Orthoplex`],
+/// `p = 2` the [`Hypersphere`], and `p → ∞` approaches the [`Hypersquare`];
+/// `p` between 4 and 8 gives the "squircle" look that reads especially well in
+/// volumetric renders.
+///
+/// `sdf(p) = ‖p‖_p - 1`. Not the exact Euclidean distance, but an honest
+/// *underestimate*, since any `L`-Lipschitz function vanishing on the boundary
+/// satisfies `|f| ≤ L·dist`. The constant follows from the triangle inequality
+/// and the comparison of `ℓᵖ` norms,
+///
+/// ```text
+/// |f(x) - f(y)| ≤ ‖x - y‖_p ≤ D^max(0, 1/p - 1/2) · ‖x - y‖₂,
+/// ```
+///
+/// so the field is **1-Lipschitz for `p ≥ 2`**, and `D^(1/p - 1/2)`-Lipschitz
+/// for `1 ≤ p < 2`; the [`Lipschitz`] impl reports whichever applies.
+///
+/// Requires `p ≥ 1`. Below 1 the "ball" turns star-shaped and tempting, but
+/// `‖·‖_p` is no longer a norm and its gradient blows up like `|xₐ|^(p-1)` at
+/// the axes — an unbounded gradient admits no honest Lipschitz constant at all,
+/// which would make the ADF's pruning unsound rather than merely imprecise.
+#[derive(Debug, Copy, Clone)]
+pub struct LpBall<T, const D: usize = 2> {
+  pub p: T
+}
+
+impl<T: Real, const D: usize> BoundingBox<T, D> for LpBall<T, D> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
+
+impl<T: Real, const D: usize> SDF<T, D> for LpBall<T, D> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let sum = pixel.coords.iter()
+      .fold(T::zero(), |acc, &x| acc + x.abs().powf(self.p));
+    sum.powf(T::one() / self.p) - T::one()
+  }
+}
+
+/// Chain of round-capped segments through `vertices` — one capsule per
+/// consecutive pair, in any dimension.
+///
+/// `sdf(p) = minᵢ dist(p, [vᵢ, vᵢ₊₁]) - thickness/2`: exact outside, since the
+/// distance to a union is the minimum of the distances, and an underestimate of
+/// the interior depth where consecutive capsules overlap — exactly as
+/// [`Shape::union`](crate::geometry::Shape::union). 1-Lipschitz. Fewer than two
+/// vertices gives the constant "no shape" field.
+///
+/// Useful for skeletal and filamentary structures, and for curves with no
+/// closed-form distance, which can be sampled into a polyline instead — see
+/// [`torus_knot`](super::d3::torus_knot).
+#[derive(Debug, Copy, Clone)]
+pub struct Polyline<U, T> {
+  pub vertices: U,
+  pub thickness: T
+}
+
+impl<T, U, const D: usize> BoundingBox<T, D> for Polyline<U, T>
+  where T: Real,
+        U: AsRef<[Point<T, D>]> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    let two = T::one() + T::one();
+    Aabb::from_points(self.vertices.as_ref().iter().copied())
+      .inflate(self.thickness / two)
+  }}
+
+impl<T, U, const D: usize> SDF<T, D> for Polyline<U, T>
+  where T: Real,
+        U: AsRef<[Point<T, D>]> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let v = self.vertices.as_ref();
+    let two = T::one() + T::one();
+    if v.len() < 2 {
+      return T::max_value() / two;
+    }
+    let mut best = T::max_value();
+    for w in v.windows(2) {
+      let ba = w[1] - w[0];
+      let pa = pixel - w[0];
+      let h = clamp(pa.dot(&ba) / ba.dot(&ba), T::zero(), T::one());
+      best = best.min((pa - ba * h).length());
+    }
+    best - self.thickness / two
+  }
+}
+
+/// Cartesian product of balls over a partition of the axes: `spec` lists
+/// `(block length, radius)` for consecutive runs, which should sum to `D`.
+///
+/// One type covers a family. In 3D, `[(2, r), (1, h)]` is a cylinder and
+/// `[(1, a), (1, b), (1, c)]` a box, so [`Hyperrect`] is the all-ones case; in
+/// 4D, `[(2, r₁), (2, r₂)]` is the **duocylinder** and `[(3, r), (1, h)]` the
+/// spherinder.
+///
+/// The field is the box construction applied to the per-block radial excesses
+/// `qᵢ = ‖p_Bᵢ‖ - rᵢ`, namely `min(max qᵢ, 0) + ‖max(q, 0)‖` — the **exact**
+/// signed distance, because the nearest point is reached by clamping each
+/// block's radius independently, and 1-Lipschitz since the blocks act on
+/// disjoint axes.
+///
+/// Blocks are contiguous; [`rotate`](crate::geometry::Shape::rotate) the shape
+/// if you need interleaved axes.
+#[derive(Debug, Copy, Clone)]
+pub struct ProductBall<U> {
+  pub spec: U
+}
+
+impl<T, U, const D: usize> BoundingBox<T, D> for ProductBall<U>
+  where T: Real,
+        U: AsRef<[(usize, T)]> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    let mut half = Vector::<T, D>::repeat(T::zero());
+    let mut axis = 0;
+    for &(len, radius) in self.spec.as_ref() {
+      for _ in 0..len {
+        if axis < D { half[axis] = radius; }
+        axis += 1;
+      }
+    }
+    Aabb::new(Point::from(half.map(|x| -x)), Point::from(half))
+  }}
+
+impl<T, U, const D: usize> SDF<T, D> for ProductBall<U>
+  where T: Real,
+        U: AsRef<[(usize, T)]> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let mut outside = T::zero();        // Σ max(qᵢ, 0)²
+    let mut inside = T::neg_infinity(); // max qᵢ
+    let mut axis = 0;
+    for &(len, radius) in self.spec.as_ref() {
+      let mut sq = T::zero();
+      for _ in 0..len {
+        if axis < D { sq = sq + pixel[axis] * pixel[axis]; }
+        axis += 1;
+      }
+      let q = sq.sqrt() - radius;
+      inside = inside.max(q);
+      let e = q.max(T::zero());
+      outside = outside + e * e;
+    }
+    outside.sqrt() + inside.min(T::zero())
+  }
+}
+
+/// Solid torus: a disc of radius `minor` swept around axis 0 at distance
+/// `major` — defined in any dimension, and equal to
+/// `Hypersphere.scale(minor).revolve(major)`.
+///
+/// `sdf(p) = ‖(|p₁..p_D| - major, p₀)‖ - minor`, the exact signed distance while
+/// `major ≥ minor` keeps the swept disc clear of the axis. A smaller `major`
+/// makes the torus pass through itself and the field becomes a conservative
+/// underestimate near the axis; 1-Lipschitz either way.
+///
+/// Degenerates gracefully: in 2D the "torus" is the pair of discs at
+/// `(0, ±major)`, which is what sweeping a one-dimensional radial coordinate
+/// gives.
+#[derive(Debug, Copy, Clone)]
+pub struct Torus<T> {
+  pub major: T,
+  pub minor: T
+}
+
+impl<T: Real, const D: usize> BoundingBox<T, D> for Torus<T> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    let mut half = Vector::<T, D>::repeat(self.major + self.minor);
+    half[0] = self.minor;
+    Aabb::new(Point::from(half.map(|x| -x)), Point::from(half))
+  }}
+
+impl<T: Real, const D: usize> SDF<T, D> for Torus<T> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let q = revolve(pixel);
+    V2::new(q.y - self.major, q.x).length() - self.minor
+  }
+}
+
+/// Gyroid: the triply-periodic minimal surface `Σ sin(k·xₐ)·cos(k·xₐ₊₁)`, and
+/// in any dimension its cyclic analogue.
+///
+/// The shape is one of the two interpenetrating labyrinths, `{f ≤ 0}` — a
+/// genuine solid filling half of space. [`Combinator::shell`]
+/// turns it into the thickened *surface* instead: a single connected sheet
+/// winding through space, which makes a far more interesting ADF workload than
+/// a bag of balls.
+///
+/// ```
+/// # use space_filling::{geometry::*, sdf::SDF};
+/// // spelled out because a `shell(..)` wrapper names neither the scalar nor the
+/// // dimension, and `intersection` infers both from its receiver
+/// let labyrinth = Shape::<f64, 3>::intersection(
+///   Hypersquare::<3>, Gyroid { frequency: 8.0 }.shell(0.03));
+/// assert!(labyrinth.sdf(Point::<f64, 3>::from([0.4, 0.1, -0.2])).is_finite());
+/// ```
+///
+/// This is a level-set function rather than a distance function — but it is
+/// divided by its own gradient bound (`|∂f/∂xₐ| ≤ 2k`, hence `|∇f| ≤ 2k√D`),
+/// which makes the stored field **1-Lipschitz** and therefore an honest
+/// conservative underestimate of the true distance: a 1-Lipschitz function
+/// vanishing on the boundary can never exceed the distance to it. Pruning stays
+/// sound, merely less aggressive than for an exact field.
+///
+/// The gyroid is unbounded and periodic, so — as with [`Polytope`] —
+/// [`Self::bounding_box`] reports the unit box, on the assumption that you
+/// intersect it with a container.
+#[derive(Debug, Copy, Clone)]
+pub struct Gyroid<T> {
+  /// Spatial frequency: one cell per `2π/frequency` of space.
+  pub frequency: T
+}
+
+impl<T: Real, const D: usize> BoundingBox<T, D> for Gyroid<T> {
+  fn bounding_box(&self) -> Aabb<T, D> {
+    Aabb::symmetric(T::one())
+  }}
+
+impl<T: Real, const D: usize> SDF<T, D> for Gyroid<T> {
+  fn sdf(&self, pixel: Point<T, D>) -> T {
+    let two = T::one() + T::one();
+    let k = self.frequency;
+    let f = (0..D).fold(T::zero(), |acc, a|
+      acc + (k * pixel[a]).sin() * (k * pixel[(a + 1) % D]).cos());
+    // normalized by the gradient bound, so the reported field is 1-Lipschitz
+    f / (two * k * T::from(D).unwrap().sqrt())
+  }
+}
+
+// Exact fields and conservative unit-gradient underestimates alike: the honest
+// bound is 1. `LpBall` is the one shape whose constant depends on its
+// parameters, and it implements the trait itself.
+impl<T: Float, const D: usize> Lipschitz<T> for Orthoplex<D> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, U, V> Lipschitz<T> for Polyline<U, V> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float, U> Lipschitz<T> for ProductBall<U> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Torus<T> { fn lipschitz(&self) -> T { T::one() } }
+impl<T: Float> Lipschitz<T> for Gyroid<T> { fn lipschitz(&self) -> T { T::one() } }
+
+impl<T: Real, const D: usize> Lipschitz<T> for LpBall<T, D> {
+  fn lipschitz(&self) -> T {
+    let two = T::one() + T::one();
+    if self.p >= two {
+      T::one()
+    } else {
+      // D^(1/p − 1/2), the norm-comparison constant
+      T::from(D).unwrap().powf(T::one() / self.p - T::one() / two)
+    }
+  }
+}

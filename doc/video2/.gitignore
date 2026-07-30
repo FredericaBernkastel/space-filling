@@ -12,3 +12,6 @@
 /doc/video/scene10_ae
 *.vol
 *.obj
+*.blend1
+*.png
+*.vdb
