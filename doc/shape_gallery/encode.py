@@ -1,13 +1,28 @@
-"""Colour the raw fields dumped by `shape-gallery` and write doc/shapes/*.webp.
+"""Stage three: write doc/shapes/*.avif from what the first two stages produced.
 
-The colouriser is lifted verbatim from ``doc/video/fields.py`` so the API docs
-and the explainer video speak the same visual language: brightness rises with
-the field value (so maxima glow), thin resolution-independent contour lines every
-``interval`` distance units, and a crisp white line on the zero level.
+Planar shapes arrive as raw field values (`_raw/`) and are coloured here. The
+colouriser is lifted verbatim from ``doc/video/fields.py`` so the API docs and the
+explainer video speak the same visual language: brightness rises with the field
+value (so maxima glow), thin resolution-independent contour lines every
+``interval`` distance units, and a crisp white line on the zero level. Those are
+ordinary sRGB images and are written as still AVIF.
 
-Multi-frame entries are 2D slices swept through a shape that has no planar
-analogue, written as animated WebP. The sweep is already a full cosine cycle, so
-the frames loop seamlessly as they stand.
+Shapes that do not fit in the plane arrive as a directory of Blender frames
+(`_frames/<name>/NNN.avif`), 10-bit HDR in Rec.2100 HLG, and are muxed into one
+animated AVIF. Nothing here touches those pixels. Any Python image library on hand
+decodes them to 8 bits, which would throw away exactly the range they were rendered
+for, so everything that needed doing to them — the bloom above all — happens in
+Blender's compositor while the values are still scene-linear floats. What is left is
+a container job, and ffmpeg does it.
+
+The frames are decoded to raw planar 4:4:4 and re-encoded rather than being passed
+through as-is, for two reasons: the published animation is half the rendered size,
+and ffmpeg cannot give a sequence of stills sensible timing on its own — every
+route through its image demuxers either refuses `.avif` or invents a duration per
+frame and then duplicates frames to fill it. Raw video has no timestamps to
+misinterpret, so `-framerate` means what it says. Both kinds of sequence are already
+closed loops — a full turntable, or a cosine sweep out and back — so the frames need
+no ping-ponging.
 
     cd doc/video && uv run python ../shape_gallery/encode.py
 """
@@ -15,7 +30,9 @@ the frames loop seamlessly as they stand.
 from __future__ import annotations
 
 import struct
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +40,27 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent / "shapes"
 RAW = ROOT / "_raw"
+FRAMES = ROOT / "_frames"
+MESH = ROOT / "_mesh"
+
+SIZE = 512      # published edge length, in pixels
+FPS = 12.5      # 80 ms a frame
+CRF = 24        # libaom quality; AVIF is efficient enough that this is cheap
+CPU_USED = 4    # libaom speed/quality dial, 0 slowest
+
+# Rec.2100 HLG, matching what Blender wrote into the frames. Raw video carries no
+# such tags, so they are stamped back on explicitly — without them a browser reads
+# the result as ordinary sRGB and the whole point of the HDR output is lost.
+HDR = {
+    "color_primaries": "bt2020",
+    "color_trc": "arib-std-b67",
+    "colorspace": "bt2020nc",
+    "color_range": "pc",
+}
+# 4:4:4 rather than 4:2:0: the glowing creases are one- to two-pixel lines of
+# saturated warm light on a cool body, which is precisely what chroma subsampling
+# smears.
+PIX_FMT = "yuv444p10le"
 
 
 # --- doc/video/fields.py, unchanged --------------------------------------
@@ -92,36 +130,77 @@ def load(name):
     return a.reshape(frames, h, w).astype(np.float64)
 
 
-def main():
-    manifest = (RAW / "manifest.txt").read_text().split("\n")
-    total = 0
-    for line in manifest:
-        if not line.strip():
-            continue
-        name, frames, interval = line.split()
-        frames, interval = int(frames), float(interval)
-        stack = load(name)
-        out = ROOT / f"{name}.webp"
+def ffmpeg(args):
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *args], check=True)
 
-        if frames == 1:
-            img = Image.fromarray(colorize(stack[0], interval=interval))
-            img.save(out, "WEBP", quality=92, method=6)
-        else:
-            # one scale for the whole sweep, so brightness does not pump between
-            # frames as the cross-section grows and shrinks
-            vmin, vmax = float(stack.min()), float(stack.max())
-            imgs = [
-                Image.fromarray(colorize(s, interval=interval, vmin=vmin, vmax=vmax))
-                for s in stack
-            ]
-            imgs[0].save(
-                out, "WEBP", save_all=True, append_images=imgs[1:],
-                duration=80, loop=0, quality=80, method=4,
-            )
-        kb = out.stat().st_size / 1024
-        total += out.stat().st_size
-        print(f"{name:<22} {frames:>3} frame(s)  {kb:>7.1f} KiB")
-    print(f"\n{total / 1024 / 1024:.2f} MiB total -> {ROOT}")
+
+def planar(name, interval):
+    """One contour plot of a field sampled in the plane."""
+    out = ROOT / f"{name}.avif"
+    Image.fromarray(colorize(load(name)[0], interval=interval)).save(
+        out, "AVIF", quality=90, subsampling="4:4:4"
+    )
+    return out, 1
+
+
+def rendered(name, frames):
+    """A Blender frame sequence, scaled down and muxed into animated AVIF."""
+    out = ROOT / f"{name}.avif"
+    with tempfile.TemporaryDirectory() as tmp:
+        stack = Path(tmp) / "frames.yuv"
+        with open(stack, "wb") as sink:
+            for i in range(frames):
+                # Downscaled here, a frame at a time. The renders are at double size
+                # on purpose — the meshes alias an acute crease by about a grid cell,
+                # and averaging four pixels into one puts what is left of that under
+                # a pixel.
+                decoded = subprocess.run(
+                    ["ffmpeg", "-v", "error",
+                     "-i", str(FRAMES / name / f"{i:03d}.avif"),
+                     "-vf", f"scale={SIZE}:{SIZE}:flags=lanczos",
+                     "-pix_fmt", PIX_FMT, "-f", "rawvideo", "-"],
+                    check=True, stdout=subprocess.PIPE,
+                )
+                sink.write(decoded.stdout)
+
+        # `setparams` stamps the frames, and the output flags tag the stream; both
+        # are needed, since raw video arrives with nothing to propagate.
+        stamp = "setparams=" + ":".join(
+            f"{'range' if k == 'color_range' else k}={v}" for k, v in HDR.items()
+        )
+        ffmpeg([
+            "-f", "rawvideo", "-pixel_format", PIX_FMT,
+            "-video_size", f"{SIZE}x{SIZE}", "-framerate", str(FPS),
+            "-i", str(stack),
+            "-vf", stamp,
+            "-c:v", "libaom-av1", "-crf", str(CRF), "-cpu-used", str(CPU_USED),
+            "-pix_fmt", PIX_FMT,
+            *[arg for k, v in HDR.items() for arg in (f"-{k}", v)],
+            "-loop", "0", "-f", "avif", str(out),
+        ])
+    return out, frames
+
+
+def main():
+    jobs = []
+    for line in (RAW / "manifest.txt").read_text().split("\n"):
+        if line.strip():
+            name, _, interval = line.split()
+            jobs.append((name, planar, (name, float(interval))))
+    for line in (MESH / "manifest.txt").read_text().split("\n"):
+        if line.strip():
+            name, _kind, frames, _radius = line.split()
+            jobs.append((name, rendered, (name, int(frames))))
+
+    total = 0
+    for name, fn, argv in jobs:
+        out, frames = fn(*argv)
+        size = out.stat().st_size
+        total += size
+        kind = "plot" if fn is planar else "render"
+        print(f"{name:<22} {kind:<7} {frames:>3} frame(s)  {size / 1024:>7.1f} KiB",
+              flush=True)
+    print(f"\n{len(jobs)} images, {total / 1024 / 1024:.2f} MiB total -> {ROOT}")
 
 
 if __name__ == "__main__":

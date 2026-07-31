@@ -13,3 +13,8 @@
 *.blend
 /doc/shape_gallery/target
 /doc/shape_gallery/Cargo.lock
+# doc-image pipeline intermediates: field rasters, meshes, render frames
+/doc/shapes/_raw
+/doc/shapes/_mesh
+/doc/shapes/_frames
+__pycache__/

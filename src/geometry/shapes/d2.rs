@@ -22,7 +22,7 @@ use {
 
 /// Regular polygon with N sides, inscribed in a unit circle. Partially evaluated at compile-time.
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ngon_c.webp" alt="a regular hexagon" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ngon_c.avif" alt="a regular hexagon" width="256">
 ///
 /// Note that `N` counts *sides*, not dimensions — `NGonC<6>` is a hexagon in
 /// the plane. For the arbitrary-dimension half-space construction see
@@ -54,7 +54,7 @@ impl<T: Real + FloatConst, const N: usize> SDF<T, 2> for NGonC<N> {
 
 /// Regular polygon with N sides, inscribed in a unit circle. Evaluated at runtime.
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ngon_r.webp" alt="a regular pentagon" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ngon_r.avif" alt="a regular pentagon" width="256">
 ///
 /// Same field as [`NGonC`]: `max_i (p · n_i) - cos(π/n)` — exact inside,
 /// underestimates beyond the vertices; 1-Lipschitz. Degenerate for `n < 3`.
@@ -82,7 +82,7 @@ impl<T: Real + FloatConst> SDF<T, 2> for NGonR {
 /// N-pointed regular star polygon, inscribed in a unit circle.
 /// `m` is density, must be between `2..=n`.
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/star.webp" alt="a five-pointed star" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/star.avif" alt="a five-pointed star" width="256">
 ///
 /// `p` is folded into one angular sector (a piecewise isometry, continuous by
 /// the shape's symmetry), then measured against that sector's edge segment:
@@ -118,7 +118,7 @@ impl<T: Real + FloatConst> SDF<T, 2> for Star<T> {
 
 /// Arbitrary simple polygon given by its vertices — non-convex allowed.
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polygon.webp" alt="an irregular quadrilateral" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polygon.avif" alt="an irregular quadrilateral" width="256">
 ///
 /// `sdf(p) = s · min_i dist(p, e_i)` — the minimum of exact distances to the
 /// edge segments, signed by winding-crossing parity: the exact signed distance
@@ -171,7 +171,7 @@ impl<T, U> SDF<T, 2> for Polygon<U>
 
 /// `= Star { n: 5, m: 10.0 / 3.0 }` — exact SDF, 1-Lipschitz (see [`Star`]).
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/pentagram.webp" alt="a pentagram" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/pentagram.avif" alt="a pentagram" width="256">
 #[derive(Debug, Copy, Clone)]
 pub struct Pentagram;
 
@@ -191,7 +191,7 @@ impl<T> SDF<T, 2> for Pentagram
 
 /// `= Star { n: 6, m: 3.0 }` — exact SDF, 1-Lipschitz (see [`Star`]).
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hexagram.webp" alt="a hexagram" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hexagram.avif" alt="a hexagram" width="256">
 #[derive(Debug, Copy, Clone)]
 pub struct Hexagram;
 
@@ -224,7 +224,7 @@ pub type Octagon = NGonC<8>;
 
 /// Latin cross: the union of two rectangles.
 ///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/holy_cross.webp" alt="a cross with a ring around its crossing" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/holy_cross.avif" alt="a cross with a ring around its crossing" width="256">
 ///
 /// `min` of two exact box fields — exact in free space, underestimates the
 /// interior depth where the rectangles overlap; 1-Lipschitz (see

@@ -1,15 +1,20 @@
-# Doc-asset generator: samples every shape and combinator's real signed distance
-# field onto a grid and dumps the raw values. `encode.py` then colours them with
-# the same ramp the explainer video uses and writes doc/shapes/*.webp.
+# Doc-asset generator for doc/shapes/*.avif. Not part of either library — it
+# exists so the images in the API docs are generated from the actual fields
+# rather than drawn by hand. Three stages:
 #
-# Not part of either library — it exists so the images in the API docs are
-# generated from the actual fields rather than drawn by hand. To regenerate:
+#   1. cd doc/shape_gallery && cargo run --release
+#        Evaluates every field. Planar shapes become rasters of field values in
+#        doc/shapes/_raw; the rest are dual-contoured into OBJ meshes in
+#        doc/shapes/_mesh (see src/mesh.rs).
+#   2. blender -b --python doc/shape_gallery/render.py --
+#        Renders the meshes, one 10-bit HDR AVIF per frame, into
+#        doc/shapes/_frames. See readme.md for the exact invocation.
+#   3. cd doc/video && uv run python ../shape_gallery/encode.py
+#        Colours the rasters, muxes the frame sequences, writes the AVIFs.
 #
-#     cd doc/shape_gallery && cargo run --release
-#     cd ../video && uv run python ../shape_gallery/encode.py
-#
-# The first step leaves ~550 MiB of raw f32 grids in doc/shapes/_raw; delete it
-# once the second step has consumed them.
+# Stage 2 needs an official blender.org build; it resolves its own paths, so it can
+# be run from anywhere. The three underscore-prefixed directories are intermediates — together a
+# few GiB — and can be deleted once stage 3 has consumed them.
 [package]
 name = "shape-gallery"
 version = "0.1.0"

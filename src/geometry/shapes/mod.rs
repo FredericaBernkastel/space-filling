@@ -24,12 +24,29 @@
 //!
 //! # Reading the pictures
 //!
-//! Every shape below carries a plot of its own field, generated from that field
-//! rather than drawn by hand (`doc/shape_gallery`). Brightness rises with the
+//! Every shape below carries a picture of its own field, generated from that
+//! field rather than drawn by hand (`doc/shape_gallery`).
+//!
+//! A shape that fits in the plane is plotted directly. Brightness rises with the
 //! distance, so the interior is dark and far-away maxima glow; thin contour lines
 //! mark every 0.12 units, and the white line is the zero level — the shape's
-//! actual boundary. Shapes with no analogue in the plane are shown as an animated
-//! stack of 2D slices through the real N-dimensional field.
+//! actual boundary.
+//!
+//! A shape that does not fit in the plane is *meshed* from its field and rendered
+//! in Blender, turning on the spot so every side is seen. The 4D shapes have no
+//! 3D form to render, so what is shown is the solid cross-section cut by a
+//! hyperplane, and the animation walks that hyperplane along the fourth axis —
+//! which is how the cell structure of a regular 4-polytope becomes visible at
+//! all.
+//!
+//! The renders are translucent, with the shape's creases glowing. How brightly a
+//! line glows is the deviation of the surface normal across one mesh cell, which is
+//! near zero on a flat facet or a gentle curve and jumps wherever the surface stops
+//! being smooth — so the lines are a property of the shape and turn with it, rather
+//! than of where the camera happens to be. And because the body is see-through, a
+//! polytope shows its whole edge graph instead of the three faces aimed at the
+//! camera. Lighting is a low sun in an atmospheric sky and nothing else, which is
+//! what puts the warmth in the interior folds while the outside stays cool.
 //!
 //! # Building shapes out of shapes
 //!
