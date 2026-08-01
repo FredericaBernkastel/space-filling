@@ -1,5 +1,26 @@
 //! Geometry vocabulary and the shape catalogue.
 //!
+//! <picture>
+//!   <source
+//!     srcset="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/_collage.avif"
+//!     media="(dynamic-range: high)">
+//!   <img
+//!     src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/_collage_sdr.avif"
+//!     alt="every shape and combinator in the catalogue, as a 7x7 sheet of its own signed distance field, each labelled with the field it draws"
+//!     width="100%">
+//! </picture>
+//!
+//! Every field in the catalogue, drawn from itself — the planar ones as contour
+//! plots, the rest meshed and rendered, and the last two cells giving the notation
+//! the sheet is written in. Built by `doc/shape_gallery/collage.py`.
+//!
+//! There are two copies of it. The first is HDR, exactly as the sources were
+//! graded, and a display that can show it gets it; the second is tone-mapped for
+//! everything else. They have to be separate files: a browser without HDR support
+//! reads the HLG signal as display light, with no reference-white mapping, and
+//! renders the graded sheet at about half brightness — so no one set of pixels is
+//! right for both, and the page picks with `(dynamic-range: high)`.
+//!
 //! The vocabulary — [`Point`], [`Vector`], [`Aabb`], [`BoundingBox`], the
 //! [`Combinator`] algebra and the transform types it returns — is re-exported
 //! from [`adaptive_distance_field::geometry`], because the ADF is defined over
