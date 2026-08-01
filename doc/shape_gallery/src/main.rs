@@ -23,7 +23,7 @@
 //! _raw/<name>.bin      u32 frames, u32 w, u32 h, then f32 field values
 //! _raw/manifest.txt    `name frames interval` per planar entry
 //! _mesh/<name>.obj     solids
-//! _mesh/<name>_NN.obj  one per frame, for the sliced 4D entries
+//! _mesh/<name>_NNN.obj one per frame, for the sliced 4D entries
 //! _mesh/manifest.txt   `name kind frames radius` per meshed entry
 //! ```
 
@@ -68,14 +68,23 @@ const FINE_RES: usize = 512;
 /// How much of its sharpness a shape must keep when the grid is refined to earn
 /// [`FINE_RES`]. A perfectly smooth surface scores 0.5, a perfect crease 1.
 const CREASE_PERSISTENCE: f64 = 0.72;
-/// For the 4D slices, which mesh twenty times over. Their sections are polyhedra
-/// with a great many edges — every one a crease the renderer draws a line along, so
-/// too coarse and the lines come out dotted — but twenty of them at [`FINE_RES`]
-/// would cost a quarter of an hour each, so they get their own middle ground.
+/// For the 4D slices, which are meshed once per frame — [`MORPH_FRAMES`] times
+/// over, where a solid is meshed once. Their sections are polyhedra with a great
+/// many edges, every one a crease the renderer draws a line along, so too coarse and
+/// the lines come out dotted; but at [`FINE_RES`] a single one of these would take
+/// the better part of two hours, so they get their own middle ground.
+///
+/// This is also what the intermediate directory costs: a section at this resolution
+/// runs to some 30 MB of OBJ, so the five sliced shapes come to about 20 GB between
+/// them. Lower this before anything else if disk is short.
 const MORPH_RES: usize = 288;
 /// Turntable frames for a solid, and sweep frames for a 4D slice.
-const TURN_FRAMES: usize = 32;
-const MORPH_FRAMES: usize = 20;
+///
+/// A full turn in 128 steps is 2.8° a frame, which is smooth. The frame *rate* lives
+/// in `encode.py`, so raising this alone makes each loop longer rather than smoother
+/// at the same speed.
+const TURN_FRAMES: usize = 128;
+const MORPH_FRAMES: usize = 128;
 
 /// How a field becomes an image.
 enum Kind {
@@ -481,9 +490,20 @@ fn main() -> Result<()> {
         // the section is seen to grow and shrink instead of being re-zoomed
         let t0 = Instant::now();
         let mut radius = 0.0f64;
-        // Reported once for the whole sweep rather than per frame: twenty sections
+        // Reported once for the whole sweep rather than per frame: the sections
         // of the same shape fail in the same way or not at all.
         let mut worst = 0usize;
+        // Sweep files are numbered, so a shorter sweep than last time would leave
+        // the tail of the old one lying around — and at 30 MB a section, that is not
+        // a small mistake.
+        let prefix = format!("{}_", e.name);
+        for stale in fs::read_dir(&mesh_dir)? {
+          let path = stale?.path();
+          let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_owned();
+          if name.starts_with(&prefix) && name.ends_with(".obj") {
+            fs::remove_file(path)?;
+          }
+        }
         for i in 0..MORPH_FRAMES {
           let t = i as f64 / MORPH_FRAMES as f64;
           let (m, d) = mesh::dual_contour(&|p: P3<f64>| f(t, p), *half, MORPH_RES);
@@ -494,7 +514,7 @@ fn main() -> Result<()> {
           }
           worst = worst.max(d.inverted);
           mesh::write_obj(
-            &mesh_dir.join(format!("{}_{:02}.obj", e.name, i)),
+            &mesh_dir.join(format!("{}_{:03}.obj", e.name, i)),
             e.name,
             &m,
           )?;

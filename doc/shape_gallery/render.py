@@ -413,7 +413,7 @@ def main():
         for i in range(frames):
             if kind != "solid":
                 drop(objs)
-                objs = import_mesh(args.mesh_dir / f"{name}_{i:02d}.obj", mat)
+                objs = import_mesh(args.mesh_dir / f"{name}_{i:03d}.obj", mat)
             # A full turn either way. For a solid that *is* the animation; for a
             # cross-section it rides along with the sweep, because one fixed
             # viewpoint on a convex polyhedron barely reads as three-dimensional —
