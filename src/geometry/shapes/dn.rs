@@ -15,9 +15,7 @@ use {
   num_traits::Float,
 };
 
-/// Unit sphere (a circle in 2D — the default; `Hypersphere::<3>` for a ball, …).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hypersphere.avif" alt="a disc" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hypersphere.avif" alt="a disc" width="200" style="display:block; margin: 0.3em 0 0.9em"> Unit sphere (a circle in 2D — the default; `Hypersphere::<3>` for a ball, …).
 ///
 /// The dimension lives on the type so that combinator chains starting from a
 /// bare `Hypersphere` stay inferable; it defaults to 2 in type positions.
@@ -38,10 +36,8 @@ impl <T: Real, const D: usize> SDF<T, D> for Hypersphere<D> {
   }
 }
 
-/// Axis-aligned box with center at the origin (a rectangle in 2D, a cuboid in
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hyperrect.avif" alt="a 1.5 x 0.9 rectangle" width="200" style="display:block; margin: 0.3em 0 0.9em"> Axis-aligned box with center at the origin (a rectangle in 2D, a cuboid in
 /// 3D).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hyperrect.avif" alt="a 1.5 x 0.9 rectangle" width="256">
 ///
 /// With `q = |p| - size/2` (componentwise): `sdf(p) = |max(q, 0)| + min(max_a q_a, 0)`
 /// — the exact signed distance to the box in any dimension, hence 1-Lipschitz.
@@ -71,10 +67,8 @@ impl<T: Real, const D: usize> SDF<T, D> for Hyperrect<T, D> {
     outside_dist + inside_dist
   }}
 
-/// `= Hyperrect { size: [2.0; D] }` — exact SDF, 1-Lipschitz (see
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hypersquare.avif" alt="a square" width="200" style="display:block; margin: 0.3em 0 0.9em"> `= Hyperrect { size: [2.0; D] }` — exact SDF, 1-Lipschitz (see
 /// [`Hyperrect`]). Any dimension; defaults to 2.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/hypersquare.avif" alt="a square" width="256">
 #[derive(Debug, Copy, Clone)]
 pub struct Hypersquare<const D: usize = 2>;
 
@@ -89,9 +83,7 @@ impl<T: Real, const D: usize> SDF<T, D> for Hypersquare<D> {
     Hyperrect { size: Vector::repeat(two) }.sdf(pixel)
   }}
 
-/// Line segment from `a` to `b` with round caps (a capsule), any dimension.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/line.avif" alt="a thick segment with round caps" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/line.avif" alt="a thick segment with round caps" width="200" style="display:block; margin: 0.3em 0 0.9em"> Line segment from `a` to `b` with round caps (a capsule), any dimension.
 ///
 /// `sdf(p) = dist(p, [a, b]) - thickness/2`, where `dist` projects `p` onto the
 /// segment with a clamped parameter — the exact signed distance, hence
@@ -120,10 +112,8 @@ impl<T: Real, const D: usize> SDF<T, D> for Line<T, D> {
   }
 }
 
-/// Annulus: unit sphere with a concentric hole of radius `inner_r` (a spherical
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ring.avif" alt="an annulus of inner radius 0.55" width="200" style="display:block; margin: 0.3em 0 0.9em"> Annulus: unit sphere with a concentric hole of radius `inner_r` (a spherical
 /// shell in 3D; any dimension, defaults to 2).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/ring.avif" alt="an annulus of inner radius 0.55" width="256">
 ///
 /// `sdf(p) = max(|p| - 1, inner_r - |p|)` — the boolean subtraction of two
 /// concentric spheres, which for a shell happens to be the exact signed
@@ -165,10 +155,8 @@ fn revolve<T: Real, const D: usize>(p: Point<T, D>) -> V2<T> {
   V2::new(p[0], radial)
 }
 
-/// Crescent moon, revolved about axis 0 in higher dimensions; `phase` in
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/moon.avif" alt="a crescent at phase 0.5" width="200" style="display:block; margin: 0.3em 0 0.9em"> Crescent moon, revolved about axis 0 in higher dimensions; `phase` in
 /// `-1..=1`.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/moon.avif" alt="a crescent at phase 0.5" width="256">
 ///
 /// A unit sphere minus a unit sphere offset by `d = 2·phase` along axis 0.
 /// Near the cusps the field is the distance to the cusp ridge; elsewhere
@@ -208,11 +196,9 @@ impl<T: Real, const D: usize> SDF<T, D> for Moon<T> {
   }
 }
 
-/// A shard: rhombus with half-diagonals `(width, 1)`, revolved about axis 0 in
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/kakera.avif" alt="a rhombus of width 0.55" width="200" style="display:block; margin: 0.3em 0 0.9em"> A shard: rhombus with half-diagonals `(width, 1)`, revolved about axis 0 in
 /// higher dimensions — a bicone (spindle) in 3D with apexes at `±width·e₀` and
 /// equatorial radius 1.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/kakera.avif" alt="a rhombus of width 0.55" width="256">
 ///
 /// `p` is reduced to the first quadrant of the `(axial, radial)` half-plane,
 /// then measured against the single edge segment, signed by the side of the
@@ -246,11 +232,9 @@ impl<T: Real, const D: usize> SDF<T, D> for Kakera<T> {
   }
 }
 
-/// Axis-aligned cross: `D` orthogonal arms of half-length 1 and half-width
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cross.avif" alt="a plus sign of thickness 0.3" width="200" style="display:block; margin: 0.3em 0 0.9em"> Axis-aligned cross: `D` orthogonal arms of half-length 1 and half-width
 /// `thickness` (a plus sign in 2D, a 3-armed jack in 3D). Assumes
 /// `thickness ≤ 1`.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cross.avif" alt="a plus sign of thickness 0.3" width="256">
 ///
 /// A point is inside iff its largest `|pₐ|` is `≤ 1` **and** its second
 /// largest is `≤ thickness` — that is, at most one axis may leave the central
@@ -333,11 +317,9 @@ impl<T: Real, const D: usize> HalfSpace<T, D> {
   }
 }
 
-/// Convex polytope: the intersection of half-spaces — the N-dimensional
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polytope.avif" alt="a pentagon from five half-spaces" width="200" style="display:block; margin: 0.3em 0 0.9em"> Convex polytope: the intersection of half-spaces — the N-dimensional
 /// analogue of [`Polygon`](super::d2::Polygon), and the arbitrary-dimension
 /// generalization of [`NGonC`](super::d2::NGonC)'s construction.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polytope.avif" alt="a pentagon from five half-spaces" width="256">
 ///
 /// `sdf(p) = max_i (nᵢ·p - dᵢ)` over the bounding half-spaces. Exact in the
 /// interior (where the nearest boundary point always lies on a face plane) and
@@ -523,10 +505,8 @@ pub fn simplex_vertices<T: Real, const D: usize>() -> Vec<Vector<T, D>> {
     .collect()
 }
 
-/// Regular simplex inscribed in the unit sphere — triangle, tetrahedron,
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/simplex.avif" alt="a triangle, the 2D simplex" width="200" style="display:block; margin: 0.3em 0 0.9em"> Regular simplex inscribed in the unit sphere — triangle, tetrahedron,
 /// 5-cell and onward — as a [`Polytope`] of `D+1` half-spaces.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/simplex.avif" alt="a triangle, the 2D simplex" width="256">
 ///
 /// The facet opposite each vertex has that vertex's direction as its *inward*
 /// normal and, at unit circumradius, sits `1/D` from the centre. Exact inside,
@@ -537,11 +517,9 @@ pub fn simplex<T: Real, const D: usize>() -> Polytope<Vec<HalfSpace<T, D>>> {
   convex_hull(verts.iter().map(|v| v.map(|x| -x)), &verts)
 }
 
-/// Permutohedron: the Voronoi cell of the `A_D*` lattice, and a polytope that
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/permutohedron.avif" alt="a hexagon, the 2D permutohedron" width="200" style="display:block; margin: 0.3em 0 0.9em"> Permutohedron: the Voronoi cell of the `A_D*` lattice, and a polytope that
 /// **tiles space by translation** in every dimension — a hexagon in 2D, the
 /// [`truncated_octahedron`](super::d3::truncated_octahedron) in 3D.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/permutohedron.avif" alt="a hexagon, the 2D permutohedron" width="256">
 ///
 /// It is the convex hull of all permutations of `(0, 1, …, D)`, which lives in
 /// the hyperplane `Σx = const` of `ℝ^(D+1)`; this returns its isometric image in
@@ -576,10 +554,8 @@ pub fn permutohedron<T: Real, const D: usize>() -> Polytope<Vec<HalfSpace<T, D>>
   convex_hull(normals, &vertices)
 }
 
-/// Cross-polytope (the `ℓ¹` ball): the hypercube's dual — a rhombus in 2D, an
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/orthoplex.avif" alt="a square rotated 45 degrees, the 2D orthoplex" width="200" style="display:block; margin: 0.3em 0 0.9em"> Cross-polytope (the `ℓ¹` ball): the hypercube's dual — a rhombus in 2D, an
 /// octahedron in 3D, the 16-cell in 4D. Any dimension; defaults to 2.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/orthoplex.avif" alt="a square rotated 45 degrees, the 2D orthoplex" width="256">
 ///
 /// `sdf(p) = (Σ|pₐ| - 1)/√D`, the closed form of the maximum over all `2^D`
 /// facet planes `(±1,…,±1)/√D`, so this costs `O(D)` where the equivalent
@@ -601,9 +577,7 @@ impl<T: Real, const D: usize> SDF<T, D> for Orthoplex<D> {
   }
 }
 
-/// Unit `ℓᵖ` ball — the superellipsoid / Lamé family `{ p : ‖p‖_p ≤ 1 }`.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/lp_ball.avif" alt="the unit ball of the l4 norm, a squarish disc" width="256">
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/lp_ball.avif" alt="the unit ball of the l4 norm, a squarish disc" width="200" style="display:block; margin: 0.3em 0 0.9em"> Unit `ℓᵖ` ball — the superellipsoid / Lamé family `{ p : ‖p‖_p ≤ 1 }`.
 ///
 /// Interpolates a whole family of rounded boxes: `p = 1` is the [`Orthoplex`],
 /// `p = 2` the [`Hypersphere`], and `p → ∞` approaches the [`Hypersquare`];
@@ -644,10 +618,8 @@ impl<T: Real, const D: usize> SDF<T, D> for LpBall<T, D> {
   }
 }
 
-/// Chain of round-capped segments through `vertices` — one capsule per
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polyline.avif" alt="a thick four-vertex zigzag" width="200" style="display:block; margin: 0.3em 0 0.9em"> Chain of round-capped segments through `vertices` — one capsule per
 /// consecutive pair, in any dimension.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/polyline.avif" alt="a thick four-vertex zigzag" width="256">
 ///
 /// `sdf(p) = minᵢ dist(p, [vᵢ, vᵢ₊₁]) - thickness/2`: exact outside, since the
 /// distance to a union is the minimum of the distances, and an underestimate of
@@ -693,10 +665,8 @@ impl<T, U, const D: usize> SDF<T, D> for Polyline<U, T>
   }
 }
 
-/// Cartesian product of balls over a partition of the axes: `spec` lists
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/product_ball.avif" alt="a cylinder — a disc over two axes, an interval over the third — turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Cartesian product of balls over a partition of the axes: `spec` lists
 /// `(block length, radius)` for consecutive runs, which should sum to `D`.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/product_ball.avif" alt="a cylinder — a disc over two axes, an interval over the third — turning on the spot" width="256">
 ///
 /// One type covers a family. In 3D, `[(2, r), (1, h)]` is a cylinder and
 /// `[(1, a), (1, b), (1, c)]` a box, so [`Hyperrect`] is the all-ones case; in
@@ -753,11 +723,9 @@ impl<T, U, const D: usize> SDF<T, D> for ProductBall<U>
   }
 }
 
-/// Solid torus: a disc of radius `minor` swept around axis 0 at distance
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/torus.avif" alt="a torus, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Solid torus: a disc of radius `minor` swept around axis 0 at distance
 /// `major` — defined in any dimension, and equal to
 /// `Hypersphere.scale(minor).revolve(major)`.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/torus.avif" alt="a torus, turning on the spot" width="256">
 ///
 /// `sdf(p) = ‖(|p₁..p_D| - major, p₀)‖ - minor`, the exact signed distance while
 /// `major ≥ minor` keeps the swept disc clear of the axis. A smaller `major`
@@ -787,10 +755,8 @@ impl<T: Real, const D: usize> SDF<T, D> for Torus<T> {
   }
 }
 
-/// Gyroid: the triply-periodic minimal surface `Σ sin(k·xₐ)·cos(k·xₐ₊₁)`, and
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/gyroid.avif" alt="a ball-shaped chunk of the gyroid minimal surface, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Gyroid: the triply-periodic minimal surface `Σ sin(k·xₐ)·cos(k·xₐ₊₁)`, and
 /// in any dimension its cyclic analogue.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/gyroid.avif" alt="a ball-shaped chunk of the gyroid minimal surface, turning on the spot" width="256">
 ///
 /// The shape is one of the two interpenetrating labyrinths, `{f ≤ 0}` — a
 /// genuine solid filling half of space. [`shell`](crate::geometry::Combinator::shell)

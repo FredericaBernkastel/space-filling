@@ -1,0 +1,116 @@
+<!--
+  Injected into every rustdoc page by `--html-in-header` (see the
+  `[package.metadata.docs.rs]` block in Cargo.toml, and RUSTDOCFLAGS for local
+  builds). The point is that the API docs, the shape gallery and the explainer
+  video look like one project: the palette and the two faces below are
+  `doc/video/theme.py` verbatim.
+
+  NOTE: `adaptive-distance-field/assets/rustdoc-head.html` is a copy of this
+  file and must be kept in sync. It cannot be shared — each crate is published
+  separately, and a published package contains nothing outside its own root, so
+  a path into a sibling directory would simply not exist on docs.rs.
+
+  Everything here is set through rustdoc's own custom properties rather than by
+  overriding its selectors. Those variables are a documented surface and survive
+  toolchain upgrades; class names do not, and would break silently on some
+  future rustdoc — on docs.rs, where nobody would see it happen.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Alef:wght@400;700&family=Fira+Code:wght@300..700&display=swap">
+<style>
+  /* --- faces ---------------------------------------------------------- */
+  /* Alef for prose, Fira Code for code — `FONT_MAIN` and `FONT_MONO` in
+     theme.py. Both keep their fallbacks, so a reader who is offline, or behind
+     something that blocks the font CDN, still gets sane text. */
+  :root {
+    --font-family: "Alef", sans-serif;
+    --font-family-code: "Fira Code", monospace;
+  }
+
+  /* Fira Code's `->`, `=>`, `==`, `!=` are *contextual alternates*, not
+     standard ligatures. Rustdoc asks for `kern` and `liga` only, and
+     `font-feature-settings` replaces rather than merges, so all three are
+     restated here. */
+  code, pre, kbd, .example-wrap, .item-name, .src {
+    font-variant-ligatures: contextual;
+    font-feature-settings: "kern", "liga", "calt";
+  }
+
+  /* --- palette -------------------------------------------------------- */
+  /* Applied to both dark themes and not to the light one, so rustdoc's theme
+     switch keeps working. theme.py defines a single background, so the
+     elevated surfaces and borders below are derived from it; every other
+     colour is taken from the video unchanged.
+
+       BG   #0d1117   INK    #e6edf3   MUTED     #8b949e
+       COOL #58a6ff   ACCENT #f0b429   TRAIL     #7ee7ff
+       FIELD_LO #1f6feb   FIELD_MID #2dd4bf   FIELD_HI #f2cc60          */
+  :root[data-theme="dark"],
+  :root[data-theme="ayu"] {
+    --main-background-color: #0d1117;
+    --main-color: #e6edf3;
+    --sidebar-background-color: #11161d;
+    --sidebar-background-color-hover: #1b222c;
+    --code-block-background-color: #11161d;
+    --table-alt-row-background-color: #11161d;
+    --codeblock-link-background: #1b222c;
+    --search-error-code-background-color: #11161d;
+    --scrollbar-track-background-color: #11161d;
+    --scrollbar-thumb-background-color: #2b323b;
+    --scrollbar-color: #2b323b #11161d;
+
+    --border-color: #2b323b;
+    --headings-border-bottom-color: #2b323b;
+    --sidebar-border-color: #2b323b;
+    --search-result-border-color: #2b323b;
+
+    --right-side-color: #8b949e;
+    --code-attribute-color: #8b949e;
+    --toggles-color: #8b949e;
+    --copy-path-button-color: #8b949e;
+    --search-tab-title-count-color: #8b949e;
+    --search-results-grey-color: #8b949e;
+
+    /* Links carry the video's meaning: cool for navigation, and the field ramp
+       for the kinds of thing the crate is about. */
+    --link-color: #58a6ff;
+    --sidebar-link-color: #58a6ff;
+    --type-link-color: #2dd4bf;
+    --trait-link-color: #7ee7ff;
+    --function-link-color: #f0b429;
+    --macro-link-color: #f2cc60;
+    --assoc-item-link-color: #f2cc60;
+    --keyword-link-color: #f2cc60;
+    --attribute-link-color: #f2cc60;
+    --mod-link-color: #f2cc60;
+
+    /* Syntax highlighting out of the same nine colours, so a code block reads
+       as part of the palette instead of as a second one. */
+    --code-highlight-kw-color: #58a6ff;
+    --code-highlight-kw-2-color: #58a6ff;
+    --code-highlight-prelude-color: #7ee7ff;
+    --code-highlight-prelude-val-color: #7ee7ff;
+    --code-highlight-lifetime-color: #7ee7ff;
+    --code-highlight-number-color: #2dd4bf;
+    --code-highlight-string-color: #2dd4bf;
+    --code-highlight-literal-color: #f0b429;
+    --code-highlight-self-color: #f0b429;
+    --code-highlight-attribute-color: #f0b429;
+    --code-highlight-question-mark-color: #f0b429;
+    --code-highlight-macro-color: #f2cc60;
+    --code-highlight-comment-color: #8b949e;
+    --code-highlight-doc-comment-color: #8b949e;
+
+    --stab-background-color: #16202c;
+    --stab-code-color: #e6edf3;
+    --target-background-color: #16202c;
+    --target-border-color: #f0b429;
+    --sidebar-current-link-background-color: #1b222c;
+    --search-result-link-focus-background-color: #1b222c;
+    --src-sidebar-background-selected: #1b222c;
+    --src-sidebar-background-hover: #16202c;
+    --src-line-numbers-span-color: #8b949e;
+  }
+</style>

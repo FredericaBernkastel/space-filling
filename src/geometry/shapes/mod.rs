@@ -59,7 +59,7 @@
 //! |---|---|---|
 //! | [`shell`](crate::geometry::Combinator::shell) | <code>&#124;sdf&#124; - w</code> | solid → hollow surface |
 //! | [`offset`](crate::geometry::Combinator::offset) | `sdf - r` | grows and rounds every corner |
-//! | [`extrude`](crate::geometry::Combinator::extrude) | box of `(sdf, &#124;p_last&#124; - h)` | lifts `D-1` → `D` |
+//! | [`extrude`](crate::geometry::Combinator::extrude) | <code>box of (sdf, &#124;p_last&#124; - h)</code> | lifts `D-1` → `D` |
 //! | [`revolve`](crate::geometry::Combinator::revolve) | `sdf(p₀, ‖p⊥‖ - r)` | sweeps a 2D profile around axis 0 |
 //!
 //! The last two are dimension *lifts*, which is what makes the plane-only tier

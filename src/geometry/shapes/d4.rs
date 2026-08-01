@@ -108,10 +108,8 @@ pub fn cell_120_vertices<T: Real>() -> Vec<Vector<T, 4>> {
   out
 }
 
-/// The **24-cell** inscribed in the unit sphere — 24 octahedral facets, and the
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_24.avif" alt="the 3D cross-sections of a 24-cell, sweeping along the fourth axis" width="200" style="display:block; margin: 0.3em 0 0.9em"> The **24-cell** inscribed in the unit sphere — 24 octahedral facets, and the
 /// Voronoi cell of the `D₄` lattice, so it tiles 4-space.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_24.avif" alt="the 3D cross-sections of a 24-cell, sweeping along the fourth axis" width="256">
 ///
 /// Self-dual: its 24 facet normals are the 8 axis directions and the 16
 /// half-diagonals — which is the same set of 24 directions as its vertices, up
@@ -129,18 +127,14 @@ pub fn cell_24<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
   convex_hull(normals, &cell_24_vertices::<T>())
 }
 
-/// The **120-cell** inscribed in the unit sphere — 120 dodecahedral facets,
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_120.avif" alt="the 3D cross-sections of a 120-cell, sweeping along the fourth axis" width="200" style="display:block; margin: 0.3em 0 0.9em"> The **120-cell** inscribed in the unit sphere — 120 dodecahedral facets,
 /// whose normals are the [`cell_600_vertices`] (the dual).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_120.avif" alt="the 3D cross-sections of a 120-cell, sweeping along the fourth axis" width="256">
 pub fn cell_120<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
   convex_hull(cell_600_vertices::<T>(), &cell_120_vertices::<T>())
 }
 
-/// The **600-cell** inscribed in the unit sphere — 600 tetrahedral facets,
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_600.avif" alt="the 3D cross-sections of a 600-cell, sweeping along the fourth axis" width="200" style="display:block; margin: 0.3em 0 0.9em"> The **600-cell** inscribed in the unit sphere — 600 tetrahedral facets,
 /// whose normals are the [`cell_120_vertices`] (the dual).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/cell_600.avif" alt="the 3D cross-sections of a 600-cell, sweeping along the fourth axis" width="256">
 ///
 /// The most expensive shape in the crate to evaluate: 600 half-spaces per
 /// sample. Consider baking it if you need it in a hot loop.
@@ -148,10 +142,8 @@ pub fn cell_600<T: Real>() -> Polytope<Vec<HalfSpace<T, 4>>> {
   convex_hull(cell_120_vertices::<T>(), &cell_600_vertices::<T>())
 }
 
-/// Duocylinder: the product of two discs, `‖p₀₁‖ ≤ r1` and `‖p₂₃‖ ≤ r2` — a
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/duocylinder.avif" alt="the 3D cross-sections of a duocylinder: cylinders keeping their radius while their height collapses" width="200" style="display:block; margin: 0.3em 0 0.9em"> Duocylinder: the product of two discs, `‖p₀₁‖ ≤ r1` and `‖p₂₃‖ ≤ r2` — a
 /// shape that needs a 2 + 2 split of the axes and so exists only in 4D.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/duocylinder.avif" alt="the 3D cross-sections of a duocylinder: cylinders keeping their radius while their height collapses" width="256">
 ///
 /// A thin wrapper over [`ProductBall`], hence the exact signed distance and
 /// 1-Lipschitz. Its boundary is two 3-manifolds meeting along the
@@ -160,10 +152,8 @@ pub fn duocylinder<T: Real>(r1: T, r2: T) -> ProductBall<[(usize, T); 2]> {
   ProductBall { spec: [(2, r1), (2, r2)] }
 }
 
-/// Clifford torus: the flat 2-torus `‖p₀₁‖ = r1`, `‖p₂₃‖ = r2`, given
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/clifford_torus.avif" alt="the 3D cross-sections of a Clifford torus: tori thickening and thinning" width="200" style="display:block; margin: 0.3em 0 0.9em"> Clifford torus: the flat 2-torus `‖p₀₁‖ = r1`, `‖p₂₃‖ = r2`, given
 /// `thickness` — the ridge where the [`duocylinder`]'s two boundary pieces meet.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/clifford_torus.avif" alt="the 3D cross-sections of a Clifford torus: tori thickening and thinning" width="256">
 ///
 /// `sdf(p) = ‖(‖p₀₁‖ - r1, ‖p₂₃‖ - r2)‖ - thickness/2`, the **exact** signed
 /// distance: the nearest point is found by moving each 2-block radially to its

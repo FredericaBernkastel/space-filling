@@ -74,27 +74,21 @@ pub fn dodecahedron_vertices<T: Real>() -> Vec<Vector<T, 3>> {
   out
 }
 
-/// Regular icosahedron inscribed in the unit sphere — 20 triangular facets,
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/icosahedron.avif" alt="a regular icosahedron, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Regular icosahedron inscribed in the unit sphere — 20 triangular facets,
 /// whose normals are the [`dodecahedron_vertices`] (the dual).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/icosahedron.avif" alt="a regular icosahedron, turning on the spot" width="256">
 pub fn icosahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(dodecahedron_vertices::<T>(), &icosahedron_vertices::<T>())
 }
 
-/// Regular dodecahedron inscribed in the unit sphere — 12 pentagonal facets,
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/dodecahedron.avif" alt="a regular dodecahedron, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Regular dodecahedron inscribed in the unit sphere — 12 pentagonal facets,
 /// whose normals are the [`icosahedron_vertices`] (the dual).
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/dodecahedron.avif" alt="a regular dodecahedron, turning on the spot" width="256">
 pub fn dodecahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(icosahedron_vertices::<T>(), &dodecahedron_vertices::<T>())
 }
 
-/// Truncated octahedron — 14 facets (6 square, 8 hexagonal), the Voronoi cell
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/truncated_octahedron.avif" alt="a truncated octahedron, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Truncated octahedron — 14 facets (6 square, 8 hexagonal), the Voronoi cell
 /// of the BCC lattice, and one of the few polyhedra that **tiles 3-space
 /// alone**.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/truncated_octahedron.avif" alt="a truncated octahedron, turning on the spot" width="256">
 ///
 /// Vertices are all permutations of `(0, ±1, ±2)`; facet normals are the 6 axis
 /// directions and the 8 cube diagonals. Identical up to scale to the 3D
@@ -113,10 +107,8 @@ pub fn truncated_octahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(normals, &vertices)
 }
 
-/// Rhombic dodecahedron — 12 rhombic facets, the Voronoi cell of the FCC
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/rhombic_dodecahedron.avif" alt="a rhombic dodecahedron, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> Rhombic dodecahedron — 12 rhombic facets, the Voronoi cell of the FCC
 /// lattice, and the other polyhedron that **tiles 3-space alone**.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/rhombic_dodecahedron.avif" alt="a rhombic dodecahedron, turning on the spot" width="256">
 ///
 /// Vertices are `(±1, ±1, ±1)` together with `(±2, 0, 0)` and its permutations
 /// — two orbits at different radii, so only the six axial vertices reach the
@@ -134,10 +126,8 @@ pub fn rhombic_dodecahedron<T: Real>() -> Polytope<Vec<HalfSpace<T, 3>>> {
   convex_hull(normals, &vertices)
 }
 
-/// A `(p, q)` torus knot, sampled into a closed [`Polyline`] of `segments`
+/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/torus_knot.avif" alt="a (2, 3) torus knot, turning on the spot" width="200" style="display:block; margin: 0.3em 0 0.9em"> A `(p, q)` torus knot, sampled into a closed [`Polyline`] of `segments`
 /// capsules.
-///
-/// <img src="https://raw.githubusercontent.com/FredericaBernkastel/space-filling/master/doc/shapes/torus_knot.avif" alt="a (2, 3) torus knot, turning on the spot" width="256">
 ///
 /// The knot winds `p` times around the torus's axis while looping `q` times
 /// through its hole; `(2, 3)` is the trefoil. Curves like this have no

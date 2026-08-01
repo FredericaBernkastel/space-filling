@@ -83,3 +83,18 @@ those are dead:
 ```
 git rm doc/shapes/*.webp
 ```
+
+## Styling the docs
+
+`assets/rustdoc-head.html` gives rustdoc the palette and the two faces from
+`doc/video/theme.py`, so the docs, the shape gallery and the video look like one
+project. docs.rs picks it up from `[package.metadata.docs.rs]`; `cargo doc` does
+*not* read that section, so a local build that should look the same needs:
+
+```
+RUSTDOCFLAGS="--html-in-header assets/rustdoc-head.html" cargo doc --no-deps --features drawing --open
+```
+
+Two copies of that file exist — one per published crate. They cannot be shared: a
+published package contains nothing outside its own root, so `adaptive-distance-field`
+needs its own at `adaptive-distance-field/assets/`. Keep them in sync.
