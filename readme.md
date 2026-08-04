@@ -1,10 +1,6 @@
 <div align="center">
 
-<img src="doc/logo.svg" alt="space-filling" width="300" height="300">
-
-# space-filling
-
-*Generalized random space filling of the plane, driven by signed distance fields.*
+*«The dreams of a builder drunk on pure volumes, pure space.»*
 
 [<img alt="crates.io" src="https://img.shields.io/crates/v/space-filling.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/space-filling)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-space--filling-66c2a5?style=for-the-badge&labelColor=555555&logo=docsdotrs&logoColor=white" height="20">](https://docs.rs/space-filling)
@@ -194,11 +190,15 @@ larger Lipschitz bound to keep pruning sound.
 [`07_baked_sdf`](examples/gd_adf/07_baked_sdf.rs)  
 Bakes that same fractal estimator into a discrete field once — rasterize a mask, take its exact signed Euclidean
 distance transform, then sample bilinearly. This replaces a 256-iteration evaluation with a single lookup and
-recovers a *certified* Lipschitz bound (`1 + √2`), at the cost of detail below the grid pitch.
+recovers a *certified* Lipschitz bound (`1 + √2`), at the cost of detail below the grid pitch.  
+
+[`08_embedded_3d`](doc/video2/src/08_embedded_3d.rs)  
+Same as 03_embedded, but in ℝ³ using GD-ADF solver.  
+![](doc/08_embedded_3d.avif)
 
 ## Past work
 
-`src/legacy` holds several algorithms worth revisiting, including quadtree and GPU implementations.
+`src/legacy` holds several algorithms not worth revisiting, including quadtree and GPU implementations.
 
 ## Future work
 

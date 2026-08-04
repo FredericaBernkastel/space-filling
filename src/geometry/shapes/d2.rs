@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)] // `HolyCross`
 //! Shapes defined for the **plane only** (`D = 2`).
 //!
-//! Each one is 2D by construction, not by omission: the regular-polygon and
+//! The regular-polygon and
 //! star families fold `p` by its polar angle (`atan2` plus an angular sector
 //! wrap), which has no direct counterpart in higher dimensions, and [`Polygon`]
 //! signs its distance by planar winding-crossing parity over an ordered vertex

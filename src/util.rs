@@ -27,14 +27,6 @@ pub fn domain_global_max<P: Real, const D: usize>(p: DistPoint<P, P, D>) -> Aabb
   }
 }
 
-/// The historical insertion domain: a box of side `4·√2·d`, found by trial
-/// and error.
-///
-/// It is *oversized* for global maxima (see [`domain_global_max`]: side `4d`
-/// suffices and is optimal) and *unsound* for local maxima — the update region
-/// of an insertion is not bounded by any multiple of `d` (see
-/// [`ADF::update_domain`](crate::solver::ADF::update_domain)) — so it survives
-/// only as a cheap heuristic.
 #[deprecated(note = "use `domain_global_max` for global maxima, or `ADF::update_domain` for local maxima")]
 pub fn domain_empirical<P: Real + FloatConst, const D: usize>(p: DistPoint<P, P, D>) -> Aabb<P, D> {
   let two = P::one() + P::one();

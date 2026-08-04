@@ -21,8 +21,8 @@ use {
 mod impl_draw_rgbaimage;
 #[cfg(test)] mod tests;
 
-/// A field that can be drawn: a signed distance function together with the
-/// bounds telling the rasterizer which pixels to visit.
+/// A field that can be drawn: a signed distance function bounded within a rectangle,
+/// so the rasterizer can know which pixels to visit.
 ///
 /// This trait exists purely for drawing's benefit, which is why it lives here
 /// and follows the `drawing` feature. It is *not* the crate's notion of "a
@@ -33,7 +33,7 @@ mod impl_draw_rgbaimage;
 /// Blanket-implemented, so every `SDF + BoundingBox` type is drawable.
 pub trait Shape<T: Scalar, const D: usize>: SDF<T, D> + BoundingBox<T, D> {
   /// Pair the shape with a texture, producing the one type [`Draw`] is
-  /// implemented on.
+  /// implemented for.
   fn texture<Tex>(self, texture: Tex) -> Texture<Self, Tex> where Self: Sized {
     Texture { shape: self, texture }
   }

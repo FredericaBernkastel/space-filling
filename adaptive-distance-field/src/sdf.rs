@@ -62,8 +62,8 @@ impl <S, T, const D: usize> SDF<T, D> for Scale<S, T>
 ///
 /// The negation of the exact cube SDF centred on `(½, …, ½)`, written out rather
 /// than composed from a shape so that it stands alone: this is the canonical
-/// seed for an [`ADF`](crate::adf::ADF), and the shape catalogue is a layer
-/// above. Negation preserves the constant — 1-Lipschitz.
+/// seed for an [`ADF`](crate::adf::ADF).
+/// Negation preserves the constant — 1-Lipschitz.
 pub fn boundary_rect<T: Real, const D: usize>(pixel: Point<T, D>) -> T {
   let p5 = T::one() / (T::one() + T::one());
   // distance from the cube's centre, per axis, minus the half-extent

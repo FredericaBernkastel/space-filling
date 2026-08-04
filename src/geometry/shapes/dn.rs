@@ -761,8 +761,7 @@ impl<T: Real, const D: usize> SDF<T, D> for Torus<T> {
 /// The shape is one of the two interpenetrating labyrinths, `{f ≤ 0}` — a
 /// genuine solid filling half of space. [`shell`](crate::geometry::Combinator::shell)
 /// turns it into the thickened *surface* instead: a single connected sheet
-/// winding through space, which makes a far more interesting ADF workload than
-/// a bag of balls.
+/// winding through space.
 ///
 /// ```
 /// # use space_filling::{geometry::*, sdf::SDF};
@@ -776,8 +775,7 @@ impl<T: Real, const D: usize> SDF<T, D> for Torus<T> {
 /// divided by its own gradient bound (`|∂f/∂xₐ| ≤ 2k`, hence `|∇f| ≤ 2k√D`),
 /// which makes the stored field **1-Lipschitz** and therefore an honest
 /// conservative underestimate of the true distance: a 1-Lipschitz function
-/// vanishing on the boundary can never exceed the distance to it. Pruning stays
-/// sound, merely less aggressive than for an exact field.
+/// vanishing on the boundary can never exceed the distance to it.
 ///
 /// The gyroid is unbounded and periodic, so — as with [`Polytope`] —
 /// [`Self::bounding_box`] reports the unit box, on the assumption that you

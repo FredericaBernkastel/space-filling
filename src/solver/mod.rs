@@ -9,10 +9,6 @@
 //!
 //! The ADF and the ascent are re-exported from [`adaptive_distance_field`],
 //! which owns them: neither has anything to do with space filling specifically.
-//! What this crate contributes on top is
-//! [`util::find_max_parallel`](crate::util::find_max_parallel) — batched maxima
-//! whose free balls are pairwise disjoint, so a whole batch can be placed against
-//! one field snapshot without the shapes colliding.
 
 pub mod argmax2d;
 pub use argmax2d::Argmax2D;

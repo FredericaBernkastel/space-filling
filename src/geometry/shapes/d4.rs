@@ -1,6 +1,6 @@
 //! Shapes defined for **four dimensions only** (`D = 4`).
 //!
-//! Four dimensions is the richest case. Three of the six convex regular
+//! Three of the six convex regular
 //! 4-polytopes are members of families that run through every dimension, and so
 //! live in [`dn`](super::dn) — the 5-cell is [`simplex`](super::dn::simplex),
 //! the tesseract is [`Hypersquare`](super::dn::Hypersquare), the 16-cell is
@@ -13,8 +13,8 @@
 //! [`truncated_octahedron`](super::d3::truncated_octahedron) in 3-space, it
 //! **tiles 4-space by translation**.
 //!
-//! Also here are the two curved shapes that need a 2 + 2 split of the axes: the
-//! [`duocylinder`] and the [`CliffordTorus`].
+//! Also here are the two curved shapes that need a 2 + 2 split of the axes:
+//! [`duocylinder`] and [`CliffordTorus`].
 
 use {
   super::dn::{

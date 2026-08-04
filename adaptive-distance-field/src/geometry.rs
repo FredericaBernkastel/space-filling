@@ -208,15 +208,6 @@ pub trait BoundingBox<T: Scalar, const D: usize> {
 /// on unrelated types. That is why [`Aabb`] calls its set operations
 /// [`merge`](Aabb::merge) and [`clip`](Aabb::clip), and why
 /// `num_complex::Complex::scale` needs UFCS when this trait is in scope.
-///
-/// Each method below is illustrated with the field it actually produces,
-/// generated from that field rather than drawn by hand. Where the result fits in
-/// the plane it is plotted: brightness rises with the distance, so the interior is
-/// dark and far-away maxima glow; thin contour lines mark every 0.12 units, and
-/// the white line is the zero level. [`extrude`](Self::extrude),
-/// [`revolve`](Self::revolve) and the 3D case of [`rotate`](Self::rotate) leave
-/// the plane, so those are meshed from the field and rendered in Blender —
-/// translucent, and glowing along whatever creases the combinator produced.
 pub trait Combinator: Sized {
   /// Translate by `offset`.
   ///

@@ -10,23 +10,16 @@
 //!     width="100%">
 //! </picture>
 //!
-//! Every field in the catalogue, drawn from itself — the planar ones as contour
-//! plots, the rest meshed and rendered, and the last two cells giving the notation
-//! the sheet is written in. Built by `doc/shape_gallery/collage.py`.
-//!
-//! There are two copies of it. The first is HDR, exactly as the sources were
-//! graded, and a display that can show it gets it; the second is tone-mapped for
-//! everything else. They have to be separate files: a browser without HDR support
-//! reads the HLG signal as display light, with no reference-white mapping, and
-//! renders the graded sheet at about half brightness — so no one set of pixels is
-//! right for both, and the page picks with `(dynamic-range: high)`.
+//! *Every field, drawn from itself — the planar ones as contour
+//! plots, the rest are 3D projections. Bottom right panel provides notation
+//! the sheet is written in.*
 //!
 //! The vocabulary — [`Point`], [`Vector`], [`Aabb`], [`BoundingBox`], the
 //! [`Combinator`] algebra and the transform types it returns — is re-exported
 //! from [`adaptive_distance_field::geometry`], because the ADF is defined over
-//! it. What this crate adds is [`shapes`]: the primitives that implement
-//! [`SDF`](crate::sdf::SDF), from unit spheres and boxes in any dimension to
-//! star polygons, the exceptional 4-polytopes and a gyroid.
+//! it. What this crate adds is [`shapes`], the primitives that implement
+//! [`SDF`](crate::sdf::SDF): unit spheres and boxes in one to infinite dimensions,
+//! several planar families, the exceptional 4-polytopes and [gyroid](https://en.wikipedia.org/wiki/Gyroid).
 //!
 //! Coordinates are normalized with the origin in the minimal corner and every
 //! axis growing positive (for images: top-left origin, y-axis down); the solvers

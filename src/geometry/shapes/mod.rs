@@ -1,72 +1,61 @@
-//! SDF shape primitives, grouped into submodules by the number of dimensions
-//! they support.
+//! SDF primitives, grouped into submodules by how many dimensions they
+//! support.
 //!
-//! - [`dn`] — any dimension count. The unit shapes ([`Hypersphere`],
-//!   [`Hyperrect`], [`Hypersquare`], [`Orthoplex`], [`LpBall`]), the swept and
-//!   revolved ones ([`Line`], [`Polyline`], [`Ring`], [`Torus`], [`Moon`],
-//!   [`Kakera`]), [`Cross`], the product family [`ProductBall`], the convex
-//!   [`Polytope`] with its [`simplex`] and [`permutohedron`] constructors, and
-//!   the periodic [`Gyroid`].
-//! - [`d2`] — the plane only, by construction rather than by omission: the
-//!   regular-polygon and star families fold `p` by its polar angle, and
-//!   [`Polygon`] signs its distance by planar winding parity.
-//! - [`d3`] — the two Platonic solids with no analogue elsewhere
-//!   ([`dodecahedron`], [`icosahedron`]), the two polyhedra that tile 3-space
-//!   alone ([`truncated_octahedron`], [`rhombic_dodecahedron`]), and
-//!   [`torus_knot`].
-//! - [`d4`] — the three exceptional regular 4-polytopes ([`cell_24`],
-//!   [`cell_120`], [`cell_600`]) and the shapes needing a 2 + 2 split of the
-//!   axes ([`duocylinder`], [`CliffordTorus`]).
+//! - [`dn`] — any dimension count. Unit shapes ([`Hypersphere`], [`Hyperrect`],
+//!   [`Hypersquare`], [`Orthoplex`], [`LpBall`]); swept and revolved ones
+//!   ([`Line`], [`Polyline`], [`Ring`], [`Torus`], [`Moon`], [`Kakera`]);
+//!   [`Cross`]; product family [`ProductBall`]; convex [`Polytope`] with its
+//!   [`simplex`] and [`permutohedron`] constructors; periodic [`Gyroid`].
+//! - [`d2`] — plane only: regular-polygon
+//!   and star families fold `p` by its polar angle, and [`Polygon`] signs distance
+//!   by planar winding parity.
+//! - [`d3`] — two Platonic solids with no analogue elsewhere ([`dodecahedron`],
+//!   [`icosahedron`]), two polyhedra that tile 3-space alone
+//!   ([`truncated_octahedron`], [`rhombic_dodecahedron`]), and [`torus_knot`].
+//! - [`d4`] — three exceptional regular 4-polytopes ([`cell_24`], [`cell_120`],
+//!   [`cell_600`]), plus shapes needing a 2 + 2 split of axes ([`duocylinder`],
+//!   [`CliffordTorus`]).
 //!
 //! Everything is re-exported here, so `geometry::Hypersphere` and
-//! `geometry::shapes::dn::Hypersphere` name the same type — import from this
-//! module unless you deliberately want to restrict yourself to one tier.
+//! `geometry::shapes::dn::Hypersphere` name one type — import from here unless you
+//! deliberately mean to hold yourself to a single tier.
 //!
 //! # Reading the pictures
 //!
-//! Every shape below carries a picture of its own field, generated from that
-//! field rather than drawn by hand (`doc/shape_gallery`).
+//! Every manifold below carries a picture of its own field.
 //!
-//! A shape that fits in the plane is plotted directly. Brightness rises with the
-//! distance, so the interior is dark and far-away maxima glow; thin contour lines
-//! mark every 0.12 units, and the white line is the zero level — the shape's
-//! actual boundary.
+//! Manifolds that fit in the plane are plotted directly. Brightness rises with
+//! distance, so interiors are dark and far-off maxima glow; thin contour lines mark
+//! every 0.12 units, and a white line marks the zero level — the boundary itself.
 //!
-//! A shape that does not fit in the plane is *meshed* from its field and rendered
-//! in Blender, turning on the spot so every side is seen. The 4D shapes have no
-//! 3D form to render, so what is shown is the solid cross-section cut by a
-//! hyperplane, and the animation walks that hyperplane along the fourth axis —
-//! which is how the cell structure of a regular 4-polytope becomes visible at
-//! all.
+//! Starting from 3D, a boundary isosurface was obtained first, and tessellated into proper polygonal mesh.
+//! 4D manifolds have no 3D form to render, so the animation walks its cutting
+//! hyperplane along the fourth axis — which is how a regular 4-polytope's cell
+//! structure becomes visible at all.
 //!
-//! The renders are translucent, with the shape's creases glowing. How brightly a
-//! line glows is the deviation of the surface normal across one mesh cell, which is
-//! near zero on a flat facet or a gentle curve and jumps wherever the surface stops
-//! being smooth — so the lines are a property of the shape and turn with it, rather
-//! than of where the camera happens to be. And because the body is see-through, a
-//! polytope shows its whole edge graph instead of the three faces aimed at the
-//! camera. Lighting is a low sun in an atmospheric sky and nothing else, which is
-//! what puts the warmth in the interior folds while the outside stays cool.
+//! Renders are translucent, with creases glowing — estimated by RMS deviation of the unit normal
+//! over its 1-ring — the Dirichlet energy density `|∇n|²` of the normal field (`O(hκ)` on smooth patches and `O(θ)` at a crease).
+//! Because the body is see-through, a polytope shows its whole edge graph.
 //!
-//! # Building shapes out of shapes
+//! # The shape goes into a shape press that presses the shape into a pressed shape
 //!
-//! The catalogue above is deliberately small, because most interesting shapes
-//! are compositions. Beyond the transforms and booleans on [`Shape`](crate::drawing::Shape), four
-//! combinators change a shape's *character*, and all four are exact and
-//! Lipschitz-preserving:
+//! This catalogue is deliberately small, because most interesting shapes are
+//! compositions. [`Combinator`](crate::geometry::Combinator) carries the transforms
+//! and booleans; four of its methods go further and change a shape's *character*,
+//! and all four are exact and Lipschitz-preserving:
 //!
 //! | Combinator | Field | Effect |
 //! |---|---|---|
 //! | [`shell`](crate::geometry::Combinator::shell) | <code>&#124;sdf&#124; - w</code> | solid → hollow surface |
-//! | [`offset`](crate::geometry::Combinator::offset) | `sdf - r` | grows and rounds every corner |
+//! | [`offset`](crate::geometry::Combinator::offset) | `sdf - r` | grows, rounding every corner |
 //! | [`extrude`](crate::geometry::Combinator::extrude) | <code>box of (sdf, &#124;p_last&#124; - h)</code> | lifts `D-1` → `D` |
 //! | [`revolve`](crate::geometry::Combinator::revolve) | `sdf(p₀, ‖p⊥‖ - r)` | sweeps a 2D profile around axis 0 |
 //!
-//! The last two are dimension *lifts*, which is what makes the plane-only tier
-//! useful in space: every star, polygon and n-gon becomes either a prism or a
-//! ring of that cross-section.
+//! The last two are dimension *lifts*, and they are what make the plane-only tier
+//! useful in space: every star, polygon and n-gon becomes a prism or a ring of that
+//! cross-section.
 //!
-//! `shell` hollows a solid out, in any dimension — it is [`Ring`] generalized to
+//! `shell` hollows a solid out, in any dimension — [`Ring`] generalized to
 //! everything:
 //!
 //! ```
@@ -78,14 +67,14 @@
 //! ```
 //!
 //! `offset` grows a shape, rounding every corner — and repairs the
-//! conservative-outside underestimate of the half-space shapes ([`Polytope`],
-//! [`NGonC`]), since it moves the true surface out to where the face-plane
-//! maximum is exact:
+//! conservative-outside underestimate of half-space shapes ([`Polytope`],
+//! [`NGonC`]), since it moves the true surface out to where the face-plane maximum
+//! is exact:
 //!
 //! ```
 //! # use space_filling::{geometry::*, sdf::SDF};
 //! let rounded = Hyperrect { size: V2::new(1.4, 0.8) }.offset(0.1);
-//! assert!(rounded.sdf(P2::new(0.7, 0.4)) < 0.0);   // the old sharp corner, now interior
+//! assert!(rounded.sdf(P2::new(0.7, 0.4)) < 0.0);   // once a sharp corner, now interior
 //! assert!(Cross { thickness: 0.2 }.offset(0.05).sdf(P2::new(1.0, 0.2)) < 0.0);
 //! ```
 //!
@@ -103,13 +92,13 @@
 //! assert!(hyperslab.sdf(Point::from([0.0, 0.0, 0.0, 0.0])) < 0.0);
 //! ```
 //!
-//! `revolve` sweeps a 2D profile around axis 0, held `radius` clear of it — which
-//! turns any plane shape into a ring of that cross-section:
+//! `revolve` sweeps a 2D profile around axis 0, held `radius` clear of it, turning
+//! any plane shape into a ring of that cross-section:
 //!
 //! ```
 //! # use space_filling::{geometry::*, sdf::SDF};
 //! let torus = Hypersphere.scale(0.3f64).revolve(0.7);
-//! // the tube's core circle sits one minor radius inside the surface
+//! // a tube's core circle sits one minor radius inside its surface
 //! assert!((torus.sdf(Point::from([0.0, 0.7, 0.0])) + 0.3).abs() < 1e-12);
 //! assert!(torus.sdf(Point::from([0.0, 0.0, 0.0])) > 0.0);     // the hole
 //! let star_ring = Pentagram.scale(0.25f64).revolve(0.7);
@@ -117,11 +106,11 @@
 //! assert!(pipe.sdf(Point::from([0.0, 0.7, 0.0])) < 0.0);
 //! ```
 //!
-//! They compose, of course, and with the booleans too:
+//! They compose, of course, and with booleans too:
 //!
 //! ```
 //! # use space_filling::{geometry::*, sdf::SDF};
-//! // a hollow icosahedron frame — rounded first, so the field is exact everywhere
+//! // a hollow icosahedron frame — rounded first, so its field is exact everywhere
 //! let frame = icosahedron::<f64>().offset(0.02).shell(0.01);
 //!
 //! // a gyroid labyrinth: a minimal surface, thickened, clipped to a container
@@ -129,7 +118,7 @@
 //!   .shell(0.03f64)
 //!   .intersection(Hypersquare::<3>);
 //!
-//! // the shell of a cube minus an inscribed ball: a cube's edges, as it were
+//! // a cube's shell less an inscribed ball: its edges, as it were
 //! let cage = Hypersquare::<3>.shell(0.05)
 //!   .subtraction(Hypersphere::<3>.scale(0.95));
 //!
@@ -138,18 +127,18 @@
 //! # }
 //! ```
 //!
-//! Every one of those chains composes without a turbofish: the
-//! [`Combinator`](crate::geometry::Combinator) trait takes its scalar and
-//! dimension as method generics, so a wrapper like `shell(..)` can be a receiver
-//! as happily as a `Hypersphere::<3>` can.
+//! None of those chains needs a turbofish:
+//! [`Combinator`](crate::geometry::Combinator) takes its scalar and dimension as
+//! method generics, so a wrapper like `shell(..)` can be a receiver as happily as
+//! `Hypersphere::<3>`.
 //!
-//! Two shapes are worth calling out as *sources* rather than results.
-//! [`Polytope`] takes any set of half-spaces, so a polytope you can tabulate is
-//! a polytope you can render — every constructor in [`d3`] and [`d4`] is one
-//! call to [`convex_hull`] over a vertex orbit. And [`Gyroid`] is not a distance
-//! field at all but a level set, normalized by its own gradient bound so that
-//! the result is still an honest 1-Lipschitz underestimate: the pattern to copy
-//! whenever you want an implicit surface the solvers can actually chew on.
+//! Two shapes are worth calling out as *sources* rather than results. [`Polytope`]
+//! takes any set of half-spaces, so a polytope you can tabulate is a polytope you
+//! can render — every constructor in [`d3`] and [`d4`] is one call to
+//! [`convex_hull`] over a vertex orbit. And [`Gyroid`] is no distance field at all
+//! but a level set, normalized by its own gradient bound so the result stays an
+//! honest 1-Lipschitz underestimate: the pattern to copy whenever you want an
+//! implicit surface the solvers can chew on.
 
 pub mod d2;
 pub mod d3;

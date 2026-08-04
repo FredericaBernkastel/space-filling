@@ -1,21 +1,19 @@
 //! This is a library for generalized space filling in ℝᴺ (do not mix with _packing_).
 //!
-//! It is split into [`solver`] for generating a distribution of shapes,
-//! [`geometry::shapes`] for the shapes themselves, and [`drawing`] for displaying
-//! them (requires the `drawing` feature). Here, "shape" denotes one or multiple
+//! It is split into [`solver`] for generating the distribution,
+//! [`geometry::shapes`] for shapes themselves, and [`drawing`] for displaying
+//! them (limited, requires `drawing` feature). Here, "shape" denotes one or multiple
 //! regions of ℝᴺ space that can be represented by a signed distance function.
 //!
 //! The distance-field machinery underneath lives in its own crate,
 //! [`adaptive_distance_field`] — the [`SDF`](sdf::SDF) and
 //! [`Lipschitz`](sdf::Lipschitz) traits, the [`Combinator`](geometry::Combinator)
-//! algebra, the [`ADF`](solver::ADF) and its tree, and the
+//! algebra, the [`ADF`](solver::ADF) and its tree, and
 //! [`LineSearch`](solver::LineSearch) ascent, none of which has anything to do
 //! with space filling specifically. This crate re-exports all of it through
-//! [`sdf`], [`geometry`] and [`solver`], so those paths need not be thought
-//! about; reach for the other crate directly if you want the distance field
-//! without the shape catalogue.
+//! [`sdf`], [`geometry`] and [`solver`].
 //!
-//! # Basic usage, Argmax2D solver
+//! # Basic usage, Argmax2D solver, ℝ² only.
 //! ```no_run
 //! # use {
 //! #   space_filling::{
@@ -90,6 +88,9 @@
 //! #
 //! # fn main() -> Result<()> {
     //! let path = "out.png";
+    //! // Initialize the ADF representation, providing at least:
+    //! // - Problem dimensionality and numerical precision in generic type bounds
+    //! // - Maximum k-d tree depth and initial field state
     //! let mut representation = RwLock::new(ADF::<f64, 2>::new(5, vec![Primitive::new(sdf::boundary_rect)]));
     //! let mut image = image::RgbaImage::new(2048, 2048);
     //! // In case of GD-ADF, it is adviced to use `util::local_maxima_iter`,
@@ -127,13 +128,9 @@
 //! Drawing was intended to be a rudimentary module for displaying sdf shapes. It is not highly
 //! optimized, and you are free to use third-party libraries for this purpose.
 //!
-//! Two traits, both belonging to this module — [`Shape`](`drawing::Shape`) is
-//! here rather than in `geometry` precisely because drawing is all it is for.
-//! Composing fields is [`Combinator`](`geometry::Combinator`)'s job, and what
-//! the solvers consume is [`SDF`](`sdf::SDF`) plus
-//! [`Lipschitz`](`sdf::Lipschitz`):
+//! Two additional traits, both belonging to this module:
 //! - `trait `[`Shape`](`drawing::Shape`)`: `[`SDF`](`sdf::SDF`)` + `[`BoundingBox`](`geometry::BoundingBox`)
-//! - `trait `[`Draw`](`drawing::Draw`)`: `[`Shape`](`drawing::Shape`)`
+//! - `trait `[`Draw`](`drawing::Draw`)`: `[`Shape`](`drawing::Shape`)
 //!
 //! Draw is primarily implemented on [`Texture`](`drawing::Texture`):
 //! ```text
