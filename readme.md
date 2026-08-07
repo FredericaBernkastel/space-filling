@@ -202,7 +202,7 @@ Same as 03_embedded, but in ℝ³ using GD-ADF solver.
 - [x] Add more sample SDFs, and a generic draw trait
 - [x] Extend precision below 2<sup>-16</sup> (gigapixel resolution)
 - [x] Rework the traits
-- [ ] Generalize to N dimensions
+- [x] Generalize to N dimensions
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
 
