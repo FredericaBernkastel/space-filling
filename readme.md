@@ -41,7 +41,10 @@ field composed of millions of primitives can be sampled in logarithmic time, rat
 quadratic cost.
 
 Once the representation is built, an optimizer takes over — an adaptive gradient ascent, which makes GD-ADF a
-**local-maximum** method. A candidate step of length `h` along the sampled ascent direction is taken only when it
+**local-maximum** method. 
+<details>
+<summary>Details</summary>
+A candidate step of length `h` along the sampled ascent direction is taken only when it
 improves the field, so the iterate is monotone; `h` grows on acceptance and shrinks on rejection, and the previous
 accepted direction is blended into the next (momentum), cancelling the across-ridge zigzag at the kink maxima of
 distance fields (which lie on the medial axis, where `g` is not differentiable):
@@ -50,6 +53,7 @@ distance fields (which lie on the medial axis, where `g` is not differentiable):
 d_k     =  normalize( ∇g(p_k)/|∇g(p_k)| + d_{k-1} )
 p_{k+1} =  p_k + h_k·d_k        if g improves, else p_k;      h ← h·growth | h·decay
 ```
+</details><br>
 
 Since a distance field has unit-magnitude gradient almost everywhere, only the *direction* of the gradient is
 used — sidestepping several issues common to GD and interior-point methods, and freeing the step schedule from
@@ -60,13 +64,6 @@ Relative to Argmax2D, GD-ADF offers a 10–100× memory reduction and a continuo
 speed/precision trade-offs, in both single and double precision.
 
 ## Implementation
-
-The distance-field machinery described below — the SDF trait algebra, the `ADF` and its `2^N`-tree, and the
-gradient ascent — lives in its own crate, [`adaptive-distance-field`](adaptive-distance-field), since none of it
-is specific to space filling. `space-filling` depends on it and adds the shape catalogue, the `Argmax2D` solver,
-batched maxima search, and 2D drawing. Both are members of one workspace, and `space-filling` re-exports the
-whole distance-field API through its own `sdf`, `geometry` and `solver` modules.
-
 Let a *primitive* be a pair `(f, L)` of a field `f` and a declared Lipschitz constant `L` (`L = 1` is exact for a
 true SDF; approximate estimators declare a larger bound). A bucket `B = {(fᵢ, Lᵢ)}` represents the field
 `g_B = min_i fᵢ`, which is `max_i Lᵢ`-Lipschitz. Shape types declare their bound through the `Lipschitz` trait —
