@@ -142,6 +142,68 @@ D* = { v : g(v) > |v − x₀| − d }
   where `ĝ` is the node's own bucket field — exact at leaves, and at internal nodes a pre-subdivision
   snapshot, a valid upper bound of `g` since insertions only ever lower the field.
 
+## Higher D
+
+The tree's subdivision layout is a compile-time parameter.
+
+- [`Orthant`](adaptive-distance-field/src/adf/tree.rs) halves every axis at once, `2^D` children per node. It
+  exists for `D = 1..=6` only. It wins **queries** at every dimension it
+  supports, by 1.5–1.9×, its descent being `D` times shallower.
+- [`Kd`](adaptive-distance-field/src/adf/tree.rs) halves one axis per level, 2 children per
+  node. Carries no ceiling, and its **build** advantage grows with dimension: ×0.94 at `D = 3`, ×0.46 at
+  `D = 6`. One subdivision allocates 2 nodes rather than `2^D` — or a million per split at `D = 20`.
+
+So `Orthant` for query-heavy work in two or three dimensions, `Kd` above three and necessarily above six. The
+depth budget counts *full* subdivisions in either layout, which for `Kd` is `D` levels; since the arena stores
+depth in a `u8`, the mechanical ceiling is `max_depth × D ≤ 255`. Measured to `D = 20`.
+
+#### What dimension does to the proof
+
+Every certificate rests on the cell's **half-diagonal** `h(R)`, which on the unit cube is `√D/2` — that is `√D`
+times its half-side, so a cell is `√D` harder to certify than the same cell in one dimension. Two consequences,
+and neither is optional above `D ≈ 6`:
+
+- The branch-and-bound descends toward its budget instead of returning early, and that budget is
+  `prune_subdiv × D` levels under `Kd`. The default of `8` is a two-dimensional default: a *single* insertion
+  measures 6.1 s at `D = 8` and 4.4 s at `D = 10`, against 3 ms at `D = 20` with
+  [`with_prune_subdiv(1)`](adaptive-distance-field/src/adf/mod.rs).
+- From `D ≈ 4` a one-axis cut prunes nothing whatever — a ball straddling it survives on both sides, so both
+  children inherit the parent's whole bucket and both overflow again on the next insertion. Left alone the tree
+  **doubles on every insertion**: the `D ≥ 13` arenas came out as exact `2^k − 1` complete binary trees, every
+  leaf holding every primitive, 300 MiB for twenty balls.
+
+Therefore pruning is *not* disabled, and never becomes unsound — it is still attempted on every trial cell, and still only
+ever drops a primitive it has proved redundant. What is refused is the **subdivision** that would buy nothing,
+from `CUT_MUST_PRUNE_MIN_DIMS = 4` upward, which collapses a k-d field to a single fat leaf answering queries
+with exactly the primitives the deep tree would have held. Worth ×3.9 to ×75 the circles placed and 1450–12600×
+less memory. The threshold is where the covering overhead of a box against the ball its own certificate can
+actually cover, `(√D/2)^D = (D/4)^(D/2)`, passes 1 — which is exactly `D = 4`. Query-heavy work in `4..10` can
+have the deep tree back with [`with_cut_must_prune(false)`](adaptive-distance-field/src/adf/mod.rs): at `D = 6`
+that is build ×5.0 slower, query ×2.96 faster, memory ×620 larger.
+
+For why the `√D` is intrinsic to boxes rather than to Lipschitz certification, and what a ball-based hierarchical
+cover would change, see [§2.2 *Where the certificate breaks, exactly*](doc/publications/infinite_dimensions/readme.md#22-where-the-certificate-breaks-exactly)
+and [§6.6](doc/publications/infinite_dimensions/readme.md#66-metric-space-adf-the-structural-generalization).
+
+#### Constructing one
+
+```rust
+// Three dimensions, all axes at once: the fastest queries, and the historical layout.
+let octree = ADF::<f64, 3, Orthant>::new(6, vec![Primitive::new(sdf::boundary_rect)]);
+
+// Twenty dimensions, one axis per level — 2 full subdivisions, so 40 k-d levels.
+// Above D ≈ 6 the proof budget has to come down, or one insertion takes seconds.
+let wide = ADF::<f64, 20, Kd>::new(2, vec![Primitive::new(sdf::boundary_rect)])
+  .with_prune_subdiv(1);
+
+// Or pin one parameter at a time, in any order; `bounded` seeds the domain walls for you.
+let field = adf::builder().f64().dims::<6>().kd().prune_subdiv(1).bounded(3);
+
+// Keep the deep tree in a middling dimension, paying build to save query.
+let deep = ADF::<f64, 6, Kd>::new(2, vec![Primitive::new(sdf::boundary_rect)])
+  .with_cut_must_prune(false);
+```
+
 ## Examples
 
 Run an example with:

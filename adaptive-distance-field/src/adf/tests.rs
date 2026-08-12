@@ -251,10 +251,8 @@ fn climb<const D: usize>(
   assert!(worst == 0.0, "split round changed the field by {worst:e}");
 }
 
-/// The dimension-dependent split policy is a performance knob, not a correctness
-/// one: pruning only ever drops primitives it has *proved* redundant over the
-/// cell, so refusing a division that prunes nothing cannot move the field by a
-/// single bit — it only declines to store two copies of the same bucket.
+/// Refusing a division that prunes nothing cannot move the field by a single bit:
+/// it only declines to store two copies of the same bucket.
 ///
 /// `D = 12` is above [`CUT_MUST_PRUNE_MIN_DIMS`], so the default is `true` here and
 /// the comparison is against an explicitly disabled field. `prune_subdiv` is 1

@@ -10,7 +10,7 @@
 //! The backing tree's layout is a type parameter with **no default**, because it
 //! is a real decision rather than a detail: `ADF<f64, 3, Orthant>` splits all
 //! three axes at once, `ADF<f64, 6, Kd>` splits one axis per level. State it
-//! through the turbofish, or one slot at a time with [`builder`]:
+//! through the turbofish, or one slot at a time with [`builder()`]:
 //!
 //! ```
 //! # use adaptive_distance_field::adf;
@@ -164,35 +164,20 @@ pub struct ADF<Float: Scalar, const D: usize, L> {
   cut_must_prune: bool,
 }
 
-/// The dimension from which an overflowing leaf demands that dividing actually
-/// prune something before it divides.
+/// The dimension from which an overflowing leaf divides only if dividing prunes
+/// something — see [`ADF::with_cut_must_prune`].
 ///
-/// Four, because that is where a box stops being an efficient cell: the covering
-/// overhead of a box against the ball its own certificate actually covers is
-/// `(√D/2)^D = (D/4)^(D/2)`, which is 0.65 at `D = 3`, exactly 1 at `D = 4`, 3.4 at
-/// 6 and 9.8e6 at 20. The predicted crossover and the measured one agree — under
-/// insertion pressure (`tests/stress_kd.rs`, ten seconds per dimension) refusing
-/// useless cuts places ×0.10 the circles at `D = 3` and ×3.9 to ×75 from `D = 4`
-/// up, with 1450–12600× less memory.
+/// Four, where the covering overhead of a box against the ball its certificate
+/// covers, `(√D/2)^D = (D/4)^(D/2)`, passes 1: 0.65 at `D = 3`, 1 at 4, 3.4 at 6,
+/// 9.8e6 at 20. Measured crossover is the same integer — ×0.10 the circles placed
+/// at `D = 3`, ×3.9 to ×75 from 4 up.
 ///
-/// `D = 3` is the one measured loss, and it is a local-greedy trap rather than
-/// noise: the first cut of the domain prunes nothing whatever — a ball straddling
-/// it survives on both sides — so refusing forecloses the depth at which cuts
-/// *would* bite, and the field collapses to one leaf holding thousands of
-/// primitives. Above the crossover there is no such depth to foreclose: every
-/// cell keeps the whole bucket however deep it goes.
+/// `D = 3` loses to a local-greedy trap: the first cut of the domain prunes nothing
+/// whatever, so refusing it forecloses the depth at which cuts *would* bite. Above
+/// the crossover there is no such depth.
 ///
-/// The policy is also **self-selecting by layout**, which the dimension alone does
-/// not capture. At `D = 6` it never fires under [`Orthant`](tree::Orthant) at all —
-/// an all-axes cut divides the cell's volume by `2^D` and does prune, so the tree
-/// is built exactly as before — while [`Kd`](tree::Kd)'s one-axis cuts prune
-/// nothing and collapse. The constant is really a guard on k-d's trap.
-///
-/// Query-heavy workloads in `4..10` may still want it off, via
-/// [`ADF::with_cut_must_prune`]. Measured at `D = 6` over 150 balls: build ×5.0
-/// faster, query ×2.96 slower, memory ×620 smaller — net positive below roughly
-/// 1.5 M queries and negative above, since the fat leaf trades a `O(1)` descent
-/// for an `O(n)` bucket scan.
+/// Never fires under [`Orthant`], whose all-axes cuts do prune; the constant
+/// guards a [`Kd`] trap.
 pub const CUT_MUST_PRUNE_MIN_DIMS: usize = 4;
 
 impl <_Float: Real, const D: usize> SDF<_Float, D> for &[Primitive<_Float, D>] {
@@ -249,13 +234,13 @@ where
 /// way, and return the subtree that results.
 ///
 /// A branch stops as soon as its pruned bucket fits, so the round is adaptive
-/// rather than a fixed `2^D` fan-out: under [`Orthant`](tree::Orthant), where
+/// rather than a fixed `2^D` fan-out: under [`Orthant`], where
 /// `LEVELS_PER_SPLIT` is 1, `round_end` is the caller's own depth plus one and
 /// this produces exactly one level — the historical behaviour, unchanged.
 ///
-/// Also returns the smallest bucket any cell of the round ended up with, which
-/// [`ADF::with_cut_must_prune`] compares against the bucket it started from to see
-/// whether the division bought anything. Free: every `kept` is already in hand.
+/// Also returns the smallest bucket any cell of the round ended up with — free,
+/// every `kept` being in hand — which [`ADF::with_cut_must_prune`] compares against
+/// the bucket the round started from.
 fn divide_round<_Float, const D: usize, L>(
   bucket: &[Primitive<_Float, D>],
   rect: Aabb<_Float, D>,
@@ -343,7 +328,7 @@ where
 ///
 /// Identical claim, identical soundness — the inequality never mentions how a box
 /// was cut. What changes is the shape of the search: [`Orthant`] pushes `2^D`
-/// sub-boxes per level, [`Kd`](tree::Kd) pushes 2 and needs `D` levels to reach
+/// sub-boxes per level, [`Kd`] pushes 2 and needs `D` levels to reach
 /// the same size, so `max_subdiv` is multiplied by
 /// [`Layout::LEVELS_PER_SPLIT`] to keep the *resolution* of the proof fixed
 /// across layouts. In high dimension that trades a `2^D`-way fan-out for a deeper
@@ -403,7 +388,7 @@ where
   /// `max_depth` specifies the maximum number of **full** subdivisions —
   /// halvings of every axis — so it means the same resolution in either layout;
   /// `init` specifies initial sdf primitives. The arena stores the budget in
-  /// levels, which for [`Kd`](tree::Kd) is `max_depth * D`.
+  /// levels, which for [`Kd`] is `max_depth * D`.
   pub fn new(max_depth: u8, init: Vec<Primitive<_Float, D>>) -> Self {
     let lipschitz_max = bucket_lipschitz(&init);
     let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u8::MAX as usize) as u8;
@@ -462,24 +447,21 @@ where
   }
 
   /// Whether an overflowing leaf may only divide if dividing prunes something.
-  /// Defaults to `D >= `[`CUT_MUST_PRUNE_MIN_DIMS`], which is the whole point —
-  /// the answer is dimensional, and wrong in both directions if fixed.
+  /// Defaults to `D >= `[`CUT_MUST_PRUNE_MIN_DIMS`].
   ///
-  /// The trial division is computed either way, so the test is free; what it
-  /// changes is whether a division that leaves every cell holding the parent's
-  /// entire bucket is *kept*. In high dimension it always does leave that, because
-  /// a ball straddling a cut survives on both sides, so both cells inherit
-  /// everything and both overflow again on the next insertion — the tree doubles
-  /// per insertion and stores nothing new. Refusing keeps one fat leaf instead,
-  /// which answers queries with the same primitives the deep tree would have.
+  /// The trial division is computed either way, so the test is free. What it
+  /// refuses is a division leaving every cell with the parent's entire bucket —
+  /// which in high dimension is every division, a ball straddling a cut surviving
+  /// on both sides, so the tree doubles per insertion and stores nothing new. One
+  /// fat leaf answers queries with the same primitives the deep tree would have.
   ///
-  /// A refused cut leaves the bucket over capacity, so retrying on every insertion
-  /// would re-pay an `O(n^2)` trial each time; a refused leaf retries only once its
-  /// bucket has doubled, for `O(log n)` trials over its lifetime.
+  /// A refused leaf retries once its bucket has doubled: `O(log n)` trials rather
+  /// than an `O(n^2)` one per insertion.
   ///
-  /// This is a performance knob and not a correctness one: pruning only ever drops
-  /// primitives it has *proved* redundant over the cell, so the field is
-  /// bit-identical either way — only the arena and the query cost move.
+  /// A performance knob, not a correctness one — pruning only ever drops primitives
+  /// it has *proved* redundant, so the field is bit-identical either way. At
+  /// `D = 6` over 150 balls, off against on: build ×5.0 slower, query ×2.96 faster,
+  /// memory ×620 larger, so query-heavy work in `4..10` may want it off.
   pub fn with_cut_must_prune(mut self, require: bool) -> Self {
     self.cut_must_prune = require;
     self
@@ -598,10 +580,8 @@ where
         return Refine::SetData(Bucket::Leaf(vec![prim.clone()]));
       }
 
-      // A leaf whose cut was refused sits over capacity, and re-running the trial
-      // on every later insertion would cost `O(n^2)` proofs each time. Retrying
-      // only once the bucket has doubled makes that `O(log n)` trials in total,
-      // and needs no per-node state — the bucket's own length is the clock.
+      // A refused leaf sits over capacity, so retry only once its bucket has
+      // doubled: `O(log n)` trials, with the bucket's length as the clock.
       let retry_now = !cut_must_prune
         || bucket.len() == capacity
         || bucket.len().is_power_of_two();
@@ -630,15 +610,10 @@ where
         let (children, min_kept) = divide_round::<_Float, D, L>(
           &combined, node.rect, node.depth, round_end, subdiv, capacity);
 
-        // Refusing a cut that prunes nothing is dimensional, and wrong as a
-        // universal rule in *both* directions. Below
-        // `CUT_MUST_PRUNE_MIN_DIMS` it is a local-greedy trap: the first cut of
-        // the domain prunes nothing whatever — a ball straddling it survives on
-        // both sides — so the tree never reaches the depth at which cuts do bite,
-        // and at D = 6 it collapsed to a single leaf holding every primitive
-        // (queries ×3.2). At and above it the trap is not one, because there is no
-        // depth at which cuts bite: every cell keeps the whole bucket, so the only
-        // thing a division buys is two copies of it. See CHANGELOG.md.
+        // Below `CUT_MUST_PRUNE_MIN_DIMS` this refusal is a local-greedy trap: the
+        // first cut of the domain prunes nothing, so the tree never reaches the
+        // depth at which cuts do bite. At and above it there is no such depth —
+        // every cell keeps the whole bucket, so a division buys two copies of it.
         if cut_must_prune && min_kept >= combined.len() {
           return Refine::SetData(Bucket::Leaf(combined));
         }
