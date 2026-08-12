@@ -81,63 +81,7 @@ $d_k \asymp k^{-1/N}$, so over a million insertions the clearance falls by $10^{
 $N = 10$, and by $0.76$ at $N = 50$. The sequence flattens: every insertion is nearly as good as the first, which
 is the same as saying no insertion accomplishes anything.
 
-> **A free diagnostic.** Since $\log d_k \approx \mathrm{const} - \frac{1}{N} \log k$, the slope of a log–log plot
-> of observed clearance against insertion count *measures the effective dimension* of a distribution — the
-> dimension it occupies, which need not be the one it is embedded in.
-
-It costs nothing to run, so it is measured here rather than proposed. The harness is
-[`doc/clearance_decay`](clearance_decay); it drives this crate's own solvers, writes `decay.csv`, and fits every
-series by least squares on $(\log k, \log d_k)$.
-
 ![Figure 5. Clearance decay measured through the crate's own solvers. Panel (a) validates the estimator on farthest-first traversal in 2, 3 and 4 dimensions, where the covering radius must scale as k to the minus one over D; the fit recovers 2.10 against a true 2 but reads high in 3 and 4 dimensions, and a control series with four times the restarts shows this is a pre-asymptotic effect rather than search error. Panel (b) applies the same fit to the fractal distribution of example 01, obtaining non-integer effective dimensions of 1.89 and 1.21 with excellent fit quality. A results table gives slopes, predictions, fit quality and measured dimensions for all six series.](figures/fig5-decay.svg)
-
-Two families were run. **Farthest-first traversal** inserts a zero-radius point at the deepest spot, so $d_k$ *is*
-the covering radius and the answer is known in advance: the slope must be $-1/D$. **The fractal distribution of
-[`examples/argmax2d/01`](../examples/argmax2d/01_fractal_distribution.rs)** inserts a ball of radius $d/n$ at each
-exact global maximum, where the exponent is an empirical property of the distribution and nobody knows it in
-advance.
-
-| series | rule | ambient $D$ | points fitted | fitted slope | predicted | $R^2$ | $N$ measured |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `ff2` | point at the deepest spot | 2 | 2 901 | $-0.4771$ | $-0.5000$ | 0.9988 | **2.10** |
-| `ff3` | point at the deepest spot | 3 | 1 101 | $-0.2829$ | $-0.3333$ | 0.9928 | **3.53** |
-| `ff4` | point at the deepest spot | 4 | 701 | $-0.2027$ | $-0.2500$ | 0.9685 | **4.93** |
-| `ff4hi` | as `ff4`, four times the restarts | 4 | 301 | $-0.1767$ | $-0.2500$ | 0.9055 | **5.66** |
-| `frac4` | ball of radius $d/4$ (example 01) | 2 | 2 901 | $-0.5279$ | — | 0.9993 | **1.89** |
-| `frac1` | ball of radius $d$ (maximal) | 2 | 266 | $-0.8233$ | — | 0.9926 | **1.21** |
-
-**In the plane it works.** Farthest-first traversal in $\mathbb{R}^2$ gives $-0.4771$ against a true $-0.5$, so the
-estimator recovers $2.10$ for a dimension of $2$ — a 5 % overestimate across 2 901 insertions, at $R^2 = 0.9988$.
-
-**Above the plane it reads high, and the reason is not search error.** $D = 3$ returns $3.53$ and $D = 4$ returns
-$4.93$. The tempting explanation is that the multistart ascent fails to find the true global maximum as the field
-accumulates local maxima, biasing $d_k$ downward. The `ff4hi` control refutes it: quadrupling the restarts moves
-the slope *further* from $-1/4$, not closer, and drops $R^2$ from $0.97$ to $0.91$. What is happening instead is
-that a power law is simply a poor description of this regime — with $k \le 800$ in four dimensions there are only
-$800^{1/4} \approx 5.3$ points per axis, nowhere near the asymptotics the scaling law describes.
-
-> Reaching the asymptotic regime needs $k \gg 2^{D}$ insertions. **The estimator is therefore subject to the very
-> curse it measures**, and is trustworthy in exactly the regime where the problem was never hard. That is a real
-> limitation of the diagnostic, and it sharpens rather than softens §2.1's conclusion.
-
-**Applied where no answer is known, it is cleaner than the validation.** Both fractal series take the *exact*
-global maximum from `Argmax2D`, so no search error enters at all, and both are excellent power laws — $R^2$ of
-$0.9993$ and $0.9926$. Example 01's distribution measures $N = 1.89$, and maximal-ball insertion $N = 1.21$: two
-non-integer dimensions, both below the ambient $2$, which is what a fractal support should give. The two rules
-differ only in the radius inserted at the same maxima on the same domain, and the diagnostic separates them
-cleanly — confirming that the slope measures the *distribution*, not the space it lives in.
-
-Two caveats are visible in the figure. Above two dimensions no exact global solver exists — which is this report's
-thesis, not an oversight — so `ff3` and `ff4` estimate each maximum by multistart ascent. And `Argmax2D` stores a
-discrete field, so its clearances are bounded below by the grid pitch; every point within 20 cells of that floor is
-excluded from the fits, which is why `frac1` contributes 266 points rather than 3 000 even at a resolution of
-$8192^2$.
-
-```bash
-cd doc/clearance_decay && cargo run --release && python plot.py
-```
-
-That reproduces `decay.csv` and Figure 5 from scratch in about 35 seconds.
 
 ### 2.2 Where the certificate breaks, exactly
 
@@ -335,15 +279,34 @@ accepted direction to cancel the across-ridge zigzag, accepts only improving ste
 vanishing sampled gradient. Not one line of that argument uses finite dimension. Written abstractly, with
 $u_k$ the unnormalized blend,
 
+let $a_k \in \lbrace 0, 1 \rbrace$ record whether the trial step improved the field,
+
 $$
-u_k = \frac{\nabla g(p_k)}{\lVert \nabla g(p_k) \rVert} + d_{k-1}, \qquad d_k = \frac{u_k}{\lVert u_k \rVert},
+a_k = 1 \iff g(p_k + h_k d_k) > g(p_k),
 $$
 
-```
-p_{k+1} = p_k + h_k·d_k        if g improves, else p_k;      h ← h·growth | h·decay
-```
+and the whole method is three lines with no piecewise definition anywhere:
 
-is a Hilbert-space algorithm as it stands. **One thing must change**: the gradient is currently sampled by
+$$
+u_k = \frac{\nabla g(p_k)}{\lVert \nabla g(p_k) \rVert} + a_{k-1} d_{k-1},
+\qquad
+d_k = \frac{u_k}{\lVert u_k \rVert},
+$$
+
+$$
+p_{k+1} = p_k + a_k h_k d_k,
+\qquad
+h_{k+1} = \min \left( h_0, h_k \gamma_{+}^{a_k} \gamma_{-}^{1 - a_k} \right),
+\qquad
+\gamma_{+} > 1 > \gamma_{-} > 0 .
+$$
+
+The indicator carries the entire control structure. In $p_{k+1}$ it makes the iterate monotone — a rejected step
+multiplies the displacement by zero rather than branching. In $h_{k+1}$ it selects growth or decay as an exponent,
+capped at the initial length $h_0$ so the step can never exceed its starting scale. And in $u_k$ it appears as
+$a_{k-1}$, because momentum is *reset* on rejection rather than retained: the previous direction is blended in only
+if it earned its place. The iteration ends when $h_k < \Delta$, when the sampled gradient vanishes, or at a step
+limit. This is a Hilbert-space algorithm as it stands. **One thing must change**: the gradient is currently sampled by
 finite differences along $N+1$ axis directions, which is meaningless when $N = \infty$. The replacement is a
 randomized directional estimate over $m \ll N$ Gaussian directions,
 
