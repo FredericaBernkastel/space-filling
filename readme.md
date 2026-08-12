@@ -203,6 +203,7 @@ Same as 03_embedded, but in ℝ³ using GD-ADF solver.
 - [x] Extend precision below 2<sup>-16</sup> (gigapixel resolution)
 - [x] Rework the traits
 - [x] Generalize to N dimensions
+- [ ] [Generalize to infinite-dimensional function and $\mathbb{R}^N \rtimes SO(N)$ configuration spaces](doc/publications/infinite_dimensions)
 
 Once above are done, I will use this library for my next project "Gallery of Babel".
 
