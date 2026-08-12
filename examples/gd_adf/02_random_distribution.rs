@@ -5,8 +5,8 @@ use std::time::Instant;
 use {
   space_filling::{
     geometry::{Combinator, Hypersphere, Translation, Scale, P2, V2},
-    sdf::{self, SDF},
-    solver::{LineSearch, ADF, Primitive},
+    sdf::SDF,
+    solver::{adf, LineSearch, ADF, Orthant, Primitive},
     drawing::{Draw, Shape},
     util
   },
@@ -19,7 +19,7 @@ use {
 type AffineT<T> = Scale<Translation<T, f64, 2>, f64>;
 
 // profile: 62ms, 1000 circrles, adf_subdiv = 5, gd_lattice = 1
-fn random_distribution(representation: &RwLock<ADF<f64, 2>>) -> impl Iterator<Item = AffineT<Hypersphere>> + '_  {
+fn random_distribution(representation: &RwLock<ADF<f64, 2, Orthant>>) -> impl Iterator<Item = AffineT<Hypersphere>> + '_  {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
 
   util::local_maxima_iter(
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
   let start_time = Instant::now();
   let path = "out.png";
   let representation = RwLock::new(
-    ADF::new(7, vec![Primitive::new(sdf::boundary_rect)])
+    adf::builder().f64().dims::<2>().orthant().bounded(7)
       .with_prune_subdiv(8)); // pruning precision
   let mut image = image::RgbaImage::new(2048, 2048);
 

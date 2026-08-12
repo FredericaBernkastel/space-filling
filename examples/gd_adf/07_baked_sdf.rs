@@ -17,7 +17,7 @@
 use {
   space_filling::{
     sdf::{self, SDF, Lipschitz},
-    solver::{ADF, LineSearch, Primitive},
+    solver::{adf, LineSearch, Primitive},
     drawing::{Draw, Shape},
     geometry::{BoundingBox, Combinator, Scale, Translation, Aabb, P2, V2, Real, VectorExt},
     util
@@ -233,7 +233,7 @@ fn main() -> Result<()> {
     .translate(V2::new(0.4, 0.5))
     .scale(0.5);
   let mut image = RgbaImage::new(2048, 2048);
-  let representation = ADF::new(7, vec![
+  let representation = adf::builder().f64().dims::<2>().orthant().build(7, vec![
     Primitive::new(sdf::boundary_rect),
     // the Lipschitz bound is picked up from the `Lipschitz` impl automatically
     Primitive::from_shape(main_de.clone()),

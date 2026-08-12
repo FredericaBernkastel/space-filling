@@ -18,14 +18,14 @@
 //!
 //! ```no_run
 //! use adaptive_distance_field::{
-//!   adf::{ADF, Primitive},
+//!   adf::{self, Primitive},
 //!   geometry::{Point, VectorExt},
 //!   line_search::LineSearch,
 //!   sdf::{self, SDF},
 //! };
 //!
 //! // seed a 3D field with the walls of the unit cube, positive inside
-//! let mut field = ADF::<f64, 3>::new(6, vec![Primitive::new(sdf::boundary_rect)]);
+//! let mut field = adf::builder().f64().dims::<3>().orthant().bounded(6);
 //!
 //! // climb to a local maximum of the free space — the deepest point around
 //! let start = Point::from([0.3, 0.6, 0.5]);
@@ -58,8 +58,8 @@
 //! - [`line_search`] — adaptive gradient ascent, for locating the maxima that
 //!   [`insert_at_maximum`](adf::ADF::insert_at_maximum) consumes.
 //!
-//! Dimension count is a compile-time constant throughout, so `ADF<f64, 2>` and
-//! `ADF<f64, 3>` monomorphize separately and the 2D case costs exactly what a
+//! Dimension count is a compile-time constant throughout, so `ADF<f64, 2, Orthant>`
+//! and `ADF<f64, 3, Orthant>` monomorphize separately and the 2D case costs what a
 //! quadtree-only implementation would.
 //!
 //! # Beyond this crate

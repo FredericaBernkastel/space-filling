@@ -18,14 +18,16 @@ a proof, so the stored field never deviates from the `min` over everything inser
 
 ```rust
 use adaptive_distance_field::{
-  adf::{ADF, Primitive},
+  adf::{self, Primitive},
   geometry::{Point, VectorExt},
   line_search::LineSearch,
   sdf::{self, SDF},
 };
 
-// seed a 3D field with the walls of the unit cube, positive inside
-let mut field = ADF::<f64, 3>::new(6, vec![Primitive::new(sdf::boundary_rect)]);
+// seed a 3D field with the walls of the unit cube, positive inside. The scalar,
+// the dimension count and the subdivision layout are all named — the builder takes
+// them one at a time, `ADF::<f64, 3, Orthant>::new(6, ..)` all at once
+let mut field = adf::builder().f64().dims::<3>().orthant().bounded(6);
 
 // climb to a local maximum of the free space — the deepest point around
 let start = Point::from([0.3, 0.6, 0.5]);
@@ -49,12 +51,15 @@ field.insert_at_maximum(
 - [`sdf`](src/sdf.rs) — the `SDF` and `Lipschitz` traits everything is written against, the field types the
   combinators return, and `sdf_geq_everywhere`: the branch-and-bound proof that underpins all of it.
   `boundary_rect` seeds a field with the walls of the unit cube.
-- [`adf`](src/adf/mod.rs) — the structure itself, over the [`quadtree`](src/adf/quadtree.rs) arena.
+- [`adf`](src/adf/mod.rs) — the structure itself, over the [`tree`](src/adf/tree.rs) arena, in either the
+  `2^N`-way `Orthant` layout or the binary `Kd` one; [`builder`](src/adf/builder.rs) names the three type
+  parameters one at a time.
 - [`line_search`](src/line_search.rs) — adaptive gradient ascent, for locating the maxima that `insert_at_maximum`
   consumes.
 
-Dimension count is a compile-time constant throughout, so `ADF<f64, 2>` and `ADF<f64, 3>` monomorphize separately
-and the 2D case costs exactly what a quadtree-only implementation would.
+Dimension count and layout are both compile-time constants throughout, so `ADF<f64, 2, Orthant>` and
+`ADF<f64, 3, Kd>` monomorphize separately and the 2D orthant case costs exactly what a quadtree-only
+implementation would. See [CHANGELOG.md](CHANGELOG.md) for what each layout costs, measured.
 
 ## Beyond this crate
 

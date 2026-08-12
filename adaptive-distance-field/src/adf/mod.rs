@@ -1,11 +1,24 @@
-//! Adaptively Sampled Distance Field, backed by a [`quadtree`] arena, in any
-//! compile-time dimension count.
+//! Adaptively Sampled Distance Field, backed by a [`tree`] arena, in any
+//! compile-time dimension count and either subdivision layout.
 //!
 //! Each node (bucket) stores a handful of [`Primitive`]s — a field closure
 //! together with its declared Lipschitz bound — and represents their pointwise
 //! `min`. `ADF` itself implements [`SDF`], so a field composed
 //! of millions of primitives is sampled in logarithmic time by descending to
 //! the leaf covering the query point, rather than evaluated at quadratic cost.
+//!
+//! The backing tree's layout is a type parameter with **no default**, because it
+//! is a real decision rather than a detail: `ADF<f64, 3, Orthant>` splits all
+//! three axes at once, `ADF<f64, 6, Kd>` splits one axis per level. State it
+//! through the turbofish, or one slot at a time with [`builder`]:
+//!
+//! ```
+//! # use adaptive_distance_field::adf;
+//! let field = adf::builder().f64().dims::<3>().orthant().bounded(6);
+//! ```
+//!
+//! The depth budget counts *full* subdivisions either way, so the two layouts
+//! represent the same field at the same resolution and differ only in cost.
 
 #![allow(clippy::mut_from_ref)]
 use {
@@ -13,9 +26,7 @@ use {
     geometry::{Point, Aabb, Real, VectorExt, DistPoint},
     sdf::{SDF, Lipschitz},
   },
-  quadtree::{
-    Quadtree, Node, Refine, Dim, Branching, Children, child_rect, child_rects
-  },
+  tree::{Tree, Node, Refine, Dim, Branching, child_rects},
   std::{
     sync::Arc,
     fmt::{Debug, Formatter}
@@ -24,7 +35,12 @@ use {
 };
 
 #[cfg(test)] mod tests;
-pub mod quadtree;
+pub mod builder;
+pub mod tree;
+pub use builder::{builder, AdfBuilder, Dims, Unset};
+pub use tree::{Kd, Layout, Orthant};
+/// The tree module's previous name, so existing paths keep resolving.
+pub use tree as quadtree;
 
 /// An SDF primitive stored in the tree: the field function together with its
 /// declared Lipschitz constant.
@@ -66,8 +82,8 @@ impl<_Float: Real, const D: usize> Primitive<_Float, D> {
 }
 
 #[derive(Clone)]
-pub struct ADF<Float: Scalar, const D: usize> {
-  pub tree: Quadtree<Vec<Primitive<Float, D>>, Float, D>,
+pub struct ADF<Float: Scalar, const D: usize, L> {
+  pub tree: Tree<Vec<Primitive<Float, D>>, Float, D, L>,
   /// Max subdivisions the redundancy test ([`sdf_geq_everywhere`])
   /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
   /// primitive is pruned only when provably redundant to within ~`node/2^n`),
@@ -143,22 +159,99 @@ where
   true
 }
 
-impl <_Float: Real + Send + Sync, const D: usize> ADF<_Float, D>
+/// [`sdf_geq_everywhere`], refining boxes in the layout `L` rather than always by
+/// orthants.
+///
+/// Identical claim, identical soundness — the inequality never mentions how a box
+/// was cut. What changes is the shape of the search: [`Orthant`] pushes `2^D`
+/// sub-boxes per level, [`Kd`](tree::Kd) pushes 2 and needs `D` levels to reach
+/// the same size, so `max_subdiv` is multiplied by
+/// [`Layout::LEVELS_PER_SPLIT`] to keep the *resolution* of the proof fixed
+/// across layouts. In high dimension that trades a `2^D`-way fan-out for a deeper
+/// walk over the sub-boxes a witness actually lives in.
+// `L` leads the parameter list so a caller can name just the layout —
+// `sdf_geq_everywhere_in::<Kd>(..)` — and leave the rest to inference.
+pub fn sdf_geq_everywhere_in<L, _Float, F, G, const D: usize>(
+  f: F,
+  g: G,
+  domain: Aabb<_Float, D>,
+  l_f: _Float,
+  l_g: _Float,
+  max_subdiv: u32,
+) -> bool
 where
-  Dim<D>: Branching,
+  _Float: Real,
+  F: Fn(Point<_Float, D>) -> _Float,
+  G: Fn(Point<_Float, D>) -> _Float,
+  L: Layout<D>,
+{
+  let two = _Float::one() + _Float::one();
+  let l_sum = l_f + l_g;
+  let budget = max_subdiv * L::LEVELS_PER_SPLIT as u32;
+  let mut stack = vec![(domain, 0u32)];
+  while let Some((rect, depth)) = stack.pop() {
+    let diff = f(rect.center()) - g(rect.center());
+    if diff < _Float::zero() {
+      return false; // witness: f < g here, so `f >= g everywhere` is false
+    }
+    let half_diag = rect.size().length() / two;
+    if diff >= l_sum * half_diag {
+      continue; // `f - g >= 0` proved over the whole box
+    }
+    if depth >= budget {
+      return false; // undecided within budget → conservatively assume a witness
+    }
+    // `depth` doubles as the cut-axis counter for `Kd`, and is ignored by
+    // `Orthant` — the same call serves both.
+    for sub in L::children_from_fn(|i| L::child_rect(rect, depth as u8, i)) {
+      stack.push((sub, depth + 1));
+    }
+  }
+  true
+}
+
+impl <_Float: Real + Send + Sync, const D: usize, L> ADF<_Float, D, L>
+where
+  L: Layout<D>,
   // trivially satisfied — the GAT is always an array — but the compiler
   // cannot see through the projection
-  Children<Vec<Primitive<_Float, D>>, D>: Send,
+  L::Children<Vec<Primitive<_Float, D>>>: Send,
 {
-  /// Create a new ADF instance. `max_depth` specifies maximum number of tree subdivisions;
-  /// `init` specifies initial sdf primitives.
+  /// Create an ADF in the layout `L`: `ADF::<f64, 6, Kd>::new(3, init)`, or
+  /// `adf::builder().f64().dims::<6>().kd().build(3, init)` to name the
+  /// parameters one at a time.
+  ///
+  /// `max_depth` specifies the maximum number of **full** subdivisions —
+  /// halvings of every axis — so it means the same resolution in either layout;
+  /// `init` specifies initial sdf primitives. The arena stores the budget in
+  /// levels, which for [`Kd`](tree::Kd) is `max_depth * D`.
   pub fn new(max_depth: u8, init: Vec<Primitive<_Float, D>>) -> Self {
     let lipschitz_max = bucket_lipschitz(&init);
+    let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u8::MAX as usize) as u8;
     Self {
-      tree: Quadtree::new(max_depth, init),
+      tree: Tree::new(levels, init),
       prune_subdiv: 8,
       lipschitz_max,
     }
+  }
+
+  /// Bytes held by the field: the arena's nodes plus each bucket's occupied
+  /// `Primitive` slots.
+  ///
+  /// `Vec` spare capacity is excluded (it can always be shrunk to fit), and so
+  /// are the closures behind the `Arc`s, which are shared between buckets and
+  /// cannot be attributed to one.
+  pub fn memory_bytes(&self) -> usize {
+    let mut slots = 0usize;
+    self.tree.traverse(&mut |node| { slots += node.data.len(); Ok(()) }).ok();
+    std::mem::size_of::<Self>()
+      + self.tree.arena_bytes()
+      + slots * std::mem::size_of::<Primitive<_Float, D>>()
+  }
+
+  /// The layout's short name — `"orthant"` or `"k-d"`.
+  pub fn layout_name(&self) -> &'static str {
+    L::NAME
   }
   /// Controls precision of primitive pruning in a bucket: the redundancy test may
   /// refine a node up to `subdiv` times to prove `f >= g` (see [`sdf_geq_everywhere`]).
@@ -248,7 +341,7 @@ where
       let l_bucket = bucket_lipschitz(&node.data);
 
       // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
-      if sdf_geq_everywhere(
+      if sdf_geq_everywhere_in::<L, _, _, _, D>(
         f.as_ref(), |p| node.data.as_slice().sdf(p),
         node.rect, prim.lipschitz, l_bucket, subdiv
       ) {
@@ -256,7 +349,7 @@ where
       }
 
       // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
-      if sdf_geq_everywhere(
+      if sdf_geq_everywhere_in::<L, _, _, _, D>(
         |p| node.data.as_slice().sdf(p), f.as_ref(),
         node.rect, l_bucket, prim.lipschitz, subdiv
       ) {
@@ -275,7 +368,8 @@ where
             .filter_map(|(j, p_j)| (i != j).then_some(p_j.lipschitz))
             .fold(_Float::one(), _Float::max);
           // keep `p_i` unless it is provably redundant (>= the rest) within `rect`
-          if !sdf_geq_everywhere((p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
+          if !sdf_geq_everywhere_in::<L, _, _, _, D>(
+            (p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
             g.push(p_i.clone())
           }
         }
@@ -292,10 +386,12 @@ where
         Refine::SetData(data)
       } else {
         // Max bucket size reached: subdivide, pruning the combined set per child.
+        // This is where the layout earns its keep: one prune per child, so the
+        // per-subdivision cost is `2^D` proofs under `Orthant` and 2 under `Kd`.
         let mut combined = node.data.clone();
         combined.push(prim.clone());
-        Refine::Subdivide(<Dim<D> as Branching>::children_from_fn(
-          |i| prune(combined.as_slice(), child_rect(node.rect, i))))
+        Refine::Subdivide(L::children_from_fn(
+          |i| prune(combined.as_slice(), L::child_rect(node.rect, node.depth, i))))
       }
     })
   }
@@ -357,9 +453,9 @@ where
   }
 }
 
-impl <_Float: Real, const D: usize> SDF<_Float, D> for ADF<_Float, D>
+impl <_Float: Real, const D: usize, L> SDF<_Float, D> for ADF<_Float, D, L>
 where
-  Dim<D>: Branching,
+  L: Layout<D>,
 {
   fn sdf(&self, pixel: Point<_Float, D>) -> _Float {
     match self.tree.pt_to_node(pixel) {
@@ -367,14 +463,14 @@ where
       None => self.tree.root().data.as_slice().sdf(pixel),
     }}}
 
-impl <_Float: Real, const D: usize> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D> {
+impl <_Float: Real, const D: usize, L> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D, L> {
   fn bounding_box(&self) -> Aabb<_Float, D> {
     Aabb::unit()
   }}
 
-impl <_Float: Real, const D: usize> Debug for ADF<_Float, D>
+impl <_Float: Real, const D: usize, L> Debug for ADF<_Float, D, L>
 where
-  Dim<D>: Branching,
+  L: Layout<D>,
 {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     use humansize::{FileSize, file_size_opts as options};
@@ -386,16 +482,15 @@ where
       bucket_slots += node.data.len();
       Ok(())
     }).ok();
-    // Actual data only — Vec spare capacity is not counted (it can always be
-    // shrunk to fit): the arena's nodes, plus each bucket's `Primitive`s (fat
-    // pointer + Lipschitz constant per slot). The closures behind the `Arc`s
-    // are shared between buckets and are not attributed here.
+    // See `memory_bytes` for what is and is not attributed.
     let total_size = std::mem::size_of::<Self>()
-      + self.tree.node_count()
-        * std::mem::size_of::<Node<Vec<Primitive<_Float, D>>, _Float, D>>()
+      + self.tree.arena_bytes()
       + bucket_slots * std::mem::size_of::<Primitive<_Float, D>>();
     f.debug_struct("ADF")
+      .field("layout", &L::NAME)
       .field("total_nodes", &self.tree.node_count())
+      .field("leaves", &self.tree.leaf_count())
+      // in tree levels: `L::LEVELS_PER_SPLIT` of them make one full subdivision
       .field("max_depth", &max_depth)
       .field("size", &total_size.file_size(options::BINARY).unwrap())
       .finish()

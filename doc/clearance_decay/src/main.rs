@@ -29,7 +29,7 @@ use {
   space_filling::{
     geometry::{Combinator, DistPoint, Hypersphere, Point, VectorExt},
     sdf::{self, SDF},
-    solver::{ADF, Argmax2D, LineSearch, Primitive},
+    solver::{ADF, Argmax2D, LineSearch, Orthant, Primitive},
     util,
   },
   std::{fmt::Write as _, fs, time::Instant},
@@ -44,7 +44,7 @@ macro_rules! farthest_first {
     const D: usize = $D;
     let t0 = Instant::now();
     let ls = LineSearch::default();
-    let mut field = ADF::<f64, D>::new(5, vec![Primitive::new(sdf::boundary_rect)])
+    let mut field = ADF::<f64, D, Orthant>::new(5, vec![Primitive::new(sdf::boundary_rect)])
       .with_prune_subdiv(6);
 
     for k in 1..=$k_max {

@@ -2,8 +2,8 @@ use {
   std::sync::{Arc, RwLock},
   space_filling::{
     geometry::{Combinator, Ring, Hypersquare, P2, V2},
-    sdf::{self, SDF},
-    solver::{ADF, LineSearch, Primitive},
+    sdf::SDF,
+    solver::{adf, ADF, LineSearch, Orthant, Primitive},
     drawing::{self, Draw, Shape},
     util
   },
@@ -13,7 +13,7 @@ use {
   nalgebra::Rotation2
 };
 
-fn polymorphic(representation: &RwLock<ADF<f64, 2>>, texture: Arc<DynamicImage>)
+fn polymorphic(representation: &RwLock<ADF<f64, 2, Orthant>>, texture: Arc<DynamicImage>)
   -> impl Iterator<Item = Arc<dyn Draw<f64, RgbaImage> + Send + Sync>> + '_
 {
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
 
   let path = "out.png";
   let mut representation = RwLock::new(
-    ADF::new(5, vec![Primitive::new(sdf::boundary_rect)])
+    adf::builder().f64().dims::<2>().orthant().bounded(5)
       .with_prune_subdiv(8)
   );
   let texture = Arc::new(image::open("doc/fractal_distribution.png")?);

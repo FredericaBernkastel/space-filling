@@ -7,7 +7,7 @@ use {
   space_filling::{
     geometry::{Aabb, Combinator, Hypersphere, P2, V2},
     sdf::{self, SDF},
-    solver::{ADF, LineSearch, Primitive},
+    solver::{ADF, LineSearch, Orthant, Primitive},
     util,
   },
   std::sync::Arc,
@@ -30,7 +30,7 @@ use {
 
   for (batch, target) in [(32u64, 1000usize), (1, 1000), (32, 100_000)] {
     let representation = RwLock::new(
-      ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]));
+      ADF::<f64, 2, Orthant>::new(7, vec![Primitive::new(sdf::boundary_rect)]));
     let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
     let t0 = std::time::Instant::now();
 
@@ -97,7 +97,7 @@ use {
   use std::f64::consts::PI;
 
   fn run(batch: u64, subdiv: u32, target: u64, seed: u64) -> (u64, u64) {
-    let mut adf = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)])
+    let mut adf = ADF::<f64, 2, Orthant>::new(7, vec![Primitive::new(sdf::boundary_rect)])
       .with_prune_subdiv(subdiv);
     let ls = LineSearch::default();
     let mut rng = rand_pcg::Pcg64::seed_from_u64(seed);
@@ -153,7 +153,7 @@ use {
   use std::f64::consts::PI;
 
   let subdiv = 8u32;
-  let mut adf = ADF::<f64, 2>::new(6, vec![Primitive::new(sdf::boundary_rect)])
+  let mut adf = ADF::<f64, 2, Orthant>::new(6, vec![Primitive::new(sdf::boundary_rect)])
     .with_prune_subdiv(subdiv);
   let ls = LineSearch::default();
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);

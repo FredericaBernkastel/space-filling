@@ -15,6 +15,6 @@ pub use argmax2d::Argmax2D;
 
 pub use adaptive_distance_field::{
   adf, line_search,
-  adf::{ADF, Primitive},
+  adf::{ADF, Kd, Orthant, Primitive},
   line_search::LineSearch,
 };

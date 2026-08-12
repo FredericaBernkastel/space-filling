@@ -2,7 +2,7 @@
 use {
   crate::{
     solver::{
-      Argmax2D, adf::{ADF, quadtree::Quadtree}
+      Argmax2D, adf::{ADF, tree::{Tree, Layout}}
     },
     geometry::{
       self, BoundingBox, Combinator, Real,
@@ -149,9 +149,10 @@ impl Argmax2D {
 
 /// Debug rendering for the ADF's backing tree.
 ///
-/// An extension trait rather than an inherent impl: [`Quadtree`] belongs to the
+/// An extension trait rather than an inherent impl: [`Tree`] belongs to the
 /// distance-field layer, and only the trait form survives that layer becoming a
-/// separate crate.
+/// separate crate. Implemented for either subdivision layout, so a k-d tree
+/// renders as readily as a quadtree.
 pub trait QuadtreeDraw<T: Scalar> {
   /// Outline every leaf, fading with depth.
   fn draw_layout(&self, image: &mut RgbaImage) -> &Self;
@@ -159,7 +160,7 @@ pub trait QuadtreeDraw<T: Scalar> {
   fn draw_bounding(&self, domain: Aabb<T, 2>, image: &mut RgbaImage) -> &Self;
 }
 
-impl <Data, _Float: Real> QuadtreeDraw<_Float> for Quadtree<Data, _Float, 2> {
+impl <Data, _Float: Real, L: Layout<2>> QuadtreeDraw<_Float> for Tree<Data, _Float, 2, L> {
   fn draw_layout(&self, image: &mut RgbaImage) -> &Self {
     use geometry::Line;
 
@@ -216,7 +217,7 @@ pub trait AdfDraw {
   fn draw_bucket_weights(&self, image: &mut RgbaImage) -> &Self;
 }
 
-impl <_Float: Real + Signed + AsPrimitive<f64> + Send + Sync> AdfDraw for ADF<_Float, 2> {
+impl <_Float: Real + Signed + AsPrimitive<f64> + Send + Sync, L: Layout<2>> AdfDraw for ADF<_Float, 2, L> {
   fn display_sdf(&self, image: &mut RgbaImage, brightness: f64) -> &Self {
     display_sdf(|p| self.sdf(p.map(|x| _Float::from(x).unwrap())).to_f64().unwrap(), image, brightness);
     self

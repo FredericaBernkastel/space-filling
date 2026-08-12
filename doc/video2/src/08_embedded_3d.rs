@@ -26,7 +26,7 @@ use {
     space_filling::{
         geometry::{Combinator, Hypersphere, Point, Vector, VectorExt},
         sdf::SDF,
-        solver::{LineSearch, Primitive, ADF},
+        solver::{LineSearch, Orthant, Primitive, ADF},
         util
     },
     std::{path::PathBuf, sync::RwLock, time::Instant}
@@ -95,7 +95,7 @@ fn main() -> Result<()> {
 
     // ---- generation 1: host spheres fill the cluster ----
     let t0 = Instant::now();
-    let representation = RwLock::new(ADF::<f64, 3>::new(
+    let representation = RwLock::new(ADF::<f64, 3, Orthant>::new(
         6,
         // positive inside the cluster — the same role `boundary_rect` plays for
         // the unit square
@@ -138,7 +138,7 @@ fn main() -> Result<()> {
         let union = sphere_union(&hosts);
         move |p: P3| -union(p)
     };
-    let representation = RwLock::new(ADF::<f64, 3>::new(
+    let representation = RwLock::new(ADF::<f64, 3, Orthant>::new(
         7, vec![Primitive::new(inverted)]));
     let mut spheres: Vec<(P3, f64)> = vec![];
     let mut placed = 0usize;

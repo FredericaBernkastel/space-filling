@@ -11,7 +11,7 @@ use {
     geometry::{Aabb, Combinator, DistPoint, Hypersphere, P2, V2},
     drawing::{self, AdfDraw, QuadtreeDraw, Shape},
     sdf::{self, SDF},
-    solver::{ADF, LineSearch, Primitive},
+    solver::{ADF, LineSearch, Orthant, Primitive},
     util,
   },
   anyhow::Result,
@@ -21,7 +21,7 @@ use {
 
 #[test] fn draw_layout() -> Result<()> {
   let mut image = RgbaImage::new(512, 512);
-  let mut adf = ADF::<f64, 2>::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
+  let mut adf = ADF::<f64, 2, Orthant>::new(8, vec![Primitive::new(|_| f64::MAX / 2.0)]);
   let domain = Aabb::unit();
 
   let t0 = std::time::Instant::now();
@@ -48,7 +48,7 @@ use {
   use rand::prelude::*;
 
   let mut image = RgbaImage::new(1024, 1024);
-  let representation = ADF::<f64, 2>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
+  let representation = ADF::<f64, 2, Orthant>::new(7, vec![Primitive::new(sdf::boundary_rect)]);
   let mut primitives = vec![];
   let trials = Cell::new(0u64);
   let mut rng = rand_pcg::Pcg64::seed_from_u64(0);
@@ -107,7 +107,7 @@ use {
 
   std::fs::create_dir("test\\anim").ok();
 
-  let mut representation = ADF::<f64, 2>::new(11, vec![Primitive::new(sdf::boundary_rect)]);
+  let mut representation = ADF::<f64, 2, Orthant>::new(11, vec![Primitive::new(sdf::boundary_rect)]);
   let mut circles = vec![];
   let mut rng = rand_pcg::Pcg64::seed_from_u64(2);
 

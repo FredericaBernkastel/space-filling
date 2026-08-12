@@ -76,7 +76,7 @@
 //! #   space_filling::{
 //! #     geometry::{Combinator, Hypersphere, Translation, Scale, P2},
 //! #     sdf::{self, SDF},
-//! #     solver::{line_search::LineSearch, adf::{ADF, Primitive}},
+//! #     solver::{line_search::LineSearch, adf::{self, Primitive}},
 //! #     drawing::{Draw, Shape},
 //! #     util
 //! #   },
@@ -91,7 +91,7 @@
     //! // Initialize the ADF representation, providing at least:
     //! // - Problem dimensionality and numerical precision in generic type bounds
     //! // - Maximum k-d tree depth and initial field state
-    //! let mut representation = RwLock::new(ADF::<f64, 2>::new(5, vec![Primitive::new(sdf::boundary_rect)]));
+    //! let mut representation = RwLock::new(adf::builder().f64().dims::<2>().orthant().bounded(5));
     //! let mut image = image::RgbaImage::new(2048, 2048);
     //! // In case of GD-ADF, it is adviced to use `util::local_maxima_iter`,
     //! // as it is capable of finding multiple local maxima in parallel.
