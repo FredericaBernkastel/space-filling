@@ -182,3 +182,108 @@ fn climb<const D: usize>(
   assert!(field.sdf(Point::from([0.001; 8])) < 0.01);
   assert_eq!(field.layout_name(), "k-d");
 }
+
+/// Outside the domain there is no leaf to descend to, so `sdf` answers from the
+/// root's own bucket. That makes the root the one node whose primitives must
+/// outlive its subdivision — and it is easy to lose, because every test that
+/// probes inside the cube passes regardless.
+///
+/// Losing it is not a small error: an empty bucket reads `+MAX/2`, the ascent
+/// climbs out of the domain toward it, and a ball of radius `MAX/4` is inserted
+/// at that "maximum". Pin the behaviour instead.
+#[test] fn out_of_domain_reads_the_seed_field() {
+  let mut adf = ADF::<f64, 3, tree::Orthant>::new(3, vec![Primitive::new(sdf::boundary_rect)]);
+  let outside = [
+    Point::from([-0.25, 0.5, 0.5]),
+    Point::from([0.5, 1.75, 0.5]),
+    Point::from([-1.0, -1.0, -1.0]),
+  ];
+  let seed: Vec<f64> = outside.iter().map(|&p| sdf::boundary_rect(p)).collect();
+  assert!(seed.iter().all(|&v| v < 0.0), "the seed must be negative outside");
+
+  // enough insertions to divide the root several times over
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(7);
+  for _ in 0..30 {
+    let c = Point::from(Vector::<f64, 3>::from_fn(|_, _| rng.random_range(0.2..0.8)));
+    adf.insert_within(c, 0.05, Primitive::new(ball(c, 0.05)));
+  }
+  assert!(adf.tree.node_count() > 9, "the root should have divided by now");
+
+  for (&p, &want) in outside.iter().zip(&seed) {
+    let got = adf.sdf(p);
+    assert!(got <= want + 1e-12,
+      "outside the domain the field must still be bounded by the seed:        got {got:e} at {p:?}, seed says {want:e}");
+    assert!(got.is_finite() && got.abs() < 1e3, "outside reads a sentinel: {got:e}");
+  }
+}
+
+/// A multi-level split — one overflow dividing through a whole round of axis cuts
+/// — must represent the same field as the one-level default. It is off by default
+/// because it does not pay (see CHANGELOG.md), so without this the recursive graft
+/// would go untested.
+#[test] fn a_split_round_changes_the_tree_but_not_the_field() {
+  const D: usize = 3;
+  let seed = vec![Primitive::new(sdf::boundary_rect)];
+  let mut flat = ADF::<f64, D, tree::Kd>::new(3, seed.clone());
+  let mut round = ADF::<f64, D, tree::Kd>::new(3, seed)
+    .with_split_round(<tree::Kd as Layout<D>>::LEVELS_PER_SPLIT as u8);
+
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0xa11ce);
+  for _ in 0..60 {
+    let c = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.1..0.9)));
+    let r = rng.random_range(0.02..0.08);
+    flat.insert_within(c, r, Primitive::new(ball(c, r)));
+    round.insert_within(c, r, Primitive::new(ball(c, r)));
+  }
+
+  // the round really does build a different tree ...
+  assert!(round.tree.node_count() > flat.tree.node_count(),
+    "a full round should divide further: {} vs {}",
+    round.tree.node_count(), flat.tree.node_count());
+
+  // ... and answers identically everywhere, which is the only thing that matters
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0xa11ce2);
+  let mut worst = 0.0f64;
+  for _ in 0..3000 {
+    let p = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.0..1.0)));
+    worst = worst.max((flat.sdf(p) - round.sdf(p)).abs());
+  }
+  assert!(worst == 0.0, "split round changed the field by {worst:e}");
+}
+
+/// The dimension-dependent split policy is a performance knob, not a correctness
+/// one: pruning only ever drops primitives it has *proved* redundant over the
+/// cell, so refusing a division that prunes nothing cannot move the field by a
+/// single bit — it only declines to store two copies of the same bucket.
+///
+/// `D = 12` is above [`CUT_MUST_PRUNE_MIN_DIMS`], so the default is `true` here and
+/// the comparison is against an explicitly disabled field. `prune_subdiv` is 1
+/// because the default of 8 costs seconds per insertion at this dimension.
+#[test] fn cut_must_prune_leaves_the_field_alone() {
+  const D: usize = 12;
+  let build = |require: bool| {
+    let mut field = ADF::<f64, D, tree::Kd>::new(3, vec![Primitive::new(sdf::boundary_rect)])
+      .with_prune_subdiv(1)
+      .with_cut_must_prune(require);
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(0xC0_FF_EE);
+    for _ in 0..12 {
+      let c = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.3..0.7)));
+      field.insert_within(c, 0.05, Primitive::new(ball(c, 0.05)));
+    }
+    field
+  };
+  let (fat, deep) = (build(true), build(false));
+
+  // The default at this dimension is the policy, and it is the policy that pays.
+  assert!(ADF::<f64, D, tree::Kd>::new(1, vec![]).cut_must_prune);
+  assert!(fat.tree.node_count() < deep.tree.node_count() / 8,
+    "the refused cuts should collapse the arena: {} against {}",
+    fat.tree.node_count(), deep.tree.node_count());
+
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0x5EED);
+  for _ in 0..2000 {
+    let p = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.0..1.0)));
+    assert_eq!(fat.sdf(p).to_bits(), deep.sdf(p).to_bits(),
+      "the field moved at {p:?}: {} against {}", fat.sdf(p), deep.sdf(p));
+  }
+}

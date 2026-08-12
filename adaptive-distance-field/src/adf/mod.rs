@@ -26,7 +26,7 @@ use {
     geometry::{Point, Aabb, Real, VectorExt, DistPoint},
     sdf::{SDF, Lipschitz},
   },
-  tree::{Tree, Node, Refine, Dim, Branching, child_rects},
+  tree::{Tree, Node, Refine, Split, Dim, Branching, child_rects},
   std::{
     sync::Arc,
     fmt::{Debug, Formatter}
@@ -81,9 +81,68 @@ impl<_Float: Real, const D: usize> Primitive<_Float, D> {
   }
 }
 
+/// What a node of the tree holds.
+///
+/// A leaf holds the primitives themselves, and answers queries with their `min`.
+/// A node that has subdivided holds a single number instead: the only thing its
+/// frozen bucket was ever consulted for afterwards, namely an upper bound of the
+/// field over its cell. That bound stays valid however much is inserted later,
+/// because insertions only ever *lower* the field — the same monotonicity the
+/// insertion walk of [`ADF::insert_at_maximum`] already rests on.
+///
+/// Keeping the primitives there instead would cost `bucket × 24` bytes per
+/// internal node for nothing: descent stops at leaves, and only leaves are ever
+/// re-pruned or re-queried.
+#[derive(Clone)]
+pub enum Bucket<Float: Scalar, const D: usize> {
+  /// A leaf's primitives; the field here is their pointwise `min`.
+  Leaf(Vec<Primitive<Float, D>>),
+  /// `ĝ(c_R) + L_B · h(R)`, frozen when this node subdivided.
+  Bound(Float),
+}
+
+impl<_Float: Real, const D: usize> Bucket<_Float, D> {
+  /// The primitives stored here — empty once the node has subdivided.
+  #[inline]
+  pub fn primitives(&self) -> &[Primitive<_Float, D>] {
+    match self {
+      Bucket::Leaf(v) => v,
+      Bucket::Bound(_) => &[],
+    }
+  }
+
+  /// Occupied primitive slots, for accounting.
+  #[inline]
+  pub fn len(&self) -> usize {
+    self.primitives().len()
+  }
+
+  #[inline]
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  /// An upper bound of the field over `rect`: `ĝ(c) + L·h`, by Lipschitz
+  /// continuity of `min` over the bucket. Read back verbatim once frozen.
+  #[inline]
+  pub fn upper_bound(&self, rect: &Aabb<_Float, D>) -> _Float {
+    match self {
+      Bucket::Leaf(v) => Self::bound_of(v, rect),
+      Bucket::Bound(u) => *u,
+    }
+  }
+
+  /// The bound a set of primitives certifies over `rect` — what [`Bucket::Bound`]
+  /// caches at subdivision.
+  fn bound_of(bucket: &[Primitive<_Float, D>], rect: &Aabb<_Float, D>) -> _Float {
+    let two = _Float::one() + _Float::one();
+    bucket.sdf(rect.center()) + bucket_lipschitz(bucket) * (rect.size().length() / two)
+  }
+}
+
 #[derive(Clone)]
 pub struct ADF<Float: Scalar, const D: usize, L> {
-  pub tree: Tree<Vec<Primitive<Float, D>>, Float, D, L>,
+  pub tree: Tree<Bucket<Float, D>, Float, D, L>,
   /// Max subdivisions the redundancy test ([`sdf_geq_everywhere`])
   /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
   /// primitive is pruned only when provably redundant to within ~`node/2^n`),
@@ -93,7 +152,48 @@ pub struct ADF<Float: Scalar, const D: usize, L> {
   /// whole field is `lipschitz_max`-Lipschitz (monotone over-approximation:
   /// primitives pruned later do not lower it).
   lipschitz_max: Float,
+  /// Levels a single overflow may divide through — see
+  /// [`Self::with_split_round`]. One by default.
+  split_round: u8,
+  /// Primitives a leaf may hold before it divides — see
+  /// [`Self::with_bucket_size`].
+  bucket_size: usize,
+  /// Whether an overflowing leaf must see the cut prune something before it
+  /// divides — see [`Self::with_cut_must_prune`]. Defaults to
+  /// `D >= CUT_MUST_PRUNE_MIN_DIMS`.
+  cut_must_prune: bool,
 }
+
+/// The dimension from which an overflowing leaf demands that dividing actually
+/// prune something before it divides.
+///
+/// Four, because that is where a box stops being an efficient cell: the covering
+/// overhead of a box against the ball its own certificate actually covers is
+/// `(√D/2)^D = (D/4)^(D/2)`, which is 0.65 at `D = 3`, exactly 1 at `D = 4`, 3.4 at
+/// 6 and 9.8e6 at 20. The predicted crossover and the measured one agree — under
+/// insertion pressure (`tests/stress_kd.rs`, ten seconds per dimension) refusing
+/// useless cuts places ×0.10 the circles at `D = 3` and ×3.9 to ×75 from `D = 4`
+/// up, with 1450–12600× less memory.
+///
+/// `D = 3` is the one measured loss, and it is a local-greedy trap rather than
+/// noise: the first cut of the domain prunes nothing whatever — a ball straddling
+/// it survives on both sides — so refusing forecloses the depth at which cuts
+/// *would* bite, and the field collapses to one leaf holding thousands of
+/// primitives. Above the crossover there is no such depth to foreclose: every
+/// cell keeps the whole bucket however deep it goes.
+///
+/// The policy is also **self-selecting by layout**, which the dimension alone does
+/// not capture. At `D = 6` it never fires under [`Orthant`](tree::Orthant) at all —
+/// an all-axes cut divides the cell's volume by `2^D` and does prune, so the tree
+/// is built exactly as before — while [`Kd`](tree::Kd)'s one-axis cuts prune
+/// nothing and collapse. The constant is really a guard on k-d's trap.
+///
+/// Query-heavy workloads in `4..10` may still want it off, via
+/// [`ADF::with_cut_must_prune`]. Measured at `D = 6` over 150 balls: build ×5.0
+/// faster, query ×2.96 slower, memory ×620 smaller — net positive below roughly
+/// 1.5 M queries and negative above, since the fat leaf trades a `O(1)` descent
+/// for an `O(n)` bucket scan.
+pub const CUT_MUST_PRUNE_MIN_DIMS: usize = 4;
 
 impl <_Float: Real, const D: usize> SDF<_Float, D> for &[Primitive<_Float, D>] {
   fn sdf(&self, pixel: Point<_Float, D>) -> _Float {
@@ -108,6 +208,85 @@ impl <_Float: Real, const D: usize> SDF<_Float, D> for &[Primitive<_Float, D>] {
 /// functions is `max(L_i)`-Lipschitz.
 fn bucket_lipschitz<_Float: Real, const D: usize>(bucket: &[Primitive<_Float, D>]) -> _Float {
   bucket.iter().map(|p| p.lipschitz).fold(_Float::one(), _Float::max)
+}
+
+/// Default primitives a bucket may hold before the node divides;
+/// [`ADF::with_bucket_size`] overrides it.
+const BUCKET_SIZE: usize = 3;
+
+/// Drop every primitive that provably does not affect the field within `rect`.
+///
+/// Errs toward keeping: a primitive survives unless `sdf_geq_everywhere_in`
+/// *proves* it is dominated by the rest over the whole cell, so the stored field
+/// never deviates from the `min` over everything inserted.
+fn prune_bucket<_Float, const D: usize, L>(
+  data: &[Primitive<_Float, D>],
+  rect: Aabb<_Float, D>,
+  subdiv: u32,
+) -> Vec<Primitive<_Float, D>>
+where
+  _Float: Real,
+  L: Layout<D>,
+{
+  let mut kept = vec![];
+  for (i, p_i) in data.iter().enumerate() {
+    let sdf_old = |p|
+      data.iter().enumerate()
+        .filter_map(|(j, p_j)| if i != j { Some((p_j.f)(p)) } else { None })
+        .fold(_Float::max_value() / (_Float::one() + _Float::one()), |a, b| a.min(b));
+    let l_old = data.iter().enumerate()
+      .filter_map(|(j, p_j)| (i != j).then_some(p_j.lipschitz))
+      .fold(_Float::one(), _Float::max);
+    if !sdf_geq_everywhere_in::<L, _, _, _, D>(
+      (p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
+      kept.push(p_i.clone())
+    }
+  }
+  kept
+}
+
+/// Divide `rect` down to `round_end`, pruning `bucket` against each cell on the
+/// way, and return the subtree that results.
+///
+/// A branch stops as soon as its pruned bucket fits, so the round is adaptive
+/// rather than a fixed `2^D` fan-out: under [`Orthant`](tree::Orthant), where
+/// `LEVELS_PER_SPLIT` is 1, `round_end` is the caller's own depth plus one and
+/// this produces exactly one level — the historical behaviour, unchanged.
+///
+/// Also returns the smallest bucket any cell of the round ended up with, which
+/// [`ADF::with_cut_must_prune`] compares against the bucket it started from to see
+/// whether the division bought anything. Free: every `kept` is already in hand.
+fn divide_round<_Float, const D: usize, L>(
+  bucket: &[Primitive<_Float, D>],
+  rect: Aabb<_Float, D>,
+  depth: u8,
+  round_end: u8,
+  subdiv: u32,
+  capacity: usize,
+) -> (L::Children<Split<Bucket<_Float, D>, D, L>>, usize)
+where
+  _Float: Real,
+  L: Layout<D>,
+{
+  let mut min_kept = usize::MAX;
+  let children = L::children_from_fn(|i| {
+    let cell = L::child_rect(rect, depth, i);
+    let kept = prune_bucket::<_Float, D, L>(bucket, cell, subdiv);
+    min_kept = min_kept.min(kept.len());
+    let child_depth = depth + 1;
+    if child_depth >= round_end || kept.len() < capacity {
+      Split::Leaf(Bucket::Leaf(kept))
+    } else {
+      let (grandchildren, deeper) = divide_round::<_Float, D, L>(
+        &kept, cell, child_depth, round_end, subdiv, capacity);
+      min_kept = min_kept.min(deeper);
+      Split::Node {
+        parent: Bucket::Bound(Bucket::bound_of(&kept, &cell)),
+        children: Box::new(grandchildren),
+      }
+    }
+  });
+  (children, min_kept)
 }
 
 /// Returns `true` only when `f(v) >= g(v)` is *provable* for every `v` in
@@ -215,7 +394,7 @@ where
   L: Layout<D>,
   // trivially satisfied — the GAT is always an array — but the compiler
   // cannot see through the projection
-  L::Children<Vec<Primitive<_Float, D>>>: Send,
+  L::Children<Split<Bucket<_Float, D>, D, L>>: Send,
 {
   /// Create an ADF in the layout `L`: `ADF::<f64, 6, Kd>::new(3, init)`, or
   /// `adf::builder().f64().dims::<6>().kd().build(3, init)` to name the
@@ -229,9 +408,12 @@ where
     let lipschitz_max = bucket_lipschitz(&init);
     let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u8::MAX as usize) as u8;
     Self {
-      tree: Tree::new(levels, init),
+      tree: Tree::new(levels, Bucket::Leaf(init)),
       prune_subdiv: 8,
       lipschitz_max,
+      split_round: 1,
+      bucket_size: BUCKET_SIZE,
+      cut_must_prune: D >= CUT_MUST_PRUNE_MIN_DIMS,
     }
   }
 
@@ -257,6 +439,64 @@ where
   /// refine a node up to `subdiv` times to prove `f >= g` (see [`sdf_geq_everywhere`]).
   pub fn with_prune_subdiv(mut self, subdiv: u32) -> Self {
     self.prune_subdiv = subdiv;
+    self
+  }
+
+  /// Primitives a leaf may hold before it divides. Three by default.
+  ///
+  /// A pure performance knob: the field is bit-identical at every capacity, since
+  /// pruning and the redundancy proof never consult it. Larger buckets mean fewer,
+  /// fatter leaves — a shallower tree and less memory, paid for by more primitives
+  /// to evaluate per query, so there is an optimum rather than a direction.
+  ///
+  /// It also interacts with the proof: `sdf_geq_everywhere` resolves margins at
+  /// scale `(L_f + L_g)·h(node)`, so a bucket of steepness `L` needs roughly `L`
+  /// times deeper branch-and-bound per redundancy proof, while dividing the node
+  /// halves `h` once and for all. Fields of mixed steepness therefore want
+  /// capacity scaled as `⌊β / max(L_bucket, L_prim)⌋` rather than a constant;
+  /// measured optima were 5 for 1-Lipschitz balls and 1 for a Mandelbrot
+  /// estimator at `L = 4`.
+  pub fn with_bucket_size(mut self, size: usize) -> Self {
+    self.bucket_size = size.max(1);
+    self
+  }
+
+  /// Whether an overflowing leaf may only divide if dividing prunes something.
+  /// Defaults to `D >= `[`CUT_MUST_PRUNE_MIN_DIMS`], which is the whole point —
+  /// the answer is dimensional, and wrong in both directions if fixed.
+  ///
+  /// The trial division is computed either way, so the test is free; what it
+  /// changes is whether a division that leaves every cell holding the parent's
+  /// entire bucket is *kept*. In high dimension it always does leave that, because
+  /// a ball straddling a cut survives on both sides, so both cells inherit
+  /// everything and both overflow again on the next insertion — the tree doubles
+  /// per insertion and stores nothing new. Refusing keeps one fat leaf instead,
+  /// which answers queries with the same primitives the deep tree would have.
+  ///
+  /// A refused cut leaves the bucket over capacity, so retrying on every insertion
+  /// would re-pay an `O(n^2)` trial each time; a refused leaf retries only once its
+  /// bucket has doubled, for `O(log n)` trials over its lifetime.
+  ///
+  /// This is a performance knob and not a correctness one: pruning only ever drops
+  /// primitives it has *proved* redundant over the cell, so the field is
+  /// bit-identical either way — only the arena and the query cost move.
+  pub fn with_cut_must_prune(mut self, require: bool) -> Self {
+    self.cut_must_prune = require;
+    self
+  }
+
+  /// How many levels one overflowing leaf may divide through in a single
+  /// insertion. One — a single level — by default.
+  ///
+  /// Setting it to [`Layout::LEVELS_PER_SPLIT`] makes an overflow complete a full
+  /// round of axis cuts, so that a layout halving one axis per level takes its
+  /// pruning decisions on the same cell sizes as one halving them all at once.
+  /// That sounds like it should help `Kd` and, measured, it does not: it enlarges
+  /// the tree by 3–10% for no gain in leaf occupancy or query time (see
+  /// CHANGELOG.md). Kept because the negative result is worth being able to
+  /// reproduce, and because the premise may hold for other primitive mixes.
+  pub fn with_split_round(mut self, levels: u8) -> Self {
+    self.split_round = levels.max(1);
     self
   }
   /// Add a new sdf primitive function, assumed to be a true SDF (`lipschitz = 1`).
@@ -311,26 +551,27 @@ where
     radius: _Float,
     prim: Primitive<_Float, D>
   ) -> bool {
-    let two = _Float::one() + _Float::one();
     self.insert_where(move |node| {
       let dist = (center - node.rect.clamp_point(&center)).length();
-      let half_diag = node.rect.size().length() / two;
-      node.data.as_slice().sdf(node.rect.center())
-        + bucket_lipschitz(&node.data) * half_diag > dist - radius
+      // One scalar at an internal node, one bucket evaluation at a leaf — see
+      // [`Bucket`].
+      node.data.upper_bound(&node.rect) > dist - radius
     }, prim)
   }
 
   fn insert_where(
     &mut self,
-    keep: impl Fn(&Node<Vec<Primitive<_Float, D>>, _Float, D>) -> bool + Sync,
+    keep: impl Fn(&Node<Bucket<_Float, D>, _Float, D>) -> bool + Sync,
     prim: Primitive<_Float, D>
   ) -> bool {
-    const BUCKET_SIZE: usize = 3;
     self.lipschitz_max = self.lipschitz_max.max(prim.lipschitz);
     // Copied out so the parallel `decide` closure captures plain values instead
     // of borrowing `self` (which `refine_leaves` already borrows via `tree`).
     let subdiv = self.prune_subdiv;
     let max_depth = self.tree.max_depth;
+    let split_round = self.split_round;
+    let capacity = self.bucket_size;
+    let cut_must_prune = self.cut_must_prune;
 
     // Only leaves admitted by `keep` are visited; each yields an independent
     // decision, evaluated in parallel and applied afterwards. Previously divided
@@ -338,11 +579,12 @@ where
     // old `Skip`-after-`subdivide` behaviour.
     self.tree.refine_leaves(keep, |node| {
       let f = &prim.f;
-      let l_bucket = bucket_lipschitz(&node.data);
+      let bucket = node.data.primitives();
+      let l_bucket = bucket_lipschitz(bucket);
 
       // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
       if sdf_geq_everywhere_in::<L, _, _, _, D>(
-        f.as_ref(), |p| node.data.as_slice().sdf(p),
+        f.as_ref(), |p| bucket.sdf(p),
         node.rect, prim.lipschitz, l_bucket, subdiv
       ) {
         return Refine::None;
@@ -350,48 +592,69 @@ where
 
       // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
       if sdf_geq_everywhere_in::<L, _, _, _, D>(
-        |p| node.data.as_slice().sdf(p), f.as_ref(),
+        |p| bucket.sdf(p), f.as_ref(),
         node.rect, l_bucket, prim.lipschitz, subdiv
       ) {
-        return Refine::SetData(vec![prim.clone()]);
+        return Refine::SetData(Bucket::Leaf(vec![prim.clone()]));
       }
 
-      // remove SDF primitives that do not affect the field within `rect`
-      let prune = |data: &[Primitive<_Float, D>], rect| {
-        let mut g = vec![];
-        for (i, p_i) in data.iter().enumerate() {
-          let sdf_old = |p|
-            data.iter().enumerate()
-              .filter_map(|(j, p_j)| if i != j { Some((p_j.f)(p)) } else { None })
-              .fold(_Float::max_value() / (_Float::one() + _Float::one()), |a, b| a.min(b));
-          let l_old = data.iter().enumerate()
-            .filter_map(|(j, p_j)| (i != j).then_some(p_j.lipschitz))
-            .fold(_Float::one(), _Float::max);
-          // keep `p_i` unless it is provably redundant (>= the rest) within `rect`
-          if !sdf_geq_everywhere_in::<L, _, _, _, D>(
-            (p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
-            g.push(p_i.clone())
-          }
-        }
-        g
-      };
+      // A leaf whose cut was refused sits over capacity, and re-running the trial
+      // on every later insertion would cost `O(n^2)` proofs each time. Retrying
+      // only once the bucket has doubled makes that `O(log n)` trials in total,
+      // and needs no per-node state — the bucket's own length is the clock.
+      let retry_now = !cut_must_prune
+        || bucket.len() == capacity
+        || bucket.len().is_power_of_two();
 
-      if node.depth == max_depth || node.data.len() < BUCKET_SIZE {
+      if node.depth == max_depth || bucket.len() < capacity || !retry_now {
         // Max depth reached (cannot subdivide) or the bucket still has room:
         // append. Re-pruning the whole bucket on every append would cost O(n^2)
         // per insert and the audit shows ~94% of a crowded bucket genuinely
         // contributes, so it is not worth it.
-        let mut data = node.data.clone();
+        let mut data = bucket.to_vec();
         data.push(prim.clone());
-        Refine::SetData(data)
+        Refine::SetData(Bucket::Leaf(data))
       } else {
-        // Max bucket size reached: subdivide, pruning the combined set per child.
-        // This is where the layout earns its keep: one prune per child, so the
-        // per-subdivision cost is `2^D` proofs under `Orthant` and 2 under `Kd`.
-        let mut combined = node.data.clone();
+        // Max bucket size reached: divide, and keep dividing until every axis has
+        // been halved once — `L::LEVELS_PER_SPLIT` levels. A layout that halves
+        // one axis per level would otherwise take its pruning decisions on
+        // half-cells, where far less is provably redundant than in the cells an
+        // all-axes-at-once layout reaches immediately; completing the round puts
+        // both on the same cell size. Adaptive: a branch stops early the moment
+        // pruning empties its bucket below the threshold.
+        let mut combined = bucket.to_vec();
         combined.push(prim.clone());
-        Refine::Subdivide(L::children_from_fn(
-          |i| prune(combined.as_slice(), L::child_rect(node.rect, node.depth, i))))
+        let round_end = (node.depth as usize + split_round as usize)
+          .min(max_depth as usize) as u8;
+
+        let (children, min_kept) = divide_round::<_Float, D, L>(
+          &combined, node.rect, node.depth, round_end, subdiv, capacity);
+
+        // Refusing a cut that prunes nothing is dimensional, and wrong as a
+        // universal rule in *both* directions. Below
+        // `CUT_MUST_PRUNE_MIN_DIMS` it is a local-greedy trap: the first cut of
+        // the domain prunes nothing whatever — a ball straddling it survives on
+        // both sides — so the tree never reaches the depth at which cuts do bite,
+        // and at D = 6 it collapsed to a single leaf holding every primitive
+        // (queries ×3.2). At and above it the trap is not one, because there is no
+        // depth at which cuts bite: every cell keeps the whole bucket, so the only
+        // thing a division buys is two copies of it. See CHANGELOG.md.
+        if cut_must_prune && min_kept >= combined.len() {
+          return Refine::SetData(Bucket::Leaf(combined));
+        }
+
+        Refine::Subdivide {
+          // The root is the one node that keeps its primitives after dividing:
+          // `sdf` falls back to it for points outside the domain, where there is
+          // no leaf to descend to, and a bound cannot answer a query. One node's
+          // worth of buckets, and the seed field stays readable from outside.
+          parent: if node.depth == 0 {
+            Bucket::Leaf(combined.clone())
+          } else {
+            Bucket::Bound(Bucket::bound_of(&combined, &node.rect))
+          },
+          children: Box::new(children),
+        }
       }
     })
   }
@@ -459,8 +722,8 @@ where
 {
   fn sdf(&self, pixel: Point<_Float, D>) -> _Float {
     match self.tree.pt_to_node(pixel) {
-      Some(node) => node.data.as_slice().sdf(pixel),
-      None => self.tree.root().data.as_slice().sdf(pixel),
+      Some(node) => node.data.primitives().sdf(pixel),
+      None => self.tree.root().data.primitives().sdf(pixel),
     }}}
 
 impl <_Float: Real, const D: usize, L> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D, L> {

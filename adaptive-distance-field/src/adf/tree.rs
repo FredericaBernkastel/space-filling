@@ -78,6 +78,14 @@ pub trait Layout<const DIMS: usize> {
   const LEVELS_PER_SPLIT: usize;
   /// Short name, for diagnostics.
   const NAME: &'static str;
+  /// Whether a descent should carry the cell down with it, halving a local copy,
+  /// instead of reading each node's stored rect.
+  ///
+  /// Carrying costs one `child_rect` per level and saves a load of `2·DIMS`
+  /// floats. That trade only pays when a layout takes many levels to get
+  /// anywhere: measured, it is worth ~25% of query time to [`Kd`] at `DIMS = 3`
+  /// and costs [`Orthant`] ~30%.
+  const CARRY_CELL: bool;
   /// Exactly `[T; CHILDREN]`.
   type Children<T>: IntoIterator<Item = T>;
   fn children_from_fn<T>(f: impl FnMut(usize) -> T) -> Self::Children<T>;
@@ -112,6 +120,7 @@ where
   const CHILDREN: usize = <Dim<DIMS> as Branching>::CHILDREN;
   const LEVELS_PER_SPLIT: usize = 1;
   const NAME: &'static str = "orthant";
+  const CARRY_CELL: bool = false;
   type Children<T> = <Dim<DIMS> as Branching>::Children<T>;
 
   #[inline]
@@ -142,6 +151,7 @@ impl<const DIMS: usize> Layout<DIMS> for Kd {
   const CHILDREN: usize = 2;
   const LEVELS_PER_SPLIT: usize = DIMS;
   const NAME: &'static str = "k-d";
+  const CARRY_CELL: bool = true;
   type Children<T> = [T; 2];
 
   #[inline]
@@ -240,6 +250,15 @@ impl<Data, Float: Scalar, const DIMS: usize> Node<Data, Float, DIMS> {
 #[derive(Clone)]
 pub struct Tree<Data, Float: Scalar, const DIMS: usize, L> {
   nodes: Vec<Node<Data, Float, DIMS>>,
+  /// `nodes[i].children`, mirrored into a dense array.
+  ///
+  /// A descent needs nothing else — the cell can be halved on the way down
+  /// instead of read back — and a node is `2·DIMS` floats wide, so walking the
+  /// nodes touches one to three cache lines per level where this touches four
+  /// bytes. At `DIMS = 6` it is the difference between striding a megabyte-scale
+  /// arena and staying inside a few tens of kilobytes, which a layout needing
+  /// `DIMS` levels per split feels `DIMS` times over.
+  links: Vec<Option<NonZeroU32>>,
   /// Maximum depth in **levels** — not full splits. `ADF` converts.
   pub max_depth: u8,
   /// `fn() -> L` rather than `L`, so the tree's `Send`/`Sync`/`Copy` never
@@ -253,6 +272,24 @@ pub type Quadtree<Data, Float, const DIMS: usize> = Tree<Data, Float, DIMS, Orth
 /// The binary, one-axis-per-level tree.
 pub type KdTree<Data, Float, const DIMS: usize> = Tree<Data, Float, DIMS, Kd>;
 
+/// One cell of a subtree being grafted onto a leaf: either it stays a leaf, or it
+/// divides again. Lets a single [`Refine::Subdivide`] carry several levels, which
+/// is what a layout needing `DIMS` cuts to halve every axis requires in order to
+/// take its decisions on the same cell sizes as one that halves them all at once.
+pub enum Split<Data, const DIMS: usize, L>
+where
+  L: Layout<DIMS>,
+{
+  /// This cell is final, and holds `Data`.
+  Leaf(Data),
+  /// This cell divides: it keeps `parent` for itself, and each of its children is
+  /// another `Split`.
+  Node {
+    parent: Data,
+    children: Box<L::Children<Split<Data, DIMS, L>>>,
+  },
+}
+
 /// The action [`Tree::refine_leaves`] should apply to a visited leaf.
 pub enum Refine<Data, const DIMS: usize, L>
 where
@@ -262,9 +299,12 @@ where
   None,
   /// Replace the leaf's payload.
   SetData(Data),
-  /// Split the leaf into `L::CHILDREN` children carrying the given payloads
-  /// (in [`Layout::child_rect`] order).
-  Subdivide(L::Children<Data>),
+  /// Divide the leaf, at least one level deep: it keeps `parent`, and each child
+  /// (in [`Layout::child_rect`] order) is a [`Split`] that may divide further.
+  Subdivide {
+    parent: Data,
+    children: Box<L::Children<Split<Data, DIMS, L>>>,
+  },
 }
 
 impl<Data, _Float: Real, const DIMS: usize, L> Tree<Data, _Float, DIMS, L>
@@ -280,7 +320,7 @@ where
       data: init,
       children: None,
     };
-    Tree { nodes: vec![root], max_depth, layout: PhantomData }
+    Tree { nodes: vec![root], links: vec![None], max_depth, layout: PhantomData }
   }
 
   /// The root node.
@@ -340,15 +380,33 @@ where
   /// hypercube (including NaN coordinates). Descent is [`Layout::child_index`],
   /// which matches the half-open child cells exactly.
   pub fn pt_to_node(&self, pt: Point<_Float, DIMS>) -> Option<&Node<Data, _Float, DIMS>> {
-    let mut node = &self.nodes[0];
-    if !node.rect.contains(&pt) {
+    if !Aabb::unit().contains(&pt) {
       return None;
     }
-    while let Some(first) = node.children {
-      let child = L::child_index(&node.rect, node.depth, &pt);
-      node = &self.nodes[first.get() as usize + child];
+    let mut idx = 0usize;
+    if L::CARRY_CELL {
+      // The root's cell is the unit hypercube by construction and every child
+      // cell follows from its parent's, so the walk halves a local copy and never
+      // loads a rect — touching four bytes per level instead of a whole node.
+      let mut cell = Aabb::unit();
+      let mut depth = 0u8;
+      while let Some(first) = self.links[idx] {
+        let child = L::child_index(&cell, depth, &pt);
+        cell = L::child_rect(cell, depth, child);
+        idx = first.get() as usize + child;
+        depth += 1;
+      }
+      debug_assert!(self.nodes[idx].rect.min == cell.min && self.nodes[idx].rect.max == cell.max,
+        "the descent's cell diverged from the node's own");
+    } else {
+      // Few enough levels that the arithmetic of carrying the cell outweighs the
+      // load it saves; read each node's own rect instead.
+      while let Some(first) = self.links[idx] {
+        let node = &self.nodes[idx];
+        idx = first.get() as usize + L::child_index(&node.rect, node.depth, &pt);
+      }
     }
-    Some(node)
+    Some(&self.nodes[idx])
   }
 
   /// Evaluate every leaf of the subtrees admitted by `keep` with `decide`
@@ -373,7 +431,7 @@ where
     Data: Send + Sync,
     // trivially satisfied — the GAT is always an array — but the compiler cannot
     // see through the projection
-    L::Children<Data>: Send,
+    L::Children<Split<Data, DIMS, L>>: Send,
     _Float: Sync,
   {
     let actions = self.collect_actions(0, &keep, &decide);
@@ -386,8 +444,9 @@ where
           self.nodes[i].data = data;
           changed = true;
         }
-        Refine::Subdivide(data) => {
-          self.subdivide(i, data);
+        Refine::Subdivide { parent, children } => {
+          self.nodes[i].data = parent;
+          self.graft(i, *children);
           changed = true;
         }
       }
@@ -408,7 +467,7 @@ where
     K: Fn(&Node<Data, _Float, DIMS>) -> bool + Sync,
     F: Fn(&Node<Data, _Float, DIMS>) -> Refine<Data, DIMS, L> + Sync,
     Data: Send + Sync,
-    L::Children<Data>: Send,
+    L::Children<Split<Data, DIMS, L>>: Send,
     _Float: Sync,
   {
     use rayon::prelude::*;
@@ -431,18 +490,40 @@ where
     }
   }
 
-  /// Append `L::CHILDREN` children (with the given payloads) to the arena and
-  /// link them under `parent`. Child cells match [`Layout::child_rect`] for the
-  /// parent's depth.
-  fn subdivide(&mut self, parent: usize, data: L::Children<Data>) {
-    let (rect, depth) = (self.nodes[parent].rect, self.nodes[parent].depth);
-    let rects = L::children_from_fn(|i| L::child_rect(rect, depth, i));
+  /// Append a node, keeping [`Self::links`] in step. The only place either grows.
+  fn push(&mut self, node: Node<Data, _Float, DIMS>) {
+    debug_assert!(node.children.is_none(), "a fresh node has no children yet");
+    self.nodes.push(node);
+    self.links.push(None);
+  }
+
+  /// Graft `children` under the node at `idx`, whose own payload is already in
+  /// place. Child cells match [`Layout::child_rect`] for that node's depth.
+  ///
+  /// Siblings must stay contiguous, so a level is materialised in full before any
+  /// of its own children are: the grandchildren of this call are appended only
+  /// once every child is in the arena.
+  fn graft(&mut self, idx: usize, children: L::Children<Split<Data, DIMS, L>>) {
+    let (rect, depth) = (self.nodes[idx].rect, self.nodes[idx].depth);
     // Children are pushed after the root, so `first` is always >= 1.
     let first = NonZeroU32::new(self.nodes.len() as u32).expect("root occupies index 0");
-    for (rect, data) in rects.into_iter().zip(data) {
-      self.nodes.push(Node { rect, depth: depth + 1, data, children: None });
+    let mut deeper = Vec::new();
+    for (i, child) in children.into_iter().enumerate() {
+      let rect = L::child_rect(rect, depth, i);
+      match child {
+        Split::Leaf(data) =>
+          self.push(Node { rect, depth: depth + 1, data, children: None }),
+        Split::Node { parent, children } => {
+          deeper.push((self.nodes.len(), children));
+          self.push(Node { rect, depth: depth + 1, data: parent, children: None });
+        }
+      }
     }
-    self.nodes[parent].children = Some(first);
+    self.nodes[idx].children = Some(first);
+    self.links[idx] = Some(first);
+    for (at, children) in deeper {
+      self.graft(at, *children);
+    }
   }
 }
 
@@ -470,7 +551,10 @@ mod tests {
     tree.refine_leaves(
       |_| true,
       |node| if node.depth == 0 {
-        Refine::Subdivide(std::array::from_fn(|i| i as u32))
+        Refine::Subdivide {
+          parent: 0,
+          children: Box::new(std::array::from_fn(|i| Split::Leaf(i as u32))),
+        }
       } else {
         Refine::None
       });
@@ -493,7 +577,13 @@ mod tests {
       tree.refine_leaves(
         |node| node.depth <= step,
         |node| if node.depth == step && node.rect.min == Point::origin() {
-          Refine::Subdivide([node.data * 10, node.data * 10 + 1])
+          Refine::Subdivide {
+            parent: node.data,
+            children: Box::new([
+              Split::Leaf(node.data * 10),
+              Split::Leaf(node.data * 10 + 1),
+            ]),
+          }
         } else {
           Refine::None
         });

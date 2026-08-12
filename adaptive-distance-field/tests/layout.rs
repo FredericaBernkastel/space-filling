@@ -126,7 +126,7 @@ macro_rules! measure {
 fn header(title: &str) {
   println!("\n{title}");
   println!("  {:<8} {:>4} {:>10} {:>10} {:>9} {:>9} {:>8} {:>7} {:>7} {:>11}",
-    "layout", "2^D", "build", "query", "nodes", "leaves", "splits", "bucket", "levels", "memory");
+    "layout", "2^D", "build", "query", "nodes", "leaves", "splits", "leaf buk", "levels", "memory");
   println!("  {}", "-".repeat(94));
 }
 

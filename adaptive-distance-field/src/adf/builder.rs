@@ -22,9 +22,9 @@
 //! the point of `build` rather than a surprising default.
 
 use {
-  super::{Primitive, ADF},
+  super::{Bucket, Primitive, ADF},
   crate::{
-    adf::tree::{Kd, Layout, Orthant},
+    adf::tree::{Kd, Layout, Orthant, Split},
     geometry::Real,
     sdf,
   },
@@ -102,7 +102,7 @@ impl<Float, const D: usize, L> AdfBuilder<Float, Dims<D>, L>
 where
   Float: Real + Send + Sync,
   L: Layout<D>,
-  L::Children<Vec<Primitive<Float, D>>>: Send,
+  L::Children<Split<Bucket<Float, D>, D, L>>: Send,
 {
   /// Build with the given initial primitives. `max_depth` is in **full**
   /// subdivisions — halvings of every axis — so it means one resolution in either

@@ -188,7 +188,10 @@ use {
 
   // --- collect leaves (rect + bucket) ---
   let mut leaves_v: Vec<(Aabb<f64, 2>, Vec<Primitive<f64, 2>>)> = vec![];
-  adf.tree.traverse(&mut |n| { if n.is_leaf() { leaves_v.push((n.rect, n.data.clone())); } Ok(()) }).ok();
+  adf.tree.traverse(&mut |n| {
+    if n.is_leaf() { leaves_v.push((n.rect, n.data.primitives().to_vec())); }
+    Ok(())
+  }).ok();
 
   let sizes: Vec<usize> = leaves_v.iter().map(|(_, b)| b.len()).collect();
   let leaves = sizes.len();
