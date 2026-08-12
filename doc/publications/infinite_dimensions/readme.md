@@ -6,7 +6,26 @@
 
 ## 0. Abstract
 
-Generalizing from $\mathbb{R}^2$ to $\mathbb{R}^N$ was trivial — nothing in the
+**Prior art.** Two lines of work meet here. Bourke's plane filling and Shier's fractal packings grow a
+distribution one shape at a time, but hunt for each vacancy by direct search, which dominates their cost — Shier
+reports 14.7 hours for a million circles. Separately, Frisken et al. compressed distance fields into a hierarchy
+of per-node approximations: a representation built for rendering and modelling, not for finding room to put
+something.
+
+**Purpose.** The [`space-filling`](../../../readme.md) crate joins the two. Finding room becomes maximizing the
+compound field,
+
+$$
+x^{\ast} = \arg\max_{v \in \Omega} \min_n \mathrm{sdf}_n(v) ,
+$$
+
+and the hierarchy carries the primitives exactly rather than approximating them, so dropping one demands a proof
+rather than a tolerance — branch-and-bound over Lipschitz bounds, which leaves the represented field equal to the
+true minimum everywhere. [`Argmax2D`](../../../src/solver/argmax2d/mod.rs) maximizes exactly over a bitmap and
+pays quadratically for resolution; GD-ADF climbs to a local maximum, sampling the tree in logarithmic time. Both
+are $N$-dimensional as of version 0.6.0.
+
+**The question here.** Generalizing from $\mathbb{R}^2$ to $\mathbb{R}^N$ was trivial — nothing in the
 pruning proof, the insertion bound or the optimizer depended on problem dimensionality. Going from $\mathbb{R}^N$ to a
 function space is **not** the same kind of move. One of the two solvers dies, and it dies for an
 information-theoretic reason that no amount of engineering repairs:
@@ -18,7 +37,7 @@ information-theoretic reason that no amount of engineering repairs:
 | dimension in the exponent | **yes** | **no** |
 | survives $N \to \infty$ | never | conditionally |
 
-The Lipschitz certificate — is a **covering argument**, and covering
+The Lipschitz certificate is a **covering argument**, and covering
 numbers are exactly what blow up. Gradient ascent, by contrast, has dimension-free rates in any Hilbert space,
 which is precisely why function-space optimization is a mature field while function-space *global* optimization
 is not.
@@ -30,7 +49,13 @@ But the negative result has a sharp condition attached, and the condition is the
 > finite, the maximum is attained, and the certificate returns — with cost polynomial in $1/\varepsilon$ rather
 > than exponential in $N$. Infinitely many coordinates are affordable as long as they matter progressively less.
 
-Everything below elaborates on those two paragraphs.
+Four results follow. Coordinate weights are the precondition for any of this machinery to survive at all, and they
+convert a cost exponential in $N$ into one polynomial in $1/\varepsilon$ (§2). The greedy strategy keeps a
+dimension-free 2-approximation in any metric space, so what degrades is the proof of local redundancy and not the
+quality of the search (§4). The clearance sequence measures the dimension a distribution actually occupies —
+recovering $2.10$ for a known planar point set and $1.89$ for the fractal distribution of example 01, a
+measurement run through the library itself (§2.1). And the present greedy step leaves a factor of $\kappa^N$ of
+placed volume unclaimed, because it never optimizes orientation (§6.1).
 
 ---
 
@@ -512,6 +537,14 @@ lower the measured dimension further.
 ---
 
 ## References
+
+**Prior art**
+- P. Bourke, "Random space filling of the plane", 2011 —
+  [paulbourke.net/fractals/randomtile](http://paulbourke.net/fractals/randomtile/).
+- J. Shier, "A Million-Circle Fractal" —
+  [d.umn.edu/~ddunham/circlepat.html](https://www.d.umn.edu/~ddunham/circlepat.html). *"…Run time was 14.7 hours."*
+- S. Frisken, R. Perry, A. Rockwood, T. Jones, "Adaptively sampled distance fields: a general representation of
+  shape for computer graphics", SIGGRAPH 2000, doi:[10.1145/344779.344899](https://dl.acm.org/doi/10.1145/344779.344899).
 
 **Complexity and tractability**
 - A. Nemirovski, D. Yudin, *Problem Complexity and Method Efficiency in Optimization*, 1983 — the
