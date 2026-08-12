@@ -81,7 +81,7 @@ $d_k \asymp k^{-1/N}$, so over a million insertions the clearance falls by $10^{
 $N = 10$, and by $0.76$ at $N = 50$. The sequence flattens: every insertion is nearly as good as the first, which
 is the same as saying no insertion accomplishes anything.
 
-![Figure 5. Clearance decay measured through the crate's own solvers. Panel (a) validates the estimator on farthest-first traversal in 2, 3 and 4 dimensions, where the covering radius must scale as k to the minus one over D; the fit recovers 2.10 against a true 2 but reads high in 3 and 4 dimensions, and a control series with four times the restarts shows this is a pre-asymptotic effect rather than search error. Panel (b) applies the same fit to the fractal distribution of example 01, obtaining non-integer effective dimensions of 1.89 and 1.21 with excellent fit quality. A results table gives slopes, predictions, fit quality and measured dimensions for all six series.](figures/fig5-decay.svg)
+![Figure 2. Clearance decay measured through the crate's own solvers. Panel (a) validates the estimator on farthest-first traversal in 2, 3 and 4 dimensions, where the covering radius must scale as k to the minus one over D; the fit recovers 2.10 against a true 2 but reads high in 3 and 4 dimensions, and a control series with four times the restarts shows this is a pre-asymptotic effect rather than search error. Panel (b) applies the same fit to the fractal distribution of example 01, obtaining non-integer effective dimensions of 1.89 and 1.21 with excellent fit quality. A results table gives slopes, predictions, fit quality and measured dimensions for all six series.](figures/fig2-decay.svg)
 
 ### 2.2 Where the certificate breaks, exactly
 
@@ -151,7 +151,7 @@ design consequence is concrete and immediate:
 That single change is the difference between a usable ceiling of $N \approx 10$ and one of $N \approx 10^2$, and
 it is a change to the tree, not to any proof — `sdf_geq_everywhere` is indifferent to how the boxes were made.
 
-![Figure 2. Two ways to refine a cell. (a) The current 2^N-tree splits every axis at once, allocating all 2^N orthants — 1024 children at N=10, over a million at N=20. (b) A weight-ordered k-d tree cuts one axis at a time: branching factor 2 in every dimension, the same resolution after N cuts, and only the cells the search descends into are allocated. (c) Children allocated per subdivision on a log scale: the fan-out is a straight line, the binary split a constant.](figures/fig2-refinement.svg)
+![Figure 3. Two ways to refine a cell. (a) The current 2^N-tree splits every axis at once, allocating all 2^N orthants — 1024 children at N=10, over a million at N=20. (b) A weight-ordered k-d tree cuts one axis at a time: branching factor 2 in every dimension, the same resolution after N cuts, and only the cells the search descends into are allocated. (c) Children allocated per subdivision on a log scale: the fan-out is a straight line, the binary split a constant.](figures/fig3-refinement.svg)
 
 Where do the weights come from? Not from a hyperparameter — from the parameterization itself. A Karhunen–Loève
 expansion of a random field supplies eigenvalues $\lambda_1 \ge \lambda_2 \ge \dots$ with
@@ -232,7 +232,7 @@ so:
 That asymmetry is the cleanest summary of the whole report: what breaks is the *proof of local redundancy*, not
 the *quality of the global strategy*.
 
-![Figure 3. The asymmetry at the centre of the report. (a) Farthest-first traversal, illustrated by five greedy insertions and their clearance balls, is a 2-approximation to k-center in any metric space, so the quality of the strategy is indifferent to dimension. (b) The pruning test must reach boxes of half-diagonal below delta over the summed Lipschitz constants, and the number of such boxes is exponential in N and infinite when the unit ball is non-compact; the test then remains sound but proves nothing below the root box. (c) On a compact weighted ellipsoid the entropy is polynomial in one over epsilon with the exponent set by the smoothness of the weight decay, so the ambient dimension leaves the exponent entirely.](figures/fig3-survival.svg)
+![Figure 4. The asymmetry at the centre of the report. (a) Farthest-first traversal, illustrated by five greedy insertions and their clearance balls, is a 2-approximation to k-center in any metric space, so the quality of the strategy is indifferent to dimension. (b) The pruning test must reach boxes of half-diagonal below delta over the summed Lipschitz constants, and the number of such boxes is exponential in N and infinite when the unit ball is non-compact; the test then remains sound but proves nothing below the root box. (c) On a compact weighted ellipsoid the entropy is polynomial in one over epsilon with the exponent set by the smoothness of the weight decay, so the ambient dimension leaves the exponent entirely.](figures/fig4-survival.svg)
 
 ---
 
@@ -329,7 +329,106 @@ random search; with them, it tracks the effective dimension.
 
 Ordered by how far they are from working code.
 
-### 6.1 Packing trajectories (near-term, striking)
+### 6.1 Pose, not only position — the lift that fixes today's greedy step
+
+Every reading so far has taken the greedy step for granted: find a maximum of $g$, place a shape there. But the
+solvers hand the generator a *position and a clearance*, and nothing else. Orientation never enters the
+optimization — in [`examples/gd_adf/04`](../../../examples/gd_adf/04_polymorphic.rs) it is drawn from
+`rng.random_range(0.0..45)`, sampled rather than chosen. That is exact for balls and lossy for everything else,
+and the loss has a closed form.
+
+A unit shape is inscribed in the unit sphere, so scaling by the clearance matches the shape's **circumradius**
+$R_S$ to $d$. But a shape clears the walls of a region through its **inradius** $r_S$. Writing
+$\mathrm{vol}_{\mathrm{best}}$ for the largest admissible copy under any translation and rotation,
+
+$$
+\left( \frac{d}{R_S} \right)^{N} \mathrm{vol}(S)
+\quad \le \quad \mathrm{vol}_{\mathrm{best}} \quad \le \quad
+\left( \frac{d}{r_S} \right)^{N} \mathrm{vol}(S) .
+$$
+
+The left-hand side is what the crate places today. The right-hand side cannot be beaten: any admissible copy
+contains its own inradius ball, that ball lies in free space, so $g$ at its centre is at least $s r_S$, whence
+$s r_S \le \max g = d$. The two bounds differ by the shape's **anisotropy** raised to the dimension,
+
+$$
+\kappa^{N}, \qquad \kappa = R_S / r_S ,
+$$
+
+and the bound is attained. For a ball $\kappa = 1$ and today's rule is already optimal — which is precisely why
+the deficiency has stayed invisible.
+
+![Figure 5. The anisotropy bound. Panel (a) places a shape of aspect one-to-two in a free region of two by one, three ways: the present rule inscribes it in the free ball for an area of 0.40; the best axis-aligned copy reaches 0.50; the copy rotated by a right angle fills the region exactly at area 2.00, a factor of five. Panel (b) derives the bound from the inradius ball and shows the inradius and circumradius of the shape. Panel (c) tabulates the anisotropy and the volume left unclaimed for common shapes, from unity for a ball to twenty-seven for a regular tetrahedron.](figures/fig5-orientation.svg)
+
+Figure 5 makes it concrete with a free region of $2 \times 1$ and a shape of aspect $1 : 2$. Today's rule places
+area $0.40$; rotating by a right angle fills the region exactly, at area $2.00$. The ratio is $5.00$, which is
+exactly $\kappa^2$ for $\kappa = \sqrt{5}$. Worse, $0.40$ is also the area at the *worst* orientation for that
+region, so the orientation-blind rule realises the least favourable pose available to it. The shortfall grows
+sharply with dimension: a regular tetrahedron has $\kappa = 3$ and so leaves $27 \times$ unclaimed, and even the
+$N$-cube — the least anisotropic box there is — has $\kappa = \sqrt{N}$, hence a gap of $N^{N/2}$: sixteenfold in
+$\mathbb{R}^4$ and $10^5$-fold in $\mathbb{R}^{10}$.
+
+**The lift is the right instrument, and it is smaller than it looks.** Scale is not a free coordinate but the
+objective itself, since a pose determines the largest admissible copy. The domain is therefore
+$\mathbb{R}^N \rtimes SO(N)$, of dimension $N + N(N-1)/2$ — three for the plane, six for space, ten for
+$\mathbb{R}^4$ — and the objective is
+
+$$
+s^{\ast}(c, R) = \sup \lbrace s : s R S + c \subseteq F \rbrace , \qquad F = \lbrace g > 0 \rbrace .
+$$
+
+For a star-shaped $S$ with radial function $\rho_S$ this is not merely well-defined but computable in closed
+form. Every point of a star-shaped body lies on a segment from its centre, so containment is containment of
+segments:
+
+$$
+s^{\ast}(c, R) = \inf_{u} \frac{\lambda(c, Ru)}{\rho_S(u)} ,
+$$
+
+where $\lambda(c, v)$ is the ray clearance — the first exit of the ray from free space — obtained by sphere
+tracing, which the 1-Lipschitz field already makes safe with no new machinery: step by $g(p)$ and never overshoot.
+
+![Figure 6. The configuration-space lift. Panel (a) draws one slice of the lifted domain per orientation, with the largest admissible scale marked on each, and tabulates the dimension of the lift and the resulting branching factor for two, three and four ambient dimensions. Panel (b) plots the exact largest-scale objective against orientation for the region of Figure 5, showing a nearly flat landscape that rises sharply at a right angle, with its minimum coinciding with the orientation-blind placement. Panel (c) contrasts covering the shape by one ball, which reproduces the present rule, with covering it by eight, and states the resulting Lipschitz surrogate.](figures/fig6-configuration.svg)
+
+**What breaks is the certificate, not the search.** The exact $s^{\ast}$ is discontinuous: a shape that just
+slots through a gap becomes inadmissible under an infinitesimal move, so $s^{\ast}$ jumps and admits no honest
+Lipschitz constant. It is therefore not a legal `Primitive`, and `sdf_geq_everywhere` does not apply to it. The
+repair is to cover the shape by balls $B(y_i, r_i)$ and ask the field only at their centres:
+
+$$
+s_{\mathrm{lb}}(c, R) = \max \lbrace s : g(c + s R y_i) \ge s r_i \text{ for every } i \rbrace .
+$$
+
+Each constraint is 1-Lipschitz in $c$ and $s R_S$-Lipschitz in $R$, so $s_{\mathrm{lb}}$ carries an honest
+constant; it is monotone in $s$, so bisection evaluates it; and it is sound, never claiming an infeasible
+placement. The pleasing part is the degenerate case: **one ball at the centre with $r = R_S$ gives exactly
+$g(c)/R_S$, which is the rule the crate uses today.** Refining the cover interpolates continuously from present
+behaviour to the exact optimum, trading a tighter fit against a larger Lipschitz constant.
+
+Two levels of ambition, then. The cheap one needs no library changes at all: keep the existing maxima search in
+$\mathbb{R}^N$, then polish $(c, R)$ locally with `LineSearch` on the three- or six-dimensional
+$s_{\mathrm{lb}}$, warm-started from the ball-inscribed pose. `LineSearch` is already dimension-generic and asks
+only for a scalar function, so this is a drop-in that captures most of $\kappa^N$. The expensive one — storing
+the lifted objective in an ADF — is harder than it looks: an insertion changes $g$ locally in $\mathbb{R}^N$ but
+invalidates $s_{\mathrm{lb}}$ at *every* pose whose shape meets the change, a region
+$\lVert c - x_0 \rVert \le s R_S + d$ crossed with all of $SO(N)$. The insertion-domain argument of §2 survives
+the lift, but the domain is a cylinder rather than a box of side $4d$.
+
+Two threads from earlier sections converge here, for entirely independent reasons. At $N = 3$ the lift is
+six-dimensional, where a $2^D$ tree branches 64 ways — so the $k$-d refinement of Figure 3 stops being an
+optimization and becomes a precondition. And the rotation coordinates must be weighted by $R_S$ to be
+commensurate with the translations, since a rotation through $\delta$ moves a boundary point by about
+$R_S \delta$ — the anisotropic axis weighting of §2.3, arriving from the geometry of poses rather than from
+tractability theory.
+
+Finally, two honest limits. The global objective — least empty space with fewest shapes — contains
+two-dimensional bin packing and is NP-hard, so greedy-plus-polish is the right target and not optimality; and
+the farthest-first 2-approximation of §4 covers the *point* problem, with no volume analogue to inherit.
+Note also that $\kappa^N$ is a constant factor, not a better decay exponent, which makes it a prediction the
+diagnostic of §2.1 can test directly: optimizing pose should leave the fitted slope of Figure 2 unchanged while
+raising its intercept.
+
+### 6.2 Packing trajectories (near-term, striking)
 
 Let the ambient space be $C([0,T], \mathbb{R}^d)$ under the sup-norm. A "ball" is then a **tube** around a path,
 and clearance is the guaranteed separation between world-lines. Greedy insertion becomes: *add the trajectory
@@ -341,7 +440,7 @@ sup-norm distance to a tube is 1-Lipschitz in $c$; therefore `Primitive::new` ac
 constant and every existing proof applies. **Multi-agent motion planning as a space-filling problem, with no new
 mathematics** — only a change in what the coordinates mean.
 
-### 6.2 Certified neural primitives (buildable today)
+### 6.3 Certified neural primitives (buildable today)
 
 A neural implicit SDF trained with an Eikonal penalty (IGR) approximates $\lVert \nabla f \rVert = 1$ only
 softly, so it is not admissible. But a network with spectral-normalized or Lipschitz-regularized layers carries a
@@ -350,19 +449,19 @@ needs no changes: a learned shape becomes a first-class citizen alongside a poly
 sound because the bound is honest. This is the same mechanism the Mandelbrot estimator in `06_custom_primitive`
 already exploits, pointed at a different function class.
 
-### 6.3 Diversity as space filling (research)
+### 6.4 Diversity as space filling (research)
 
 Maximin-distance design, sensor placement, and diverse sampling from a generative model are the same problem in a
 latent space: choose points to maximize mutual separation. In an RKHS this is kernel herding with $O(1/k)$ rates
 (§4). The `05_image_dataset` example already packs $10^5$ images *in the plane*; packing them in **feature
 space** instead makes the field a novelty measure and the distribution a coverage-maximizing dataset.
 
-### 6.4 Shape optimization on the existing representation (research)
+### 6.5 Shape optimization on the existing representation (research)
 
 Per §3: host a level-set optimizer whose state is an ADF, using the declared Lipschitz bound in place of periodic
 reinitialization. This is the deepest of the four and the one most likely to produce something publishable.
 
-### 6.5 Metric-space ADF (the structural generalization)
+### 6.6 Metric-space ADF (the structural generalization)
 
 Note that the pruning inequality is *metric*: it needs $\lVert x - y \rVert$ and nothing else. The only Euclidean
 ingredient in the whole structure is the box decomposition. Replace boxes with a hierarchical cover — a cover
@@ -392,13 +491,19 @@ Stated plainly, so the proposals above are not mistaken for optimism.
 
 ## 8. Recommended order of work
 
-![Figure 4. Recommended order of work, in three bands. Engineering: k-d splits, weight-ordered axis selection, anisotropic primitives — together raising the practical ceiling from N about 10 to N about 100 while touching none of the proofs. Demonstration: a randomized gradient in LineSearch, then trajectory packing in path space, the most persuasive result per unit of effort. Research: a cover-tree ADF for general metric spaces, and level-set shape optimization whose state is the ADF itself; these two require new proofs rather than new code alone.](figures/fig4-roadmap.svg)
+![Figure 7. Recommended order of work, in three bands. Engineering: k-d splits, weight-ordered axis selection, anisotropic primitives — together raising the practical ceiling from N about 10 to N about 100 while touching none of the proofs. Demonstration: a randomized gradient in LineSearch, then trajectory packing in path space, the most persuasive result per unit of effort. Research: a cover-tree ADF for general metric spaces, and level-set shape optimization whose state is the ADF itself; these two require new proofs rather than new code alone.](figures/fig7-roadmap.svg)
 
 Steps 1–2 are pure engineering with a large payoff: they move the practical ceiling from roughly $N = 10$ to
 $N = 10^2$ and touch no proof. Step 5 is the most persuasive demonstration per unit of effort. Step 7 is the
 research contribution.
 
-The cheapest experiment of all is already done (§2.1, Figure 5): the slope of $\log d_k$ against $\log k$ recovers
+One further item belongs between steps 3 and 4, and it is the only one that improves output quality rather than
+reach: the pose polish of §6.1. It needs no new theory — `LineSearch` on $s_{\mathrm{lb}}$ over
+$\mathbb{R}^N \rtimes SO(N)$, warm-started from the ball-inscribed pose — and it recovers up to $\kappa^N$ of the
+volume every existing example currently discards. It pairs naturally with step 3, since anisotropic primitives
+are exactly the shapes with $\kappa \gg 1$ and therefore the ones with most to gain.
+
+The cheapest experiment of all is already done (§2.1, Figure 2): the slope of $\log d_k$ against $\log k$ recovers
 $2.10$ for a known 2-dimensional point set, and $1.89$ for the distribution of example 01 — a non-integer
 dimension below the ambient plane, which is the number that governs everything above. Worth running on any new
 distribution before reasoning about it, and worth re-running after step 3, since anisotropic primitives should

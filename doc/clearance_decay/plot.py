@@ -1,4 +1,4 @@
-"""Builds doc/figures/fig5-decay.svg from decay.csv.
+"""Builds the clearance-decay figure of doc/publications/infinite_dimensions from decay.csv.
 
 Log-log plot of clearance against insertion count, with least-squares fits, the
 theoretical -1/D references, and a results table. Run after `cargo run --release`.
@@ -6,7 +6,7 @@ theoretical -1/D references, and a results table. Run after `cargo run --release
 import csv, io, math, collections
 
 CSV = 'decay.csv'
-OUT = '../figures/fig5-decay.svg'
+OUT = '../publications/infinite_dimensions/figures/fig2-decay.svg'
 PITCH = {'frac4': 1.0 / 4096, 'frac1': 1.0 / 8192}
 
 # ---------------------------------------------------------------- data + fits
@@ -250,7 +250,7 @@ e('<rect x="32" y="664" width="1416" height="%d" fill="none" stroke="#c3cfd9" st
 
 # ---- caption
 cap = [
-    'Figure 5 | The diagnostic of §2.1, carried out. (a) Farthest-first traversal, where the covering radius must scale as k^(−1/D): the fit recovers',
+    'Figure 2 | The diagnostic of §2.1, carried out. (a) Farthest-first traversal, where the covering radius must scale as k^(−1/D): the fit recovers',
     '2.10 against a true 2, but only 3.53 against 3 and 4.93 against 4. The control row ff4hi isolates the cause — quadrupling the restarts moves the slope',
     'further from −1/4, not closer, so the shortfall is not search error but the pre-asymptotic regime. Reaching k ≫ 2^D insertions is itself subject to the',
     'curse of dimensionality, so the estimator inherits the very limitation it measures. (b) Applied where no ground truth exists, the same fit is far cleaner',

@@ -1,5 +1,5 @@
 # Measures the clearance decay of a greedy distribution, to test the diagnostic
-# proposed in doc/infinite_dimensions.md §2.1: since the covering radius of a
+# proposed in doc/publications/infinite_dimensions §2.1: since the covering radius of a
 # greedy point set obeys d_k ≍ k^(−1/N), the slope of log d_k against log k
 # should recover the dimension the distribution actually occupies.
 #

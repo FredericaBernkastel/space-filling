@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 740" width="1480" height="740" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#16202b">
+<title>The configuration-space lift: optimizing pose as well as position</title>
+<defs>
+  <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#16202b"/>
+  </marker>
+  <marker id="a6p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#6a3d9a"/>
+  </marker>
+  <marker id="a6t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#17796b"/>
+  </marker>
+  <style>
+    .ttl { font-size:19px; font-weight:700; letter-spacing:1.5px; }
+    .sub { font-size:13.4px; fill:#5a6b7a; }
+    .pn  { font-size:14.4px; font-weight:700; }
+    .pl  { font-size:12.2px; fill:#3d4d5c; }
+    .sm  { font-size:11.4px; fill:#5a6b7a; }
+    .smb { font-size:11.4px; font-weight:700; }
+    .th, .th text { font-size:11.4px; font-weight:700; letter-spacing:.7px; fill:#ffffff; }
+    .td  { font-size:12px; }
+    .rl  { font-size:12px; font-weight:700; }
+    .mm  { font-family:Georgia,'Times New Roman',serif; font-size:15px; }
+    .mt  { font-family:Georgia,'Times New Roman',serif; font-style:italic; }
+    .cap { font-family:Georgia,'Times New Roman',serif; font-size:13.2px; fill:#4b5b6a; }
+    .ax  { stroke:#8a9aa8; stroke-width:1.1; fill:none; }
+    .grid{ stroke:#e4eaef; stroke-width:1; fill:none; }
+  </style>
+</defs>
+<rect width="1480" height="740" fill="#ffffff"/>
+
+<text class="ttl" x="32" y="36">THE LIFT: OPTIMIZE OVER POSE, NOT ONLY POSITION</text>
+<text class="sub" x="32" y="58">Scale is not a free coordinate — it is the objective. The domain is ℝᴺ ⋊ SO(N), and the crate’s ascent already runs on it unchanged</text>
+<path d="M32 72 H1448" stroke="#16202b" stroke-width="1.6"/>
+
+<!-- ================= panel (a): the lifted domain ================= -->
+<rect x="32" y="90" width="668" height="510" rx="7" fill="#ffffff" stroke="#d5dee6"/>
+<rect x="32" y="90" width="668" height="34" rx="7" fill="#6a3d9a"/>
+<rect x="32" y="112" width="668" height="12" fill="#6a3d9a"/>
+<text class="pn" x="48" y="113" fill="#ffffff">(a)  One slice of the lift per orientation</text>
+
+<!-- theta axis -->
+<path d="M70 566 V196" stroke="#6a3d9a" stroke-width="1.6" marker-end="url(#a6p)"/>
+<text class="smb" x="70" y="186" text-anchor="middle" fill="#6a3d9a">θ</text>
+<text class="sm" x="86" y="176">θ ≡ θ + 2π</text>
+
+<!-- slice 3: theta = pi/2 (drawn first, farthest back) -->
+<g>
+  <path d="M168 200 H448 M168 340 H448 M168 200 V340 M448 200 V340" stroke="#c9c0da" stroke-width="1" fill="#faf7fd"/>
+  <rect x="168" y="200" width="280" height="140" fill="#f0e9f8" stroke="#b7a4d0" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <rect x="238" y="130" width="140" height="280" fill="#e3f2e4" stroke="#2e7d32" stroke-width="2.2" transform="rotate(-90 308 270)"/>
+  <circle cx="70" cy="270" r="4" fill="#6a3d9a"/>
+  <path d="M74 270 H164" stroke="#c9c0da" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="smb" x="60" y="274" text-anchor="end" fill="#6a3d9a">π/2</text>
+  <text class="smb" x="178" y="220" fill="#1e5b21">s* = 0.50 — area 2.00</text>
+</g>
+<!-- slice 2: theta = pi/3 -->
+<g>
+  <rect x="134" y="310" width="280" height="140" fill="#f0e9f8" stroke="#b7a4d0" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <rect x="236.5" y="305" width="75" height="150" fill="#ede4f7" stroke="#6a3d9a" stroke-width="2" transform="rotate(-60 274 380)"/>
+  <circle cx="70" cy="380" r="4" fill="#6a3d9a"/>
+  <path d="M74 380 H130" stroke="#c9c0da" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="smb" x="60" y="384" text-anchor="end" fill="#6a3d9a">π/3</text>
+  <text class="smb" x="144" y="330" fill="#50276f">s* = 0.27 — area 0.57</text>
+</g>
+<!-- slice 1: theta = 0 -->
+<g>
+  <rect x="100" y="420" width="280" height="140" fill="#f0e9f8" stroke="#b7a4d0" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <rect x="205" y="420" width="70" height="140" fill="#ede4f7" stroke="#6a3d9a" stroke-width="2"/>
+  <circle cx="70" cy="490" r="4" fill="#6a3d9a"/>
+  <path d="M74 490 H96" stroke="#c9c0da" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="smb" x="60" y="494" text-anchor="end" fill="#6a3d9a">0</text>
+  <text class="smb" x="110" y="524" fill="#50276f">s* = 0.25</text>
+  <text class="smb" x="110" y="542" fill="#50276f">area 0.50</text>
+</g>
+
+<!-- dimension table -->
+<rect x="470" y="196" width="214" height="24" fill="#0d1721"/>
+<g class="th">
+  <text x="480" y="212">N</text>
+  <text x="516" y="212">DIMS</text>
+  <text x="592" y="212">2ᴰ CHILDREN</text>
+</g>
+<g class="td">
+  <rect x="470" y="220" width="214" height="22" fill="#ffffff"/>
+  <rect x="470" y="242" width="214" height="22" fill="#f6f9fb"/>
+  <rect x="470" y="264" width="214" height="22" fill="#ffffff"/>
+  <rect x="470" y="220" width="214" height="66" fill="none" stroke="#c3cfd9" stroke-width="1.1"/>
+  <text class="rl" x="480" y="236">2</text> <text x="516" y="236">2 + 1 = 3</text>  <text class="rl" x="612" y="236">8</text>
+  <text class="rl" x="480" y="258">3</text> <text x="516" y="258">3 + 3 = 6</text>  <text class="rl" x="612" y="258">64</text>
+  <text class="rl" x="480" y="280">4</text> <text x="516" y="280">4 + 6 = 10</text> <text class="rl" x="604" y="280">1 024</text>
+</g>
+<text class="sm" x="470" y="308">translation + rotation. Scale is</text>
+<text class="sm" x="470" y="323">determined by the pose, so it</text>
+<text class="sm" x="470" y="338">costs no dimension of its own.</text>
+<rect x="470" y="352" width="214" height="52" rx="4" fill="#e3f2e4" stroke="#2e7d32" stroke-width="1.1"/>
+<text class="smb" x="480" y="371" fill="#1e5b21">At N = 3 a 2ᴰ tree branches</text>
+<text class="smb" x="480" y="387" fill="#1e5b21">64 ways: the k-d refinement</text>
+<text class="smb" x="480" y="399" fill="#1e5b21">of Figure 3 is a prerequisite.</text>
+
+<text class="pl" x="470" y="440">SO(2) is a circle, so the lifted</text>
+<text class="pl" x="470" y="458">axis is periodic and the tree</text>
+<text class="pl" x="470" y="476">must wrap. SO(3) admits no</text>
+<text class="pl" x="470" y="494">global chart: use axis-angle on</text>
+<text class="pl" x="470" y="512">a ball of radius π, or unit</text>
+<text class="pl" x="470" y="530">quaternions on a sphere.</text>
+
+<!-- ================= panel (b): the objective along the lifted axis ================= -->
+<rect x="720" y="90" width="728" height="270" rx="7" fill="#ffffff" stroke="#d5dee6"/>
+<rect x="720" y="90" width="728" height="34" rx="7" fill="#0d1721"/>
+<rect x="720" y="112" width="728" height="12" fill="#0d1721"/>
+<text class="pn" x="736" y="113" fill="#ffffff">(b)  The objective along that axis, exactly — for the region of Figure 5</text>
+
+<g class="grid">
+  <path d="M800 279.5 H1410 M800 239.1 H1410 M800 198.6 H1410 M800 158.1 H1410"/>
+</g>
+<path class="ax" d="M800 320 H1410 M800 150 V320"/>
+<g class="sm" text-anchor="end">
+  <text x="792" y="284">0.5</text><text x="792" y="243">1.0</text><text x="792" y="203">1.5</text><text x="792" y="162">2.0</text>
+</g>
+<g class="sm" text-anchor="middle">
+  <text x="800" y="340">0</text><text x="901.7" y="340">π/12</text><text x="1003.3" y="340">π/6</text>
+  <text x="1105" y="340">π/4</text><text x="1206.7" y="340">π/3</text><text x="1308.3" y="340">5π/12</text><text x="1410" y="340">π/2</text>
+</g>
+<text class="sm" x="1105" y="356" text-anchor="middle">orientation θ</text>
+<text class="sm" x="750" y="235" text-anchor="middle" transform="rotate(-90 750 235)">area placed</text>
+<text class="mm" x="736" y="144">s*(θ) = ½ / (sin θ + 2 cos θ)</text>
+
+<path d="M800 287.6 H1410" stroke="#b26a00" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text class="smb" x="1406" y="302" text-anchor="end" fill="#8a5200">0.40 — the ball-inscribed placement, at every θ</text>
+
+<polyline points="800,279.5 833.9,282.6 867.8,284.8 901.7,286.3 935.6,287.2 969.4,287.6 980.1,287.6 1003.3,287.5 1037.2,286.9 1071.1,285.7 1105,284.0 1138.9,281.5 1172.8,278.1 1206.7,273.5 1240.6,267.2 1274.4,258.6 1308.3,246.5 1342.2,228.7 1376.1,201.9 1410,158.1"
+          fill="none" stroke="#6a3d9a" stroke-width="2.8"/>
+<circle cx="980.1" cy="287.6" r="4.5" fill="#b26a00"/>
+<text class="sm" x="988" y="277">worst θ = arctan ½</text>
+<circle cx="1410" cy="158.1" r="5" fill="#2e7d32"/>
+<text class="smb" x="1402" y="150" text-anchor="end" fill="#1e5b21">2.00</text>
+
+<!-- ================= panel (c): the Lipschitz surrogate ================= -->
+<rect x="720" y="380" width="728" height="220" rx="7" fill="#ffffff" stroke="#d5dee6"/>
+<rect x="720" y="380" width="728" height="34" rx="7" fill="#17796b"/>
+<rect x="720" y="402" width="728" height="12" fill="#17796b"/>
+<text class="pn" x="736" y="403" fill="#ffffff">(c)  Making it admissible: cover the shape, recover a Lipschitz bound</text>
+
+<circle cx="830" cy="500" r="62.6" fill="none" stroke="#b26a00" stroke-width="1.5" stroke-dasharray="4 3"/>
+<rect x="802" y="444" width="56" height="112" fill="#fdf3e3" stroke="#b26a00" stroke-width="1.8"/>
+<text class="smb" x="830" y="580" text-anchor="middle" fill="#8a5200">one ball, r = R_S</text>
+<text class="sm" x="830" y="594" text-anchor="middle">= the crate today</text>
+
+<path d="M900 500 H952" stroke="#16202b" stroke-width="1.5" marker-end="url(#a6)"/>
+
+<g>
+  <g fill="none" stroke="#17796b" stroke-width="1.2" stroke-dasharray="3 3">
+    <circle cx="976" cy="458" r="19.8"/><circle cx="1004" cy="458" r="19.8"/>
+    <circle cx="976" cy="486" r="19.8"/><circle cx="1004" cy="486" r="19.8"/>
+    <circle cx="976" cy="514" r="19.8"/><circle cx="1004" cy="514" r="19.8"/>
+    <circle cx="976" cy="542" r="19.8"/><circle cx="1004" cy="542" r="19.8"/>
+  </g>
+  <rect x="962" y="444" width="56" height="112" fill="#dff0ed" fill-opacity=".65" stroke="#17796b" stroke-width="1.8"/>
+  <text class="smb" x="990" y="580" text-anchor="middle" fill="#0f5d52">eight balls, r = R_S / 3.2</text>
+  <text class="sm" x="990" y="594" text-anchor="middle">tighter, still certified</text>
+</g>
+
+<text class="mm" x="1084" y="450">s_lb = max { s : g(c + s R yᵢ) ≥ s rᵢ  for every i }</text>
+<text class="pl" x="1084" y="478">1-Lipschitz in c, and s · R_S-Lipschitz in R — a legal</text>
+<text class="pl" x="1084" y="496">primitive with an honest constant, unlike the exact s*,</text>
+<text class="pl" x="1084" y="514">which jumps when a shape stops fitting through a gap.</text>
+<text class="pl" x="1084" y="540">Monotone in s, so bisection evaluates it. One sample</text>
+<text class="pl" x="1084" y="558">reproduces today’s rule; refining the cover tends to s*.</text>
+<text class="smb" x="1084" y="584" fill="#0f5d52">Coarser: smoother, more conservative.</text>
+<text class="smb" x="1084" y="597" fill="#0f5d52">Finer: tighter, larger L.</text>
+
+<text class="cap" x="32" y="640">Figure 6 | Lifting the search from ℝᴺ to ℝᴺ ⋊ SO(N). (a) Each orientation is one slice of the lifted domain; the largest admissible scale s* varies</text>
+<text class="cap" x="32" y="660">over the slices, and for the region of Figure 5 it is four times larger at θ = π/2 than at θ = 0. Scale costs no dimension, since a pose determines it.</text>
+<text class="cap" x="32" y="680">(b) The exact objective for that region, s*(θ) = ½ / (sin θ + 2 cos θ): nearly flat across most orientations, then sharply peaked — a landscape that</text>
+<text class="cap" x="32" y="700">rewards ascent but punishes coarse sampling. Its minimum coincides with the orientation-blind placement, so today’s rule realises the worst pose.</text>
+<text class="cap" x="32" y="720">(c) The exact s* is discontinuous and therefore inadmissible as a primitive; covering the shape by balls restores a certified Lipschitz surrogate.</text>
+</svg>

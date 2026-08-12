@@ -190,7 +190,7 @@
 <text class="td" x="1170" y="834">0.9926</text>
 <text class="rl" x="1320" y="834">1.21</text>
 <rect x="32" y="664" width="1416" height="180" fill="none" stroke="#c3cfd9" stroke-width="1.2"/>
-<text class="cap" x="32" y="876">Figure 5 | The diagnostic of §2.1, carried out. (a) Farthest-first traversal, where the covering radius must scale as k^(−1/D): the fit recovers</text>
+<text class="cap" x="32" y="876">Figure 2 | The diagnostic of §2.1, carried out. (a) Farthest-first traversal, where the covering radius must scale as k^(−1/D): the fit recovers</text>
 <text class="cap" x="32" y="896">2.10 against a true 2, but only 3.53 against 3 and 4.93 against 4. The control row ff4hi isolates the cause — quadrupling the restarts moves the slope</text>
 <text class="cap" x="32" y="916">further from −1/4, not closer, so the shortfall is not search error but the pre-asymptotic regime. Reaching k ≫ 2^D insertions is itself subject to the</text>
 <text class="cap" x="32" y="936">curse of dimensionality, so the estimator inherits the very limitation it measures. (b) Applied where no ground truth exists, the same fit is far cleaner</text>

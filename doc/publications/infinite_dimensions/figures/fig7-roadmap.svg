@@ -124,7 +124,7 @@
 </g>
 <path d="M32 512 H1448" stroke="#dbe3ea" stroke-width="1"/>
 
-<text class="cap" x="32" y="546">Figure 4 | Steps 1–3 are changes of data structure: they raise the usable dimension by an order of magnitude while leaving</text>
+<text class="cap" x="32" y="546">Figure 7 | Steps 1–3 are changes of data structure: they raise the usable dimension by an order of magnitude while leaving</text>
 <text class="cap" x="32" y="566">sdf_geq_everywhere and the insertion-domain argument untouched. Step 4 is the one modification the ascent genuinely requires (§5.3).</text>
 <text class="cap" x="32" y="586">Steps 6–7 replace the box decomposition and the update rule respectively, and so require new proofs rather than new code alone.</text>
 </g>

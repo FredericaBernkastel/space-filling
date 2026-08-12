@@ -158,7 +158,7 @@
 <text class="pl" x="1024" y="528">ambient dimension leaves the exponent entirely (§2.3).</text>
 <text class="pl" x="1008" y="566">Infinitely many coordinates are affordable — if they matter progressively less.</text>
 
-<text class="cap" x="32" y="626">Figure 3 | The asymmetry at the centre of the report. (a) The quality of the greedy strategy rests on a metric argument and is therefore</text>
+<text class="cap" x="32" y="626">Figure 4 | The asymmetry at the centre of the report. (a) The quality of the greedy strategy rests on a metric argument and is therefore</text>
 <text class="cap" x="32" y="646">indifferent to dimension. (b) The soundness of pruning also survives — the bound is metric — but its usefulness rests on covering Ω by</text>
 <text class="cap" x="32" y="666">finitely many small boxes, which fails outright when the unit ball is non-compact; the test then still never lies, and never proves anything.</text>
 <text class="cap" x="32" y="686">(c) Restricting to a compact weighted ellipsoid restores it, at a cost governed by the decay rate of the weights rather than by how many</text>

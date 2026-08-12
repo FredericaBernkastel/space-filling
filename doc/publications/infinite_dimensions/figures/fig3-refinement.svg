@@ -157,7 +157,7 @@
 
 <text class="pl" x="1008" y="546">Log scale: the fan-out is a straight line, the binary split a constant.</text>
 
-<text class="cap" x="32" y="596">Figure 2 | The bottleneck at high N is the tree, not the theory. A 2ᴺ-tree allocates every orthant of every subdivided cell, so the branching</text>
+<text class="cap" x="32" y="596">Figure 3 | The bottleneck at high N is the tree, not the theory. A 2ᴺ-tree allocates every orthant of every subdivided cell, so the branching</text>
 <text class="cap" x="32" y="616">factor alone exhausts memory near N = 20. Cutting one axis at a time gives branching factor 2 in every dimension and reaches the same</text>
 <text class="cap" x="32" y="636">resolution after N cuts, while allocating only the cells the search actually descends into. Because sdf_geq_everywhere depends on a cell's</text>
 <text class="cap" x="32" y="656">centre and half-diagonal alone — never on how the cell was produced — the pruning proof carries over unchanged. Cycling the split axis by</text>
