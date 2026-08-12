@@ -48,7 +48,7 @@ conflated.
 Let $H$ be a separable Hilbert space, $\Omega \subset H$ the region to fill, and as before
 
 $$
-g_k(x) = \min_{n \le k} \mathrm{sdf}_n(x), \qquad x_{k+1}^{*} = \arg\max_{x \in \Omega} g_k(x).
+g_k(x) = \min_{n \le k} \mathrm{sdf}_n(x), \qquad x_{k+1}^{\ast} = \arg\max_{x \in \Omega} g_k(x).
 $$
 
 ### 2.1 What geometry does to you first
@@ -209,8 +209,8 @@ $g_{k+1} = T_{f_k} g_k$.
 Three observations follow for free, and they are more than reformulation.
 
 **1. The algorithm is a monotone flow.** $g_{k+1} \le g_k$ pointwise, always. A decreasing sequence bounded below
-converges pointwise to some $g_\infty$, and by equi-Lipschitzness plus Arzelà–Ascoli the convergence is uniform
-on compacts. *The space-filling problem is the problem of characterizing which $g_\infty$ are reachable.* The
+converges pointwise to some $g_{\infty}$, and by equi-Lipschitzness plus Arzelà–Ascoli the convergence is uniform
+on compacts. The space-filling problem then becomes a question about limits: which $g_{\infty}$ are reachable? The
 existing readme's remark that "insertions only ever lower the field" — used to justify the pre-subdivision
 snapshot as a valid upper bound — is precisely monotonicity of $T_f$ on this lattice, and it is why the local
 insertion-domain pruning is sound.
@@ -242,13 +242,13 @@ Yes — with three caveats, one of which this library has already solved by acci
 
 ### 5.1 In Hilbert space: essentially unchanged
 
-For $J : H \to \mathbb{R}$ Fréchet differentiable, the derivative is a functional $DJ(u) \in H^{*}$, and the
+For $J : H \to \mathbb{R}$ Fréchet differentiable, the derivative is a functional $DJ(u) \in H^{\ast}$, and the
 Riesz representation theorem supplies a unique $\nabla J(u) \in H$ with
 $DJ(u)v = \langle \nabla J(u), v \rangle$. The iteration $u_{k+1} = u_k + h \nabla J(u_k)$ is then literally the
 same algorithm. Crucially, the standard rates never mention dimension. For an $L$-smooth objective,
 
 $$
-J^{*} - J(u_k) \le \frac{2L \lVert u_0 - u^{*} \rVert^2}{k+4},
+J^{\ast} - J(u_k) \le \frac{2L \lVert u_0 - u^{\ast} \rVert^2}{k+4},
 $$
 
 and for the nonsmooth subgradient method the rate is $O(GR / \sqrt{k})$. Dimension-freeness is not a convenience
