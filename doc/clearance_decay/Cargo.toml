@@ -1,0 +1,29 @@
+# Measures the clearance decay of a greedy distribution, to test the diagnostic
+# proposed in doc/infinite_dimensions.md §2.1: since the covering radius of a
+# greedy point set obeys d_k ≍ k^(−1/N), the slope of log d_k against log k
+# should recover the dimension the distribution actually occupies.
+#
+#   cd doc/clearance_decay && cargo run --release   # writes decay.csv
+#   uv run python plot.py                           # fits slopes, writes the figure
+[package]
+name = "clearance-decay"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "clearance-decay"
+path = "src/main.rs"
+
+[dependencies]
+space-filling = { path = "../.." }
+rand = { version = "0.10", default-features = false }
+rand_pcg = "0.10"
+rayon = "1.12"
+anyhow = "1.0"
+
+[profile.release]
+debug = false
+
+# own workspace root, so cargo does not attach this to the parent
+[workspace]

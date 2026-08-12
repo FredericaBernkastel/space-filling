@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 760" width="1480" height="760" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#16202b">
+<title>What survives infinite dimension: the greedy guarantee, the Lipschitz certificate, and the role of smoothness</title>
+<defs>
+  <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#16202b"/>
+  </marker>
+  <marker id="a3g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+  </marker>
+  <marker id="a3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#b3261e"/>
+  </marker>
+  <style>
+    .ttl{ font-size:19px; font-weight:700; letter-spacing:1.5px; }
+    .sub { font-size:13.4px; fill:#5a6b7a; }
+    .pn  { font-size:14.4px; font-weight:700; }
+    .pl  { font-size:12.2px; fill:#3d4d5c; }
+    .sm  { font-size:11.4px; fill:#5a6b7a; }
+    .smb { font-size:11.4px; font-weight:700; }
+    .num { font-size:11px; font-weight:700; fill:#ffffff; }
+    .mt  { font-family:Georgia,'Times New Roman',serif; font-style:italic; }
+    .cap { font-family:Georgia,'Times New Roman',serif; font-size:13.2px; fill:#4b5b6a; }
+    .ax  { stroke:#8a9aa8; stroke-width:1.1; fill:none; }
+    .grid{ stroke:#e4eaef; stroke-width:1; fill:none; }
+  </style>
+</defs>
+<rect width="1480" height="760" fill="#ffffff"/>
+
+<text class="ttl" x="32" y="36">THE STRATEGY SURVIVES; THE CERTIFICATE NEEDS A CONDITION</text>
+<text class="sub" x="32" y="58">Greedy insertion keeps its approximation guarantee in any metric space — the Lipschitz proof keeps its power only where Ω is compact</text>
+<path d="M32 72 H1448" stroke="#16202b" stroke-width="1.6"/>
+
+<!-- ============ panel (a): farthest-first ============ -->
+<rect x="32" y="90" width="454" height="500" rx="7" fill="#f9fdfa" stroke="#c9e2d0"/>
+<rect x="32" y="90" width="454" height="34" rx="7" fill="#2e7d32"/>
+<rect x="32" y="112" width="454" height="12" fill="#2e7d32"/>
+<text class="pn" x="48" y="113" fill="#ffffff">(a)  What survives — the greedy guarantee</text>
+
+<text class="sm" x="72" y="144">numbers give insertion order; dashed circles are the clearance at that step</text>
+<g>
+  <rect x="72" y="150" width="374" height="250" fill="#f2faf3" stroke="#2e7d32" stroke-width="1.4"/>
+  <!-- clearance balls, decreasing as insertions accumulate -->
+  <g fill="none" stroke="#8cc292" stroke-dasharray="4 3">
+    <circle cx="146" cy="224" r="62"/><circle cx="372" cy="330" r="58"/>
+    <circle cx="372" cy="196" r="46"/><circle cx="160" cy="348" r="42"/>
+    <circle cx="258" cy="262" r="34"/>
+  </g>
+  <g fill="#2e7d32">
+    <circle cx="146" cy="224" r="7"/><circle cx="372" cy="330" r="7"/>
+    <circle cx="372" cy="196" r="7"/><circle cx="160" cy="348" r="7"/><circle cx="258" cy="262" r="7"/>
+  </g>
+  <g class="num" text-anchor="middle">
+    <text x="146" y="228">1</text><text x="372" y="334">2</text><text x="372" y="200">3</text>
+    <text x="160" y="352">4</text><text x="258" y="266">5</text>
+  </g>
+  <!-- radius annotation on ball 5 -->
+  <path d="M258 262 L292 262" stroke="#1e5b21" stroke-width="1.3" marker-end="url(#a3g)"/>
+  <text class="smb" x="296" y="258" fill="#1e5b21">d₅</text>
+</g>
+
+<rect x="72" y="414" width="374" height="72" rx="5" fill="#e3f2e4" stroke="#2e7d32" stroke-width="1.2"/>
+<text class="smb" x="88" y="436" fill="#1e5b21">FARTHEST-FIRST TRAVERSAL IS A 2-APPROXIMATION</text>
+<text class="pl" x="88" y="456">Gonzalez (1985): the clearance after k greedy insertions</text>
+<text class="pl" x="88" y="474">is within a factor 2 of the best possible k-point layout.</text>
+
+<text class="pl" x="48" y="512">The proof is purely metric — it never mentions coordinates,</text>
+<text class="pl" x="48" y="530">convexity or dimension. It therefore holds verbatim in ℝ², in</text>
+<text class="pl" x="48" y="548">ℝ¹⁰⁰, in L², and in a space of paths. Greedy insertion is also</text>
+<text class="pl" x="48" y="566">conditional gradient on a lattice, giving an O(1/k) rate (§4).</text>
+
+<!-- ============ panel (b): the certificate ============ -->
+<rect x="512" y="90" width="454" height="500" rx="7" fill="#fffbfb" stroke="#eccdc9"/>
+<rect x="512" y="90" width="454" height="34" rx="7" fill="#b3261e"/>
+<rect x="512" y="112" width="454" height="12" fill="#b3261e"/>
+<text class="pn" x="528" y="113" fill="#ffffff">(b)  What breaks — the covering argument</text>
+
+<!-- delta-cover of a domain -->
+<g>
+  <rect x="552" y="150" width="180" height="180" fill="#fdf3f2" stroke="#b3261e" stroke-width="1.4"/>
+  <g stroke="#e0a9a3" stroke-width="0.9">
+    <path d="M582 150 V330 M612 150 V330 M642 150 V330 M672 150 V330 M702 150 V330"/>
+    <path d="M552 180 H732 M552 210 H732 M552 240 H732 M552 270 H732 M552 300 H732"/>
+  </g>
+  <rect x="612" y="210" width="30" height="30" fill="#f6cdc8" stroke="#b3261e" stroke-width="1.4"/>
+  <path d="M612 210 L642 240" stroke="#b3261e" stroke-width="1.1"/>
+  <text class="smb" x="650" y="206" fill="#8f1d17">h(R)</text>
+  <text class="sm" x="642" y="348" text-anchor="middle">the test must reach boxes with</text>
+  <text class="sm" x="642" y="364" text-anchor="middle">half-diagonal h &lt; δ / (L_f + L_g)</text>
+</g>
+<!-- covering number -->
+<rect x="756" y="150" width="194" height="86" rx="5" fill="#fdf3f2" stroke="#b3261e" stroke-width="1.1"/>
+<text class="smb" x="853" y="172" text-anchor="middle" fill="#8f1d17">HOW MANY SUCH BOXES?</text>
+<text class="mt" x="853" y="200" text-anchor="middle" font-size="16">(1/δ)ᴺ ≤ N(Ω, δ) ≤ (3/δ)ᴺ</text>
+<text class="sm" x="853" y="222" text-anchor="middle">exponential in the dimension</text>
+<text class="pl" x="756" y="262">In infinite dimension the closed unit</text>
+<text class="pl" x="756" y="280">ball is not compact (Riesz), so this</text>
+<text class="pl" x="756" y="298">count is infinite at every scale.</text>
+
+<!-- the gate -->
+<g>
+  <path d="M753 360 V386" stroke="#16202b" stroke-width="1.4" marker-end="url(#a3)"/>
+  <path d="M642 392 L780 424 L642 456 L504 424 Z" transform="translate(111,0)" fill="#fff7e8" stroke="#b26a00" stroke-width="1.5"/>
+  <text class="smb" x="753" y="420" text-anchor="middle">Is Ω compact —</text>
+  <text class="smb" x="753" y="436" text-anchor="middle">i.e. weighted?</text>
+  <path d="M615 424 H575 V467" fill="none" stroke="#2e7d32" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#a3g)"/>
+  <text class="smb" x="595" y="416" text-anchor="middle" fill="#1e5b21">yes</text>
+  <path d="M891 424 H931 V467" fill="none" stroke="#b3261e" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#a3r)"/>
+  <text class="smb" x="911" y="416" text-anchor="middle" fill="#8f1d17">no</text>
+</g>
+<rect x="528" y="470" width="200" height="66" rx="5" fill="#e3f2e4" stroke="#2e7d32" stroke-width="1.2"/>
+<text class="smb" x="628" y="492" text-anchor="middle" fill="#1e5b21">SOUND AND USEFUL</text>
+<text class="pl" x="628" y="512" text-anchor="middle">cost polynomial in 1/ε,</text>
+<text class="pl" x="628" y="528" text-anchor="middle">exponent set by smoothness</text>
+<rect x="750" y="470" width="200" height="66" rx="5" fill="#fbe4e2" stroke="#b3261e" stroke-width="1.2"/>
+<text class="smb" x="850" y="492" text-anchor="middle" fill="#8f1d17">SOUND BUT VACUOUS</text>
+<text class="pl" x="850" y="512" text-anchor="middle">never lies, but proves</text>
+<text class="pl" x="850" y="528" text-anchor="middle">nothing below the root box</text>
+<text class="pl" x="528" y="566">Soundness is a one-directional claim, so it is never lost. Completeness is.</text>
+
+<!-- ============ panel (c): smoothness ============ -->
+<rect x="992" y="90" width="456" height="500" rx="7" fill="#ffffff" stroke="#d5dee6"/>
+<rect x="992" y="90" width="456" height="34" rx="7" fill="#0d1721"/>
+<rect x="992" y="112" width="456" height="12" fill="#0d1721"/>
+<text class="pn" x="1008" y="113" fill="#ffffff">(c)  Smoothness buys back tractability</text>
+
+<g class="grid">
+  <path d="M1080 400 H1416 M1080 320 H1416 M1080 240 H1416 M1080 160 H1416"/>
+</g>
+<path class="ax" d="M1080 400 H1416 M1080 152 V400"/>
+<g class="sm" text-anchor="end">
+  <text x="1072" y="404">10⁰</text>
+  <text x="1072" y="324">10¹</text>
+  <text x="1072" y="244">10²</text>
+  <text x="1072" y="164">10⁴</text>
+</g>
+<!-- curve log N = eps^(-1/s) at eps=1e-2  ->  10^(2/s); s from .4 to 5 -->
+<path d="M1096 152 C 1116 214 1140 268 1168 300 C 1216 340 1280 366 1408 382"
+      fill="none" stroke="#2c5aa0" stroke-width="2.8"/>
+<g fill="#2c5aa0">
+  <circle cx="1110" cy="160" r="4.5"/><circle cx="1168" cy="240" r="4.5"/>
+  <circle cx="1256" cy="320" r="4.5"/><circle cx="1364" cy="378" r="4.5"/>
+</g>
+<g class="smb" fill="#1f4276">
+  <text x="1122" y="156">s = 0.5 → 10⁴</text>
+  <text x="1180" y="236">s = 1 → 10²</text>
+  <text x="1268" y="316">s = 2 → 10</text>
+  <text x="1376" y="374" text-anchor="end" dy="18">s = 4 → 3.2</text>
+</g>
+<g class="sm" text-anchor="middle">
+  <text x="1110" y="420">0.5</text><text x="1168" y="420">1</text><text x="1256" y="420">2</text><text x="1364" y="420">4</text>
+</g>
+<text class="sm" x="1248" y="444" text-anchor="middle">smoothness s of the weight decay aᵢ ≍ i²ˢ</text>
+<text class="sm" x="1012" y="276" text-anchor="middle" transform="rotate(-90 1012 276)">log N(ε) at ε = 10⁻²</text>
+
+<rect x="1008" y="466" width="424" height="70" rx="5" fill="#eaf1fa" stroke="#2c5aa0" stroke-width="1.2"/>
+<text class="smb" x="1024" y="488" fill="#1f4276">EXPONENTIAL IN N  →  POLYNOMIAL IN 1/ε</text>
+<text class="pl" x="1024" y="508">On a weighted ellipsoid the entropy obeys log N(ε) ≍ ε<tspan dy="-5" font-size="9">−1/s</tspan><tspan dy="5">. The</tspan></text>
+<text class="pl" x="1024" y="528">ambient dimension leaves the exponent entirely (§2.3).</text>
+<text class="pl" x="1008" y="566">Infinitely many coordinates are affordable — if they matter progressively less.</text>
+
+<text class="cap" x="32" y="626">Figure 3 | The asymmetry at the centre of the report. (a) The quality of the greedy strategy rests on a metric argument and is therefore</text>
+<text class="cap" x="32" y="646">indifferent to dimension. (b) The soundness of pruning also survives — the bound is metric — but its usefulness rests on covering Ω by</text>
+<text class="cap" x="32" y="666">finitely many small boxes, which fails outright when the unit ball is non-compact; the test then still never lies, and never proves anything.</text>
+<text class="cap" x="32" y="686">(c) Restricting to a compact weighted ellipsoid restores it, at a cost governed by the decay rate of the weights rather than by how many</text>
+<text class="cap" x="32" y="706">coordinates there are. What breaks is thus the proof of local redundancy, not the quality of the global strategy.</text>
+</svg>

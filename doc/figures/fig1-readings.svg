@@ -1,0 +1,284 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 940" width="1480" height="940" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#16202b">
+<title>Four readings of "infinite-dimensional" in the space-filling problem</title>
+<defs>
+  <radialGradient id="glow" cx="50%" cy="120%" r="75%">
+    <stop offset="0%" stop-color="#2f6ea8" stop-opacity=".95"/>
+    <stop offset="45%" stop-color="#1b3a5c" stop-opacity=".55"/>
+    <stop offset="100%" stop-color="#0d1721" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="fieldsw" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#fdeed6"/><stop offset="100%" stop-color="#e8a44b"/>
+  </linearGradient>
+  <filter id="soft" x="-10%" y="-10%" width="130%" height="140%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#16202b" flood-opacity=".13"/>
+  </filter>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#17796b"/>
+  </marker>
+  <marker id="arB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#b26a00"/>
+  </marker>
+  <style>
+    .h1{ font-size:35px; font-weight:700; letter-spacing:1.6px; fill:#ffffff; }
+    .h0  { font-size:14px; font-weight:700; letter-spacing:3.4px; fill:#7fb0d8; }
+    .sub { font-size:15.5px; fill:#b9cede; }
+    .ph  { font-size:17px; font-weight:700; fill:#ffffff; }
+    .bdg { font-size:15px; font-weight:700; }
+    .pl  { font-size:12.6px; fill:#3d4d5c; }
+    .art { font-size:11.6px; fill:#5a6b7a; }
+    .artb{ font-size:11.6px; font-weight:700; }
+    .vk  { font-size:9.6px; font-weight:700; letter-spacing:1.5px; }
+    .vt  { font-size:14.2px; font-weight:700; }
+    .th, .th text { font-size:12.4px; font-weight:700; letter-spacing:.9px; fill:#ffffff; }
+    .rl  { font-size:12.6px; font-weight:700; fill:#16202b; }
+    .td  { font-size:12.3px; fill:#2b3945; }
+    .mt  { font-family:Georgia,'Times New Roman',serif; font-style:italic; }
+    .cap { font-family:Georgia,'Times New Roman',serif; font-size:13.2px; fill:#4b5b6a; }
+    .ax  { stroke:#94a5b4; stroke-width:1; fill:none; }
+  </style>
+</defs>
+
+<rect width="1480" height="940" fill="#ffffff"/>
+
+<!-- ================= header ================= -->
+<rect x="0" y="0" width="1480" height="118" fill="#0d1721"/>
+<rect x="0" y="0" width="1480" height="118" fill="url(#glow)"/>
+<text class="h0" x="32" y="30">FIGURE 1</text>
+<text class="h1" x="740" y="62" text-anchor="middle">WHERE DOES THE INFINITE DIMENSION LIVE?</text>
+<text class="sub" x="740" y="92" text-anchor="middle">One phrase, four distinct programmes — each with its own optimizer, its own cost driver, and its own verdict</text>
+
+<!-- ================= panel A ================= -->
+<g filter="url(#soft)">
+  <rect x="32" y="146" width="339" height="364" rx="8" fill="#ffffff" stroke="#d5dee6"/>
+</g>
+<path d="M32 190 V154 Q32 146 40 146 H363 Q371 146 371 154 V190 Z" fill="#2c5aa0"/>
+<circle cx="58" cy="168" r="15" fill="#ffffff"/>
+<text class="bdg" x="58" y="173" text-anchor="middle" fill="#2c5aa0">A</text>
+<text class="ph" x="84" y="174">The domain</text>
+<rect x="33" y="190" width="337" height="176" fill="#f7fafd"/>
+<!-- decaying weight spectrum -->
+<g>
+  <path class="ax" d="M74 332 H316"/>
+  <path class="ax" d="M74 332 V222"/>
+  <rect x="82"  y="240" width="18" height="92" fill="#2c5aa0"/>
+  <rect x="112" y="275" width="18" height="57" fill="#3f6cae"/>
+  <rect x="142" y="297" width="18" height="35" fill="#5b85c0"/>
+  <rect x="172" y="310" width="18" height="22" fill="#7ba0ce"/>
+  <rect x="202" y="318" width="18" height="14" fill="#9bb8dc"/>
+  <rect x="232" y="324" width="18" height="8"  fill="#b7cde8"/>
+  <rect x="262" y="327" width="18" height="5"  fill="#cfdef1"/>
+  <rect x="292" y="329" width="18" height="3"  fill="#e2ecf7"/>
+  <path d="M91 240 C 121 268 151 296 181 310 C 221 322 261 328 301 330" fill="none" stroke="#16202b" stroke-width="1.3" stroke-dasharray="4 3"/>
+  <text class="art" x="91"  y="345" text-anchor="middle">γ₁</text>
+  <text class="art" x="121" y="345" text-anchor="middle">γ₂</text>
+  <text class="art" x="151" y="345" text-anchor="middle">γ₃</text>
+  <text class="art" x="255" y="345" text-anchor="middle">coordinate index j →</text>
+  <text class="art" x="66" y="228" text-anchor="end" transform="rotate(-90 66 228)">weight</text>
+  <ellipse cx="272" cy="240" rx="46" ry="13" fill="#dfe9f6" stroke="#2c5aa0" stroke-width="1.4"/>
+  <text class="artb" x="272" y="221" text-anchor="middle" fill="#2c5aa0">Ω compact</text>
+  <text class="art" x="272" y="266" text-anchor="middle"><tspan class="mt">Σ γ</tspan><tspan class="mt" font-size="9">j</tspan><tspan class="mt"> &lt; ∞</tspan></text>
+</g>
+<text class="pl" x="48" y="390">Ω is a ball, or an ellipsoid, in a Hilbert space. The</text>
+<text class="pl" x="48" y="408">certificate is a covering argument, so it lives or dies</text>
+<text class="pl" x="48" y="426">on whether Ω is compact — that is, on the weights.</text>
+<rect x="33" y="444" width="337" height="65" fill="#eaf1fa"/>
+<rect x="33" y="444" width="4" height="65" fill="#2c5aa0"/>
+<text class="vk" x="50" y="466" fill="#2c5aa0">VERDICT</text>
+<text class="vt" x="50" y="488">Hardest</text>
+<text class="art" x="140" y="488">— needs weights to be tractable at all</text>
+
+<!-- ================= panel B ================= -->
+<g filter="url(#soft)">
+  <rect x="391" y="146" width="339" height="364" rx="8" fill="#ffffff" stroke="#d5dee6"/>
+</g>
+<path d="M391 190 V154 Q391 146 399 146 H722 Q730 146 730 154 V190 Z" fill="#17796b"/>
+<circle cx="417" cy="168" r="15" fill="#ffffff"/>
+<text class="bdg" x="417" y="173" text-anchor="middle" fill="#17796b">B</text>
+<text class="ph" x="443" y="174">The primitives</text>
+<rect x="392" y="190" width="337" height="176" fill="#f6fbfa"/>
+<!-- shape with normal-speed arrows -->
+<g>
+  <ellipse cx="541" cy="272" rx="74" ry="62" fill="none" stroke="#17796b" stroke-width="1.2" stroke-dasharray="5 4" opacity=".75"/>
+  <circle cx="541" cy="272" r="56" fill="#dff0ed" stroke="#17796b" stroke-width="2.2"/>
+  <g stroke="#17796b" stroke-width="1.9" marker-end="url(#ar)">
+    <path d="M599 272 H625"/>
+    <path d="M591 243 L608 233"/>
+    <path d="M570 222 L576 211"/>
+    <path d="M541 214 V206"/>
+    <path d="M512 222 L505 210"/>
+    <path d="M491 243 L472 232"/>
+    <path d="M483 272 H455"/>
+    <path d="M491 301 L470 313"/>
+    <path d="M512 322 L504 336"/>
+    <path d="M541 330 V340"/>
+    <path d="M570 322 L577 334"/>
+    <path d="M591 301 L608 311"/>
+  </g>
+  <text class="artb" x="541" y="277" text-anchor="middle" fill="#0f5d52">∂Ω</text>
+  <text class="art" x="646" y="212">deformation</text>
+  <text class="art" x="646" y="227"><tspan class="mt">V · n</tspan> only</text>
+  <text class="art" x="541" y="358" text-anchor="middle">infinitely many degrees of freedom collapse</text>
+</g>
+<text class="pl" x="407" y="390">Each primitive's boundary is a function — a radial</text>
+<text class="pl" x="407" y="408">profile in L², a path in H¹. Hadamard's theorem</text>
+<text class="pl" x="407" y="426">reduces the derivative to one scalar field on ∂Ω.</text>
+<rect x="392" y="444" width="337" height="65" fill="#e6f4f1"/>
+<rect x="392" y="444" width="4" height="65" fill="#17796b"/>
+<text class="vk" x="409" y="466" fill="#0f5d52">VERDICT</text>
+<text class="vt" x="409" y="488">Most useful</text>
+<text class="art" x="519" y="488">— classical gradient methods apply</text>
+
+<!-- ================= panel C ================= -->
+<g filter="url(#soft)">
+  <rect x="750" y="146" width="339" height="364" rx="8" fill="#ffffff" stroke="#d5dee6"/>
+</g>
+<path d="M750 190 V154 Q750 146 758 146 H1081 Q1089 146 1089 154 V190 Z" fill="#6a3d9a"/>
+<circle cx="776" cy="168" r="15" fill="#ffffff"/>
+<text class="bdg" x="776" y="173" text-anchor="middle" fill="#6a3d9a">C</text>
+<text class="ph" x="802" y="174">The state</text>
+<rect x="751" y="190" width="337" height="176" fill="#faf7fd"/>
+<!-- monotone sawtooth descent -->
+<g>
+  <path class="ax" d="M780 340 H1059"/>
+  <polyline points="780,340 919.5,230 1059,340" fill="none" stroke="#cbb3e4" stroke-width="2"/>
+  <polyline points="780,340 849.7,285 919.5,340 989.2,285 1059,340" fill="none" stroke="#9a72c7" stroke-width="2"/>
+  <polyline points="780,340 814.9,312.5 849.7,340 884.6,312.5 919.5,340 954.4,312.5 989.2,340 1024.1,312.5 1059,340" fill="none" stroke="#4b2472" stroke-width="2.2"/>
+  <circle cx="919.5" cy="340" r="3.4" fill="#4b2472"/>
+  <circle cx="849.7" cy="340" r="3.4" fill="#4b2472"/>
+  <circle cx="989.2" cy="340" r="3.4" fill="#4b2472"/>
+  <g stroke-width="2.4">
+    <path d="M782 208 H806" stroke="#cbb3e4"/>
+    <path d="M782 224 H806" stroke="#9a72c7"/>
+    <path d="M782 240 H806" stroke="#4b2472"/>
+  </g>
+  <text class="art" x="812" y="212">g₀ — boundary only</text>
+  <text class="art" x="812" y="228">g₁ — one insertion</text>
+  <text class="art" x="812" y="244">g₂ — three insertions</text>
+  <text class="art" x="1052" y="270" text-anchor="end">g₀ ≥ g₁ ≥ g₂ ≥ …</text>
+  <text class="art" x="919" y="358" text-anchor="middle">insertion only ever lowers the field</text>
+</g>
+<text class="pl" x="766" y="390">The field itself is the variable, ranging over the</text>
+<text class="pl" x="766" y="408">1-Lipschitz functions — a lattice. Greedy insertion</text>
+<text class="pl" x="766" y="426">is then conditional gradient, not a heuristic.</text>
+<rect x="751" y="444" width="337" height="65" fill="#f0e9f8"/>
+<rect x="751" y="444" width="4" height="65" fill="#6a3d9a"/>
+<text class="vk" x="768" y="466" fill="#6a3d9a">VERDICT</text>
+<text class="vt" x="768" y="488">Explanatory</text>
+<text class="art" x="878" y="488">— says why greedy works at all</text>
+
+<!-- ================= panel D ================= -->
+<g filter="url(#soft)">
+  <rect x="1109" y="146" width="339" height="364" rx="8" fill="#ffffff" stroke="#d5dee6"/>
+</g>
+<path d="M1109 190 V154 Q1109 146 1117 146 H1440 Q1448 146 1448 154 V190 Z" fill="#b26a00"/>
+<circle cx="1135" cy="168" r="15" fill="#ffffff"/>
+<text class="bdg" x="1135" y="173" text-anchor="middle" fill="#b26a00">D</text>
+<text class="ph" x="1161" y="174">The representation</text>
+<rect x="1110" y="190" width="337" height="176" fill="#fdfaf5"/>
+<!-- parametric field family -->
+<g>
+  <g stroke="#e0c69b" stroke-width="1">
+    <path d="M1160 240 L1225 218 M1160 240 L1225 254 M1160 240 L1225 290 M1160 240 L1225 326"/>
+    <path d="M1160 272 L1225 218 M1160 272 L1225 254 M1160 272 L1225 290 M1160 272 L1225 326"/>
+    <path d="M1160 304 L1225 218 M1160 304 L1225 254 M1160 304 L1225 290 M1160 304 L1225 326"/>
+    <path d="M1225 218 L1290 272 M1225 254 L1290 272 M1225 290 L1290 272 M1225 326 L1290 272"/>
+  </g>
+  <g fill="#ffffff" stroke="#b26a00" stroke-width="1.6">
+    <circle cx="1160" cy="240" r="6"/><circle cx="1160" cy="272" r="6"/><circle cx="1160" cy="304" r="6"/>
+    <circle cx="1225" cy="218" r="6"/><circle cx="1225" cy="254" r="6"/><circle cx="1225" cy="290" r="6"/><circle cx="1225" cy="326" r="6"/>
+  </g>
+  <circle cx="1290" cy="272" r="7.5" fill="#b26a00"/>
+  <path d="M1302 272 H1330" stroke="#b26a00" stroke-width="1.9" marker-end="url(#arB)"/>
+  <rect x="1340" y="238" width="76" height="68" rx="4" fill="url(#fieldsw)" stroke="#b26a00" stroke-width="1.4"/>
+  <path d="M1352 292 Q1378 258 1404 292" fill="none" stroke="#7a4600" stroke-width="1.5"/>
+  <path d="M1352 302 Q1378 272 1404 302" fill="none" stroke="#7a4600" stroke-width="1" opacity=".55"/>
+  <text class="artb" x="1378" y="228" text-anchor="middle" fill="#7a4600">learned field</text>
+  <rect x="1160" y="336" width="200" height="22" rx="11" fill="#f6e3c4" stroke="#b26a00" stroke-width="1.1"/>
+  <text class="art" x="1260" y="351" text-anchor="middle" fill="#7a4600">‖∇f‖ ≤ L certified by construction</text>
+</g>
+<text class="pl" x="1125" y="390">The field is drawn from a parametric family — an</text>
+<text class="pl" x="1125" y="408">implicit network. A norm-constrained architecture</text>
+<text class="pl" x="1125" y="426">yields an honest L, which is all the crate requires.</text>
+<rect x="1110" y="444" width="337" height="65" fill="#fdf0dc"/>
+<rect x="1110" y="444" width="4" height="65" fill="#b26a00"/>
+<text class="vk" x="1127" y="466" fill="#8a5200">VERDICT</text>
+<text class="vt" x="1127" y="488">Buildable today</text>
+<text class="art" x="1259" y="488">— <tspan class="mt">with_lipschitz</tspan> already accepts it</text>
+
+<!-- ================= comparison table ================= -->
+<rect x="32" y="546" width="1416" height="44" fill="#0d1721"/>
+<text class="th" x="48" y="574">PROPERTY</text>
+<g class="th">
+  <rect x="258" y="562" width="10" height="10" fill="#2c5aa0"/><text x="276" y="574">A · DOMAIN</text>
+  <rect x="558" y="562" width="10" height="10" fill="#17796b"/><text x="576" y="574">B · PRIMITIVES</text>
+  <rect x="858" y="562" width="10" height="10" fill="#6a3d9a"/><text x="876" y="574">C · STATE</text>
+  <rect x="1158" y="562" width="10" height="10" fill="#b26a00"/><text x="1176" y="574">D · REPRESENTATION</text>
+</g>
+<rect x="32" y="590" width="1416" height="46" fill="#ffffff"/>
+<rect x="32" y="636" width="1416" height="46" fill="#f6f9fb"/>
+<rect x="32" y="682" width="1416" height="46" fill="#ffffff"/>
+<rect x="32" y="728" width="1416" height="46" fill="#f6f9fb"/>
+<rect x="32" y="774" width="1416" height="46" fill="#ffffff"/>
+<rect x="32" y="820" width="1416" height="46" fill="#f2f6f9"/>
+<g stroke="#dde5ec" stroke-width="1">
+  <path d="M32 636 H1448 M32 682 H1448 M32 728 H1448 M32 774 H1448 M32 820 H1448"/>
+  <path d="M248 590 V866 M548 590 V866 M848 590 V866 M1148 590 V866"/>
+</g>
+<rect x="32" y="590" width="1416" height="276" fill="none" stroke="#c3cfd9" stroke-width="1.2"/>
+
+<g class="rl">
+  <text x="48" y="618">What is varied</text>
+  <text x="48" y="664">Where it lives</text>
+  <text x="48" y="710">Gradient available as</text>
+  <text x="48" y="756">Lipschitz certificate</text>
+  <text x="48" y="802">Cost is driven by</text>
+  <text x="48" y="848">Verdict</text>
+</g>
+<g class="td">
+  <text x="264" y="618">a point <tspan class="mt">x</tspan> in the free space</text>
+  <text x="564" y="618">a boundary profile or a path</text>
+  <text x="864" y="618">the stored field <tspan class="mt">g</tspan> itself</text>
+  <text x="1164" y="618">the parameters of a family</text>
+
+  <text x="264" y="658">a Hilbert ball — or a weighted</text>
+  <text x="264" y="674">ellipsoid, which is compact</text>
+  <text x="564" y="658">L² radial profiles, H¹ paths</text>
+  <text x="564" y="674">(function spaces proper)</text>
+  <text x="864" y="658">the 1-Lipschitz functions on Ω:</text>
+  <text x="864" y="674">a lattice under pointwise min</text>
+  <text x="1164" y="658">a finite-dimensional manifold</text>
+  <text x="1164" y="674">inside an infinite-dim. space</text>
+
+  <text x="264" y="710">random directional probes</text>
+  <text x="564" y="710">the shape derivative</text>
+  <text x="864" y="710">conditional gradient</text>
+  <text x="1164" y="710">backpropagation</text>
+
+  <text x="264" y="750">survives only where Ω is</text>
+  <text x="264" y="766">compact — i.e. weighted</text>
+  <text x="564" y="750">inherited from the field's own</text>
+  <text x="564" y="766">declared constant</text>
+  <text x="864" y="750">not required: monotonicity of</text>
+  <text x="864" y="766">min does the same work</text>
+  <text x="1164" y="750">yes, if the layers are</text>
+  <text x="1164" y="766">norm-constrained</text>
+
+  <text x="264" y="802">the covering number of Ω</text>
+  <text x="564" y="802">boundary resolution</text>
+  <text x="864" y="802">the number of insertions</text>
+  <text x="1164" y="802">the certified bound L</text>
+</g>
+<g>
+  <rect x="264" y="832" width="112" height="24" rx="12" fill="#eaf1fa" stroke="#2c5aa0"/>
+  <text class="td" x="320" y="848" text-anchor="middle" font-weight="700" fill="#1f4276">Hardest</text>
+  <rect x="564" y="832" width="130" height="24" rx="12" fill="#e6f4f1" stroke="#17796b"/>
+  <text class="td" x="629" y="848" text-anchor="middle" font-weight="700" fill="#0f5d52">Most useful</text>
+  <rect x="864" y="832" width="130" height="24" rx="12" fill="#f0e9f8" stroke="#6a3d9a"/>
+  <text class="td" x="929" y="848" text-anchor="middle" font-weight="700" fill="#50276f">Explanatory</text>
+  <rect x="1164" y="832" width="146" height="24" rx="12" fill="#fdf0dc" stroke="#b26a00"/>
+  <text class="td" x="1237" y="848" text-anchor="middle" font-weight="700" fill="#8a5200">Buildable today</text>
+</g>
+
+<text class="cap" x="32" y="898">Figure 1 | The four programmes hidden in the phrase “infinite-dimensional”. They differ in what is varied, and therefore in which</text>
+<text class="cap" x="32" y="918">machinery survives: A and D keep the certificate under conditions, B and C keep the optimizer unconditionally. See §§2–5.</text>
+</svg>

@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 574" width="1480" height="574" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#16202b">
+<title>Recommended order of work, from engineering to research</title>
+<defs>
+  <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#9fb0be"/>
+  </marker>
+  <style>
+    .ttl{ font-size:19px; font-weight:700; letter-spacing:1.5px; }
+    .sub { font-size:13.4px; fill:#5a6b7a; }
+    .band{ font-size:11.6px; font-weight:700; letter-spacing:1.6px; fill:#ffffff; }
+    .num { font-size:16px; font-weight:700; fill:#ffffff; }
+    .st  { font-size:13px; font-weight:700; }
+    .sd  { font-size:11.3px; fill:#5a6b7a; }
+    .key { font-size:11px; font-weight:700; letter-spacing:1.2px; fill:#5a6b7a; }
+    .mk  { font-size:12.5px; font-weight:700; }
+    .mt  { font-family:Georgia,'Times New Roman',serif; font-style:italic; }
+    .cap { font-family:Georgia,'Times New Roman',serif; font-size:13.2px; fill:#4b5b6a; }
+  </style>
+</defs>
+<rect width="1480" height="600" fill="#ffffff"/>
+
+<text class="ttl" x="32" y="36">RECOMMENDED ORDER OF WORK</text>
+<text class="sub" x="32" y="58">Two engineering steps carry most of the payoff and touch none of the proofs; the research contribution sits at the far end</text>
+<path d="M32 72 H1448" stroke="#16202b" stroke-width="1.6"/>
+
+<!-- band headers -->
+<rect x="32" y="96" width="606" height="28" rx="4" fill="#2e7d32"/>
+<text class="band" x="48" y="115">ENGINEERING — LARGE PAYOFF, NO PROOF TOUCHED</text>
+<rect x="650" y="96" width="404" height="28" rx="4" fill="#2c5aa0"/>
+<text class="band" x="666" y="115">DEMONSTRATION</text>
+<rect x="1066" y="96" width="382" height="28" rx="4" fill="#6a3d9a"/>
+<text class="band" x="1082" y="115">RESEARCH</text>
+
+<g transform="translate(0,-26)">
+<!-- spine -->
+<path d="M60 214 H1420" stroke="#dbe3ea" stroke-width="3"/>
+<g stroke="#9fb0be" stroke-width="1.6" fill="none">
+  <path d="M172 214 H296" marker-end="url(#a4)"/>
+  <path d="M374 214 H498" marker-end="url(#a4)"/>
+  <path d="M576 214 H700" marker-end="url(#a4)"/>
+  <path d="M778 214 H902" marker-end="url(#a4)"/>
+  <path d="M980 214 H1104" marker-end="url(#a4)"/>
+  <path d="M1182 214 H1306" marker-end="url(#a4)"/>
+</g>
+
+<!-- milestones -->
+<g>
+  <circle cx="133" cy="214" r="27" fill="#2e7d32"/><text class="num" x="133" y="220" text-anchor="middle">1</text>
+  <circle cx="335" cy="214" r="27" fill="#2e7d32"/><text class="num" x="335" y="220" text-anchor="middle">2</text>
+  <circle cx="537" cy="214" r="27" fill="#2e7d32"/><text class="num" x="537" y="220" text-anchor="middle">3</text>
+  <circle cx="739" cy="214" r="27" fill="#2c5aa0"/><text class="num" x="739" y="220" text-anchor="middle">4</text>
+  <circle cx="941" cy="214" r="27" fill="#2c5aa0"/><text class="num" x="941" y="220" text-anchor="middle">5</text>
+  <circle cx="1143" cy="214" r="27" fill="#6a3d9a"/><text class="num" x="1143" y="220" text-anchor="middle">6</text>
+  <circle cx="1345" cy="214" r="27" fill="#6a3d9a"/><text class="num" x="1345" y="220" text-anchor="middle">7</text>
+</g>
+
+<!-- titles + details -->
+<g text-anchor="middle">
+  <text class="st" x="133" y="274">k-d splits</text>
+  <text class="sd" x="133" y="294">replace the 2ᴺ fan-out</text>
+  <text class="sd" x="133" y="310">with binary cuts</text>
+
+  <text class="st" x="335" y="274">Weight-ordered axes</text>
+  <text class="sd" x="335" y="294">cut in descending γ, so cost</text>
+  <text class="sd" x="335" y="310">follows effective dimension</text>
+
+  <text class="st" x="537" y="274">Anisotropic primitives</text>
+  <text class="sd" x="537" y="294">per-axis radii — a ball is</text>
+  <text class="sd" x="537" y="310">the wrong body at high N</text>
+
+  <text class="st" x="739" y="274">Randomized gradient</text>
+  <text class="sd" x="739" y="294">replace N+1 finite differences</text>
+  <text class="sd" x="739" y="310">with m Gaussian probes</text>
+
+  <text class="st" x="941" y="274">Trajectory packing</text>
+  <text class="sd" x="941" y="294">tubes in path space; B-spline</text>
+  <text class="sd" x="941" y="310">coefficients as coordinates</text>
+
+  <text class="st" x="1143" y="274">Cover-tree ADF</text>
+  <text class="sd" x="1143" y="294">boxes → hierarchical covers;</text>
+  <text class="sd" x="1143" y="310">doubling dimension replaces N</text>
+
+  <text class="st" x="1345" y="274">Level-set optimization</text>
+  <text class="sd" x="1345" y="294">shape flow whose state is</text>
+  <text class="sd" x="1345" y="310">the ADF itself</text>
+</g>
+
+<!-- payoff callout under steps 1-2 -->
+<path d="M133 330 V352 H335 V330" fill="none" stroke="#2e7d32" stroke-width="1.4"/>
+<rect x="96" y="356" width="276" height="34" rx="5" fill="#e3f2e4" stroke="#2e7d32" stroke-width="1.2"/>
+<text class="mk" x="234" y="378" text-anchor="middle" fill="#1e5b21">practical ceiling: N ≈ 10 → N ≈ 10²</text>
+
+<path d="M941 330 V360" fill="none" stroke="#2c5aa0" stroke-width="1.4"/>
+<rect x="838" y="364" width="206" height="34" rx="5" fill="#eaf1fa" stroke="#2c5aa0" stroke-width="1.2"/>
+<text class="mk" x="941" y="386" text-anchor="middle" fill="#1f4276">most persuasive per unit effort</text>
+
+<path d="M1345 330 V360" fill="none" stroke="#6a3d9a" stroke-width="1.4"/>
+<rect x="1242" y="364" width="206" height="34" rx="5" fill="#f0e9f8" stroke="#6a3d9a" stroke-width="1.2"/>
+<text class="mk" x="1345" y="386" text-anchor="middle" fill="#50276f">the research contribution</text>
+
+<!-- indicator rows -->
+<path d="M32 424 H1448" stroke="#dbe3ea" stroke-width="1"/>
+<text class="key" x="32" y="446">TOUCHES</text>
+<text class="key" x="32" y="460">THE PROOFS</text>
+<g class="mk" text-anchor="middle">
+  <text x="133"  y="452" fill="#2e7d32">no</text>
+  <text x="335"  y="452" fill="#2e7d32">no</text>
+  <text x="537"  y="452" fill="#2e7d32">no</text>
+  <text x="739"  y="452" fill="#2e7d32">no</text>
+  <text x="941"  y="452" fill="#2e7d32">no</text>
+  <text x="1143" y="452" fill="#b26a00">yes — new cover</text>
+  <text x="1345" y="452" fill="#b26a00">yes — new flow</text>
+</g>
+<path d="M32 468 H1448" stroke="#dbe3ea" stroke-width="1"/>
+<text class="key" x="32" y="496">EFFORT</text>
+<g>
+  <rect x="103"  y="486" width="12" height="12" fill="#8fbf93"/><rect x="119" y="486" width="12" height="12" fill="#e6eee7"/><rect x="135" y="486" width="12" height="12" fill="#e6eee7"/>
+  <rect x="305"  y="486" width="12" height="12" fill="#8fbf93"/><rect x="321" y="486" width="12" height="12" fill="#8fbf93"/><rect x="337" y="486" width="12" height="12" fill="#e6eee7"/>
+  <rect x="507"  y="486" width="12" height="12" fill="#8fbf93"/><rect x="523" y="486" width="12" height="12" fill="#8fbf93"/><rect x="539" y="486" width="12" height="12" fill="#e6eee7"/>
+  <rect x="709"  y="486" width="12" height="12" fill="#8fabcf"/><rect x="725" y="486" width="12" height="12" fill="#8fabcf"/><rect x="741" y="486" width="12" height="12" fill="#e7edf5"/>
+  <rect x="911"  y="486" width="12" height="12" fill="#8fabcf"/><rect x="927" y="486" width="12" height="12" fill="#8fabcf"/><rect x="943" y="486" width="12" height="12" fill="#8fabcf"/>
+  <rect x="1113" y="486" width="12" height="12" fill="#b295d1"/><rect x="1129" y="486" width="12" height="12" fill="#b295d1"/><rect x="1145" y="486" width="12" height="12" fill="#b295d1"/>
+  <rect x="1315" y="486" width="12" height="12" fill="#b295d1"/><rect x="1331" y="486" width="12" height="12" fill="#b295d1"/><rect x="1347" y="486" width="12" height="12" fill="#b295d1"/>
+</g>
+<path d="M32 512 H1448" stroke="#dbe3ea" stroke-width="1"/>
+
+<text class="cap" x="32" y="546">Figure 4 | Steps 1–3 are changes of data structure: they raise the usable dimension by an order of magnitude while leaving</text>
+<text class="cap" x="32" y="566">sdf_geq_everywhere and the insertion-domain argument untouched. Step 4 is the one modification the ascent genuinely requires (§5.3).</text>
+<text class="cap" x="32" y="586">Steps 6–7 replace the box decomposition and the update rule respectively, and so require new proofs rather than new code alone.</text>
+</g>
+</svg>
