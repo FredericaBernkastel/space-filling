@@ -5,6 +5,10 @@
 //! *thinnest* free direction and wastes every other one, and on a manifold whose
 //! extents decay as `γᵢ = (i+1)^(−s)` that is nearly all of them.
 //!
+//! Both bodies carry an [inclusion function](adaptive_distance_field::adf::Primitive::centred),
+//! without which this benchmark measures the certificate rather than the geometry
+//! and the box *loses* — see CHANGELOG.md.
+//!
 //! **Volume, in logs.** §7.3 warns that volume intuition fails above a handful of
 //! dimensions, and it applies to the scoring here: counting bodies placed says
 //! nothing about how much was claimed. So the metric is `Σ ln vol` against
@@ -36,7 +40,7 @@ const FREE_LEVELS: u32 = 12;
 fn abox<const D: usize>(
   centre: Point<f64, D>,
   half: Vector<f64, D>,
-) -> impl Fn(Point<f64, D>) -> f64 + Send + Sync + 'static {
+) -> impl Fn(Point<f64, D>) -> f64 + Send + Sync + Clone + 'static {
   move |p| {
     let q = (p - centre).abs() - half;
     let outside = q.map(|x| x.max(0.0)).length();
@@ -106,7 +110,7 @@ fn run_inner<const D: usize>(m: &Manifold<f64, D>, boxes: bool, free_levels: u32
       continue;
     }
 
-    if field.insert_within_reach(reach, Primitive::new(abox(c, half))) {
+    if field.insert_within_reach(reach, Primitive::centred(c, abox(c, half))) {
       placed += 1;
       let log_vol: f64 = half.iter().map(|h| (2.0 * h).ln()).sum();
       log_claimed = log_add(log_claimed, log_vol);
@@ -179,10 +183,12 @@ macro_rules! band {
     println!("  {:>8} {:>11.1}", lv, run_at::<24>(&m, lv).log_claimed - ball.log_claimed);
   }
 
-  // What is true and worth pinning: every arm places bodies, and the field stays
-  // finite and exact. The *sign* of the gap is deliberately not asserted — it is
-  // negative wherever the anisotropy is strong, and the sweep above is the
-  // evidence for why. See CHANGELOG.md, "A ball is the wrong body, and the
-  // certificate does not care".
-  assert!(gaps.iter().all(|g| g.is_finite()), "a run claimed nothing at all");
+  // With inclusion functions the roadmap's claim finally holds: per-axis radii
+  // claim more than a ball, everywhere, by a margin that grows with dimension.
+  // Before them the same benchmark had the box *losing* by ln 242 at D = 100 —
+  // the geometry was never the problem, the certificate was.
+  for (i, g) in gaps.iter().enumerate() {
+    assert!(*g > 0.0, "row {i}: the box claimed no more than the ball ({g})");
+  }
+  assert!(gaps[4] > gaps[0], "the margin should widen from D = 24 to D = 100");
 }

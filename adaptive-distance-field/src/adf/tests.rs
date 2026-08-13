@@ -123,7 +123,7 @@ fn climb<const D: usize>(
 
   { // the fused D*-pruned walk is exact as well
     let mut adf = adf.clone();
-    adf.insert_at_maximum(local_max, Primitive { f: f.clone(), lipschitz: 1.0 });
+    adf.insert_at_maximum(local_max, Primitive { f: f.clone(), lipschitz: 1.0, lower: None });
     assert!((adf.sdf(probe) - truth).abs() < 1e-12);
   }
 }

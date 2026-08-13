@@ -618,3 +618,67 @@ Everything else stands: `Reach::Box` is sound and strictly tighter than the ball
 that contains it (`a_box_reaches_less_far_than_its_ball` pins both), `grow_box`
 returns only certified-free boxes, and on the one workload where the certificate
 can keep up it does win.
+
+## Inclusion functions, and the negative result reversed
+
+The previous entry concluded that per-axis radii lose to balls, and that the
+Lipschitz certificate was why. The second half was right and the first was a
+consequence of it: give the primitives a way to answer for themselves and the
+result flips.
+
+### Added
+
+| API | Meaning |
+|---|---|
+| `Primitive::lower` | an inclusion function: a lower bound of the field over a whole box |
+| `Primitive::with_lower` | supply one directly |
+| `Primitive::centred` | derive an exact one for a body whose field grows with distance from its centre |
+| `Primitive::enclosing` | the same for a container whose field falls away from it — walls |
+| `ADF::lower_bound_over` | the best bound available over a box, per primitive |
+
+`Manifold::field` seeds with `Primitive::enclosing`, so a weighted domain's walls
+carry theirs from the start.
+
+### One observation does all the work
+
+For a body whose field is **monotone in the componentwise distance from a
+centre** — balls, boxes, ellipsoids, crosses, anything written from `|p − c|` per
+axis — the exact minimum over a box is attained at the box's point nearest that
+centre. Every component of `|x − c|` is minimised there simultaneously, and a
+monotone function of those components is minimised with them. So the inclusion
+function is one field evaluation at a clamped point: `O(D)`, exact, no
+refinement. `enclosing` is the mirror image, taking the *farthest* corner, and
+using the wrong one of the two is unsound rather than merely loose.
+
+### Measurements
+
+The same benchmark, the same workload, the only change being that bodies and
+walls now carry inclusion functions:
+
+|  D |  s | ln gap before | ln gap after |
+|---:|---:|---:|---:|
+| 24 | 1.0 | +5.6 | **+50.4** |
+| 24 | 2.0 | −10.1 | **+69.6** |
+| 48 | 1.0 | −6.2 | **+118.7** |
+| 48 | 2.0 | −66.0 | **+109.0** |
+| 100 | 1.0 | −49.8 | **+282.4** |
+| 100 | 2.0 | −242.1 | **+122.5** |
+
+Every row flips, and the whole run goes from **94.4 s to 0.6 s**. The refinement
+sweep that used to show the shortfall closing four levels at a time is now flat —
+`ln gap` is 69.6 at 0 levels and 69.6 at 12 — because the branch-and-bound is
+never reached at all. That flat column is the clearest statement of the finding:
+the geometry was never the obstacle.
+
+So roadmap step 3 does hold, with inclusion functions as its prerequisite rather
+than a weighted metric. §8 of the publication carries the amendment.
+
+### Fixed
+
+`lower_bound_over` first shipped with its traversal predicate inverted.
+`Tree::visit_leaves` takes a **prune** predicate — `true` skips the subtree — and
+reading it as "keep" scanned exactly the leaves that say nothing about the box,
+leaving the bound at `Float::MAX` and certifying everything free. It was visible
+in the benchmark rather than in a test: single bodies claiming `e^46` times the
+volume of the domain containing them. Bodies that cannot fit in their own domain
+are the kind of impossible number worth reading a table for.

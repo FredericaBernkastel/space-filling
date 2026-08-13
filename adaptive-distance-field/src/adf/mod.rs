@@ -57,13 +57,90 @@ pub use tree as quadtree;
 pub struct Primitive<Float: Scalar, const D: usize> {
   pub f: Arc<dyn Fn(Point<Float, D>) -> Float + Send + Sync>,
   pub lipschitz: Float,
+  /// An **inclusion function**: a lower bound of `f` over a whole box, tighter
+  /// than what the Lipschitz constant alone can say.
+  ///
+  /// The Lipschitz bound `f(c) − L·h(R)` is the crudest possible one — a single
+  /// sample and a global rate — and it is what makes an anisotropic cell
+  /// expensive to certify: `h` is the *circumradius*, set by the longest axis,
+  /// while the field's clearance is set by the shortest. A shape that can answer
+  /// "what is your minimum over this box" directly skips that entirely, in
+  /// `O(D)` and with no refinement.
+  ///
+  /// Must be a genuine lower bound. It is only ever used to *prove* a box clear,
+  /// so a loose one costs nothing but a fallback; a wrong one is unsound.
+  pub lower: Option<Arc<dyn Fn(&Aabb<Float, D>) -> Float + Send + Sync>>,
 }
 
 impl<_Float: Real, const D: usize> Primitive<_Float, D> {
   /// A primitive assumed to be a true SDF (`lipschitz = 1`). For a shape type,
   /// prefer [`Self::from_shape`], which derives the bound automatically.
   pub fn new(f: impl Fn(Point<_Float, D>) -> _Float + Send + Sync + 'static) -> Self {
-    Self { f: Arc::new(f), lipschitz: _Float::one() }
+    Self { f: Arc::new(f), lipschitz: _Float::one(), lower: None }
+  }
+
+  /// Supply an [inclusion function](Self::lower) — a lower bound of the field
+  /// over a box. Prefer [`Self::centred`], which derives an exact one.
+  pub fn with_lower(
+    mut self,
+    lower: impl Fn(&Aabb<_Float, D>) -> _Float + Send + Sync + 'static,
+  ) -> Self {
+    self.lower = Some(Arc::new(lower));
+    self
+  }
+
+  /// A body centred at `centre` whose field is **monotone in the componentwise
+  /// distance from that centre** — balls, boxes, ellipsoids, crosses, anything
+  /// built from `|p − centre|` per axis.
+  ///
+  /// For those the exact minimum over a box is free: every component of
+  /// `|x − centre|` is minimised simultaneously at the box's point nearest the
+  /// centre, and a monotone function of those components is minimised there too.
+  /// So the inclusion function is just `f` evaluated at the clamped point — one
+  /// field evaluation, no refinement, exact.
+  ///
+  /// ```
+  /// # use adaptive_distance_field::{adf::Primitive, geometry::{Aabb, Point, VectorExt}};
+  /// let c = Point::from([0.0, 0.0]);
+  /// let ball = Primitive::centred(c, move |p: Point<f64, 2>| (p - c).length() - 1.0);
+  /// let far = Aabb::new(Point::from([3.0, 4.0]), Point::from([5.0, 6.0]));
+  /// // exactly 5 − 1: the nearest corner is (3, 4)
+  /// assert!(((ball.lower.unwrap())(&far) - 4.0).abs() < 1e-12);
+  /// ```
+  pub fn centred(
+    centre: Point<_Float, D>,
+    f: impl Fn(Point<_Float, D>) -> _Float + Send + Sync + Clone + 'static,
+  ) -> Self
+  where
+    _Float: Send + Sync + 'static,
+  {
+    let g = f.clone();
+    Self::new(f).with_lower(move |rect: &Aabb<_Float, D>| g(rect.clamp_point(&centre)))
+  }
+
+  /// A container centred at `centre` whose field **decreases** with the
+  /// componentwise distance from it — walls, positive inside and falling away
+  /// outward, as [`boundary_box`](crate::sdf::boundary_box) is.
+  ///
+  /// The mirror of [`Self::centred`], and the distinction matters: a decreasing
+  /// field takes its minimum over a box at the *farthest* corner, not the
+  /// nearest. Using the wrong one is unsound rather than merely loose.
+  pub fn enclosing(
+    centre: Point<_Float, D>,
+    f: impl Fn(Point<_Float, D>) -> _Float + Send + Sync + Clone + 'static,
+  ) -> Self
+  where
+    _Float: Send + Sync + 'static,
+  {
+    let g = f.clone();
+    Self::new(f).with_lower(move |rect: &Aabb<_Float, D>| {
+      // the corner maximising |x − centre| on every axis at once
+      let far = Point::from(Vector::<_Float, D>::from_fn(|a, _| {
+        let (lo, hi) = (rect.min[a], rect.max[a]);
+        if (lo - centre[a]).abs() >= (hi - centre[a]).abs() { lo } else { hi }
+      }));
+      g(far)
+    })
   }
   /// Declare the Lipschitz constant of this primitive's field.
   pub fn with_lipschitz(mut self, lipschitz: _Float) -> Self {
@@ -79,7 +156,7 @@ impl<_Float: Real, const D: usize> Primitive<_Float, D> {
     S: SDF<_Float, D> + Lipschitz<_Float> + Send + Sync + 'static,
   {
     let lipschitz = shape.lipschitz();
-    Self { f: Arc::new(move |p| shape.sdf(p)), lipschitz }
+    Self { f: Arc::new(move |p| shape.sdf(p)), lipschitz, lower: None }
   }
 }
 
@@ -626,7 +703,7 @@ where
     domain: Aabb<_Float, D>,
     f: Arc<dyn Fn(Point<_Float, D>) -> _Float + Send + Sync>
   ) -> bool {
-    self.insert_primitive_domain(domain, Primitive { f, lipschitz: _Float::one() })
+    self.insert_primitive_domain(domain, Primitive { f, lipschitz: _Float::one(), lower: None })
   }
 
   /// Add a new sdf primitive with an explicit Lipschitz bound (see [`Primitive`]).
@@ -685,6 +762,12 @@ where
   /// inscribed-ball test, each level buys one halving of `h`, and an undecided
   /// box is not worth chasing when the caller can simply try a smaller one.
   pub fn box_is_free(&self, rect: Aabb<_Float, D>, levels: u32) -> bool {
+    // Every primitive that can reach `rect` gets to answer for itself first.
+    // Where they all supply an inclusion function this settles it outright, in
+    // `O(D)` per primitive and with no refinement at all.
+    if self.lower_bound_over(&rect) >= _Float::zero() {
+      return true;
+    }
     sdf_geq_everywhere_levels::<L, _, _, _, D>(
       |p| self.sdf(p),
       |_| _Float::zero(),
@@ -693,6 +776,40 @@ where
       _Float::zero(),
       levels,
     )
+  }
+
+  /// A lower bound of the field over `rect`, from each primitive's own
+  /// [inclusion function](Primitive::lower) where it has one and the Lipschitz
+  /// bound where it does not.
+  ///
+  /// Sound because the field inside a leaf's cell is exactly the `min` over that
+  /// leaf's bucket — pruning only ever drops what it proved redundant *there* —
+  /// so the minimum over `rect` is bounded below by the minimum over the buckets
+  /// of the leaves `rect` meets. Widening each primitive's query from
+  /// `rect ∩ cell` to `rect` only lowers the bound further, which is the safe
+  /// direction.
+  pub fn lower_bound_over(&self, rect: &Aabb<_Float, D>) -> _Float {
+    let two = _Float::one() + _Float::one();
+    let half_diag = rect.size().length() / two;
+    let centre = rect.center();
+    let mut bound = _Float::max_value();
+    self.tree.visit_leaves(
+      // `visit_leaves` takes a *prune* predicate: true skips the subtree. A
+      // cell disjoint from `rect` says nothing about the field inside it.
+      |node| !node.rect.intersects(rect),
+      |leaf| {
+        for p in leaf.data.primitives() {
+          let b = match &p.lower {
+            Some(l) => l(rect),
+            None => (p.f)(centre) - p.lipschitz * half_diag,
+          };
+          if b < bound {
+            bound = b;
+          }
+        }
+      },
+    );
+    bound
   }
 
   /// The largest box at `p` of the given aspect that the field certifies free.

@@ -178,7 +178,7 @@ use {
       };
       let f: Arc<dyn Fn(P2<f64>) -> f64 + Send + Sync> = Arc::new(move |p| circle.sdf(p));
       attempts += 1;
-      if adf.insert_at_maximum(m, Primitive { f: f.clone(), lipschitz: 1.0 }) {
+      if adf.insert_at_maximum(m, Primitive { f: f.clone(), lipschitz: 1.0, lower: None }) {
         all_prims.push(f);
       } else {
         failures += 1;

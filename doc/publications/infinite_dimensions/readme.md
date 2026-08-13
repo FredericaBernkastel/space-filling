@@ -522,6 +522,35 @@ Steps 1–2 are pure engineering with a large payoff: they move the practical ce
 $N = 10^2$ and touch no proof. Step 5 is the most persuasive demonstration per unit of effort. Step 7 is the
 research contribution.
 
+> **Amendment, after implementing steps 1–3.** Steps 1 and 2 are as described, and measured: weight-ordered cuts
+> cost $\times 0.04$ the build and $\times 0.09$ the memory of round-robin at $N = 6$ with $\gamma_i = (i+1)^{-2}$,
+> the gain growing with the decay rate, and $N = 100$ now runs. **Step 3 is not pure engineering, and the claim
+> that it touches no proof is wrong.** Per-axis radii are easy to *place* and hard to *certify*: the Lipschitz
+> test compares a cell's half-diagonal against the field's clearance, and for an anisotropic body the
+> half-diagonal is set by the longest axis while the clearance is set by the shortest. An aspect ratio of $10^4$
+> is a factor of $10^4$ the branch-and-bound must close by refinement alone, which it does while halving the
+> shortfall per four levels and doubling in cost per level. Measured in log-volume, boxes beat balls only at the
+> mildest anisotropy tested and lose by $\ln 242$ at $N = 100$, $s = 2$.
+>
+> The obstruction is not removable by reweighting the inequality. Given only that $f$ is a Euclidean distance,
+> $\lvert f(x) - f(c)\rvert \le \lVert x - c\rVert_2$ is *tight*, and a diagonal change of variables leaves
+> $L \cdot h$ invariant — the Lipschitz constant absorbs exactly what the half-diagonal gives up. Improving it
+> requires more information about $f$ than its rate, and there are two sources:
+>
+> 1. **Inclusion functions.** The Lipschitz bound is the crudest possible interval extension: one sample and a
+>    global rate. For any body whose field is monotone in the componentwise distance from its centre — balls,
+>    boxes, ellipsoids — the exact minimum over a cell is attained at the cell's point nearest that centre, so
+>    it costs $O(N)$ and no refinement at all. **Implemented, and it reverses the result**: the same benchmark
+>    that had the box losing by $\ln 242$ at $N = 100$, $s = 2$ now has it winning by $\ln 122$, every row
+>    flips, and the run drops from 94.4 s to 0.6 s. The refinement sweep goes flat — the branch-and-bound is
+>    never reached. Step 3 therefore *does* hold, with inclusion functions as its prerequisite rather than as
+>    part of it.
+> 2. **The weighted metric.** Posed in $\lVert x \rVert_\gamma$, a ball is an ellipsoid with semi-axes
+>    $r\gamma_i$ in ambient coordinates — precisely the body step 3 wants — the domain is a cube, and the
+>    isotropic certificate applies unchanged. This changes what distance *means*, so it is a change to the
+>    problem rather than to the library; for a Karhunen–Loève parameterization it is the natural metric anyway,
+>    being the Cameron–Martin norm.
+
 One further item belongs between steps 3 and 4, and it is the only one that improves output quality rather than
 reach: the pose polish of §6.1. It needs no new theory — `LineSearch` on $s_{\mathrm{lb}}$ over
 $\mathbb{R}^N \rtimes SO(N)$, warm-started from the ball-inscribed pose — and it recovers up to $\kappa^N$ of the

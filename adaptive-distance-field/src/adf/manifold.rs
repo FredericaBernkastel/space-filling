@@ -143,6 +143,7 @@ impl<_Float: Real + Send + Sync + 'static, const D: usize> Manifold<_Float, D> {
     L: Layout<D>,
     L::Children<Split<Bucket<_Float, D>, D, L>>: Send,
   {
-    ADF::new_in(self.domain(), splits, vec![Primitive::new(self.walls())])
+    let d = self.domain();
+    ADF::new_in(d, splits, vec![Primitive::enclosing(d.center(), self.walls())])
   }
 }
