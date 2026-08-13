@@ -550,6 +550,14 @@ research contribution.
 >    isotropic certificate applies unchanged. This changes what distance *means*, so it is a change to the
 >    problem rather than to the library; for a Karhunen–Loève parameterization it is the natural metric anyway,
 >    being the Cameron–Martin norm.
+>
+> **Step 4 is implemented, and its caveat is the load-bearing part.** The randomized gradient is a compile-time
+> choice of probe, and on a field with three active axes it reaches placement accuracy at $N = 100$ in **50
+> evaluations against the axial estimator's 410**, converging in 158 against 1538. But *isotropic* probes lose at
+> every $N$ above 2 — they do not know where the action is — so it is specifically the weighted covariance $C$,
+> carrying the manifold's own $\gamma$, that makes the estimator track the effective dimension rather than the
+> ambient one. Below the crossover near $N = 24$ finite differences remain both cheaper and exact, which is why
+> the choice is exposed rather than decided.
 
 One further item belongs between steps 3 and 4, and it is the only one that improves output quality rather than
 reach: the pose polish of §6.1. It needs no new theory — `LineSearch` on $s_{\mathrm{lb}}$ over

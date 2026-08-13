@@ -755,3 +755,75 @@ An over-large Lipschitz constant is safe — it only makes pruning lazier. A `lo
 that is not really a lower bound is **unsound**: it certifies occupied space as
 free. `centred` and `enclosing` derive exact ones and should be preferred to
 writing one by hand.
+
+## The ascent chooses how it samples
+
+Roadmap step 4: `D` finite differences replaced by `m` Gaussian probes, as a
+compile-time choice, because the two have different *cost models* rather than
+different constants.
+
+### Added
+
+| API | Meaning |
+|---|---|
+| `line_search::Probe` | how the ascent samples a direction: `NAME`, `cost`, `direction` |
+| `line_search::Axial` | one forward difference per axis — `D` evaluations, the historical estimator |
+| `line_search::Gaussian<P, D>` | `m` probes with covariance `C`: `probes`, `sigma`, `scale`, `seed` |
+| `line_search::Search<P, G>` | the optimizer, over a choice of probe |
+| `Search::probe_cost` | evaluations one step costs, which is the whole point |
+
+`LineSearch<P>` is now an alias for `Search<P, Axial>` and `RandomSearch<P, D>`
+for `Search<P, Gaussian<P, D>>`, so every existing `LineSearch::default()` and
+`LineSearch { .. }` compiles untouched and behaves identically.
+
+The generator is SplitMix64 with Box–Muller, inlined. `rand` is a dev-dependency
+here and promoting it to a hard one so a library can draw a few normals is a poor
+trade for its users. Probes are a pure function of `(seed, step)`, so the
+optimizer holds no mutable state, stays `Sync`, and a run reproduces exactly.
+
+### The direction now survives a rejection
+
+Shrinking `h` after a rejected step is a bisection *along a direction*, and the
+loop resampled the direction every iteration. `Axial` never noticed — at an
+unmoved `p` its estimate is identical, so it was recomputing `D` forward
+differences after every rejection for nothing. A randomized probe noticed
+immediately: the search became a random walk that never committed, and stalled
+0.2 from an apex 0.127 away.
+
+Holding the sampled direction while the iterate stands still fixes both. For
+`Axial` the answer is unchanged to the bit — `optimize_precision` still reports
+`err = 6.611e-10` — at **146 field evaluations against 200**, a 27% saving on
+the existing optimizer that only showed up because the new probe broke on the
+assumption.
+
+### Measurements
+
+`tests/probe.rs`. Three active axes of `D`, tail weight 0.01, 20 000 evaluations
+allowed each; `to 1e-2` is evaluations until the search first visits a point
+within placement accuracy.
+
+|  D | axial → 1e-2 | weighted → 1e-2 | axial total | weighted total |
+|---:|---:|---:|---:|---:|
+| 2 | **16** | 50 | 65 | 195 |
+| 8 | **42** | 51 | 158 | 342 |
+| 24 | 106 | **69** | 398 | 361 |
+| 100 | 410 | **50** | 1538 | **158** |
+
+At `D = 100` the weighted probe reaches usable accuracy **8× sooner** and
+converges **10× cheaper**, at a final error of 2.8e-4. The crossover is near
+`D = 24`; below it finite differences are both cheaper and exact, which is why
+this is a choice and not a replacement.
+
+**Isotropic probes lose at every `D` above 2** — 11 621 evaluations to tolerance
+at `D = 100` against the weighted probe's 50, and at `m = 16` they never reach it.
+That is the publication's caveat confirmed rather than repeated: Gaussian
+smoothing pays an explicit dimension factor, and it is the weighted covariance —
+the manifold's own `γ` — that buys it back. Without weights this really does
+degrade toward random search.
+
+One benchmark trap, recorded because it cost a wrong conclusion first: offsetting
+the *tail* coordinates at the start puts a `√(D−k)·tail·offset` floor under the
+weighted error — 2.9e-2 at `D = 100` — which the weighted probe cannot cross by
+design, since ignoring the tail is precisely what weighting it down means. Read
+naively that looks like the estimator failing. It was the metric counting axes
+the estimator was correctly told not to care about.
