@@ -682,3 +682,76 @@ leaving the bound at `Float::MAX` and certifying everything free. It was visible
 in the benchmark rather than in a test: single bodies claiming `e^46` times the
 volume of the domain containing them. Bodies that cannot fit in their own domain
 are the kind of impossible number worth reading a table for.
+
+## What the generalization cost the plane
+
+Three questions worth answering with numbers rather than reassurance, after a
+crate that began two-dimensional grew a hundred-dimensional path through it.
+
+### Working in low dimension is unchanged
+
+No example moved. `examples/gd_adf/02` still reads
+
+```rust
+representation.write().unwrap().insert_at_maximum(local_max, Primitive::from_shape(circle))
+```
+
+and `Primitive::new`, `from_shape`, `insert_at_maximum`, `insert_within` are as
+they were. Everything added for high dimension — `Reach`, `Manifold`, `grow_box`,
+`with_levels`, `with_prune_levels`, inclusion functions — is additive and optional,
+and none of it appears in any example. The only friction anywhere in the arc is
+naming the layout in the turbofish, which is deliberate.
+
+### `u8 → u16` on the depth costs nothing
+
+`size_of::<Node>()` is **64 bytes at `D = 2` and 128 at `D = 6`, on both the
+pre-branch commit and this one**. The extra byte fell into padding that was
+already there. Measured, not assumed — it was the obvious thing to suspect.
+
+### `Primitive` grew, and that is the real cost
+
+24 bytes to **40**, because `Option<Arc<dyn Fn>>` is a fat pointer. Benchmarked
+back to back against the pre-branch commit, serially, same machine:
+
+| | before | after | |
+|---|---:|---:|---:|
+| `D = 2` orthant | 841.5 KiB | 1.2 MiB | ×1.46 |
+| `D = 3` orthant | 6.2 MiB | 8.4 MiB | ×1.35 |
+| `D = 6` orthant | 1.8 MiB | 2.7 MiB | ×1.50 |
+
+**Every user pays it, whether or not they ever supply an inclusion function.**
+
+Timings from the same runs are not worth quoting: the ratios scatter ×0.83 to
+×1.52 in both directions — k-d queries got *faster*, orthant `D = 3` build swung
+400–896 ms across runs on the same commit — so the machine's noise band is wider
+than any effect. Memory is the only clean signal, and it has an exact mechanical
+explanation, which is why it is stated and the timings are not.
+
+**Future work.** Fold the inclusion function into the same trait object as the
+field and `Primitive` returns to 24 bytes with the bound free:
+
+```rust
+trait Field<F, const D: usize>: Send + Sync {
+  fn eval(&self, p: Point<F, D>) -> F;
+  fn lower(&self, _rect: &Aabb<F, D>) -> Option<F> { None }
+}
+pub struct Primitive<F, const D: usize> { f: Arc<dyn Field<F, D>>, lipschitz: F }
+```
+
+A blanket impl over `Fn(Point) -> F` keeps `Primitive::new(closure)` compiling
+verbatim. Not done here.
+
+### The Lipschitz-only contract still holds
+
+GD-ADF asked nothing of a primitive but its Lipschitz bound, and still asks
+nothing more. `lower` is an `Option`, `Primitive::new` leaves it `None`, and every
+`None` falls back to `f(c) − L·h(R)` exactly as before. Nothing in the library
+*requires* more: `grow_box` and `box_is_free` work without inclusion functions,
+merely poorly above `D ≈ 24`. Every example and every test but three exercises the
+Lipschitz-only path.
+
+What the escape hatch costs, besides the 16 bytes, is a sharper failure mode.
+An over-large Lipschitz constant is safe — it only makes pruning lazier. A `lower`
+that is not really a lower bound is **unsound**: it certifies occupied space as
+free. `centred` and `enclosing` derive exact ones and should be preferred to
+writing one by hand.

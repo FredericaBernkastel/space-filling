@@ -68,7 +68,17 @@ pub struct Primitive<Float: Scalar, const D: usize> {
   /// `O(D)` and with no refinement.
   ///
   /// Must be a genuine lower bound. It is only ever used to *prove* a box clear,
-  /// so a loose one costs nothing but a fallback; a wrong one is unsound.
+  /// so a loose one costs nothing but a fallback — but a wrong one is **unsound**,
+  /// and asymmetrically so: an over-large [`Self::lipschitz`] only makes pruning
+  /// lazier, whereas a `lower` that is not really a lower bound certifies
+  /// occupied space as free. It is the sharpest footgun in this API, and the
+  /// price of the escape hatch. Prefer [`Self::centred`] and [`Self::enclosing`],
+  /// which derive exact ones.
+  ///
+  /// **Costs 16 bytes on every primitive, used or not** — an `Option<Arc<dyn Fn>>`
+  /// is a fat pointer, taking `Primitive` from 24 bytes to 40 and the arena up by
+  /// 29–50% at `D = 2..6`. Folding it into the same trait object as `f` would
+  /// give it back; see the CHANGELOG's future-work note.
   pub lower: Option<Arc<dyn Fn(&Aabb<Float, D>) -> Float + Send + Sync>>,
 }
 
