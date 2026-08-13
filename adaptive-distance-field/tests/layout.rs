@@ -32,7 +32,7 @@ struct Report {
   leaves: usize,
   splits: usize,
   slots: usize,
-  levels: u8,
+  levels: u16,
   bytes: usize,
   checksum: f64,
 }
@@ -97,7 +97,7 @@ macro_rules! measure {
       query = query.min(t1.elapsed());
     }
 
-    let (mut slots, mut levels) = (0usize, 0u8);
+    let (mut slots, mut levels) = (0usize, 0u16);
     field.tree.traverse(&mut |n| { slots += n.data.len(); levels = levels.max(n.depth); Ok(()) }).ok();
     let children = <$L as Layout<D>>::CHILDREN;
 

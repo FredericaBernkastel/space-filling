@@ -72,7 +72,7 @@ struct Row {
   inserted: usize,
   first: f64,
   last: f64,
-  levels: u8,
+  levels: u16,
   nodes: usize,
   leaves: usize,
   slots: usize,
@@ -135,7 +135,7 @@ macro_rules! stress {
       }
       let elapsed = t0.elapsed();
 
-      let (mut slots, mut levels) = (0usize, 0u8);
+      let (mut slots, mut levels) = (0usize, 0u16);
       field.tree.traverse(&mut |n| {
         slots += n.data.len();
         levels = levels.max(n.depth);

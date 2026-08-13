@@ -36,7 +36,7 @@ struct Cell {
   nodes: usize,
   leaves: usize,
   occupancy: f64,
-  levels: u8,
+  levels: u16,
   bytes: usize,
   checksum: u64,
 }
@@ -74,7 +74,7 @@ macro_rules! run {
       query = query.min(t1.elapsed());
     }
 
-    let (mut slots, mut levels) = (0usize, 0u8);
+    let (mut slots, mut levels) = (0usize, 0u16);
     field.tree.traverse(&mut |n| { slots += n.data.len(); levels = levels.max(n.depth); Ok(()) }).ok();
     let leaves = field.tree.leaf_count();
     Cell {

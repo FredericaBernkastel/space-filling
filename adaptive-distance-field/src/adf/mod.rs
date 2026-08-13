@@ -23,7 +23,7 @@
 #![allow(clippy::mut_from_ref)]
 use {
   crate::{
-    geometry::{Point, Aabb, Real, VectorExt, DistPoint},
+    geometry::{Point, Aabb, Real, Vector, VectorExt, DistPoint},
     sdf::{SDF, Lipschitz},
   },
   tree::{Tree, Node, Refine, Split, Dim, Branching, child_rects},
@@ -36,8 +36,10 @@ use {
 
 #[cfg(test)] mod tests;
 pub mod builder;
+pub mod manifold;
 pub mod tree;
 pub use builder::{builder, AdfBuilder, Dims, Unset};
+pub use manifold::Manifold;
 pub use tree::{CutPolicy, Cyclic, Kd, KdBy, Layout, Orthant, WeightedKd, Widest};
 /// The tree module's previous name, so existing paths keep resolving.
 pub use tree as quadtree;
@@ -143,11 +145,17 @@ impl<_Float: Real, const D: usize> Bucket<_Float, D> {
 #[derive(Clone)]
 pub struct ADF<Float: Scalar, const D: usize, L> {
   pub tree: Tree<Bucket<Float, D>, Float, D, L>,
-  /// Max subdivisions the redundancy test ([`sdf_geq_everywhere`])
-  /// may use to prove/refute `f >= g` over a node. Higher = finer proofs (a
-  /// primitive is pruned only when provably redundant to within ~`node/2^n`),
-  /// at more work in near-tangent regions.
-  prune_subdiv: u32,
+  /// Tree **levels** the redundancy test ([`sdf_geq_everywhere_levels`]) may use
+  /// to prove/refute `f >= g` over a node. Higher = finer proofs (a primitive is
+  /// pruned only when provably redundant to within ~`node/2^n`), at more work in
+  /// near-tangent regions.
+  ///
+  /// Stored in levels rather than subdivisions because the two stop being
+  /// interchangeable in high dimension: a binary layout spends `D` levels per
+  /// subdivision, so the mildest useful setting of
+  /// [`Self::with_prune_subdiv`] is a hundred levels at `D = 100`, and an
+  /// undecided proof then walks a binary tree a hundred deep.
+  prune_levels: u32,
   /// Largest Lipschitz constant ever declared by an inserted primitive; the
   /// whole field is `lipschitz_max`-Lipschitz (monotone over-approximation:
   /// primitives pruned later do not lower it).
@@ -162,6 +170,58 @@ pub struct ADF<Float: Scalar, const D: usize, L> {
   /// divides — see [`Self::with_cut_must_prune`]. Defaults to
   /// `D >= CUT_MUST_PRUNE_MIN_DIMS`.
   cut_must_prune: bool,
+}
+
+/// What an insertion can reach: the caller's guarantee that the primitive's
+/// support lies inside this set.
+///
+/// The insertion walk skips a subtree once the field there cannot fall below the
+/// distance to this set, so a tighter set is a shorter walk. A ball is the right
+/// answer for a body placed at a maximum of the free space; a box is the right
+/// answer for anything with per-axis radii, whose containing ball is `√D` times
+/// too generous.
+#[derive(Clone, Copy, Debug)]
+pub enum Reach<Float: Scalar, const D: usize> {
+  /// `S ⊆ B̄(centre, radius)`.
+  Ball { centre: Point<Float, D>, radius: Float },
+  /// `S ⊆` this box.
+  Box(Aabb<Float, D>),
+}
+
+impl<_Float: Real, const D: usize> Reach<_Float, D> {
+  /// Distance from `rect` to this set, negative or zero where they meet.
+  ///
+  /// Exact for both variants, and for two axis-aligned boxes it is the norm of
+  /// the per-axis gaps — no square roots of a max, no bounding-ball slack.
+  #[inline]
+  pub fn distance_to(&self, rect: &Aabb<_Float, D>) -> _Float {
+    match self {
+      Reach::Ball { centre, radius } =>
+        (*centre - rect.clamp_point(centre)).length() - *radius,
+      Reach::Box(b) => {
+        let mut sq = _Float::zero();
+        for a in 0..D {
+          // zero on any axis whose intervals overlap
+          let gap = (b.min[a] - rect.max[a])
+            .max(rect.min[a] - b.max[a])
+            .max(_Float::zero());
+          sq = sq + gap * gap;
+        }
+        sq.sqrt()
+      }
+    }
+  }
+
+  /// The box this reaches, for a caller that needs one — a ball's bounding box.
+  pub fn bounds(&self) -> Aabb<_Float, D> {
+    match self {
+      Reach::Ball { centre, radius } => Aabb {
+        min: Point::from(centre.coords.map(|x| x - *radius)),
+        max: Point::from(centre.coords.map(|x| x + *radius)),
+      },
+      Reach::Box(b) => *b,
+    }
+  }
 }
 
 /// The dimension from which an overflowing leaf divides only if dividing prunes
@@ -207,7 +267,7 @@ const BUCKET_SIZE: usize = 3;
 fn prune_bucket<_Float, const D: usize, L>(
   data: &[Primitive<_Float, D>],
   rect: Aabb<_Float, D>,
-  subdiv: u32,
+  levels: u32,
 ) -> Vec<Primitive<_Float, D>>
 where
   _Float: Real,
@@ -222,8 +282,8 @@ where
     let l_old = data.iter().enumerate()
       .filter_map(|(j, p_j)| (i != j).then_some(p_j.lipschitz))
       .fold(_Float::one(), _Float::max);
-    if !sdf_geq_everywhere_in::<L, _, _, _, D>(
-      (p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, subdiv) {
+    if !sdf_geq_everywhere_levels::<L, _, _, _, D>(
+      (p_i.f).as_ref(), sdf_old, rect, p_i.lipschitz, l_old, levels) {
       kept.push(p_i.clone())
     }
   }
@@ -244,9 +304,9 @@ where
 fn divide_round<_Float, const D: usize, L>(
   bucket: &[Primitive<_Float, D>],
   rect: Aabb<_Float, D>,
-  depth: u8,
-  round_end: u8,
-  subdiv: u32,
+  depth: u16,
+  round_end: u16,
+  levels: u32,
   capacity: usize,
 ) -> (L::Children<Split<Bucket<_Float, D>, D, L>>, usize)
 where
@@ -255,15 +315,15 @@ where
 {
   let mut min_kept = usize::MAX;
   let children = L::children_from_fn(|i| {
-    let cell = L::child_rect(rect, depth, i);
-    let kept = prune_bucket::<_Float, D, L>(bucket, cell, subdiv);
+    let cell = L::child_rect(&rect, depth, i);
+    let kept = prune_bucket::<_Float, D, L>(bucket, cell, levels);
     min_kept = min_kept.min(kept.len());
     let child_depth = depth + 1;
     if child_depth >= round_end || kept.len() < capacity {
       Split::Leaf(Bucket::Leaf(kept))
     } else {
       let (grandchildren, deeper) = divide_round::<_Float, D, L>(
-        &kept, cell, child_depth, round_end, subdiv, capacity);
+        &kept, cell, child_depth, round_end, levels, capacity);
       min_kept = min_kept.min(deeper);
       Split::Node {
         parent: Bucket::Bound(Bucket::bound_of(&kept, &cell)),
@@ -349,9 +409,37 @@ where
   G: Fn(Point<_Float, D>) -> _Float,
   L: Layout<D>,
 {
+  sdf_geq_everywhere_levels::<L, _, _, _, D>(
+    f, g, domain, l_f, l_g, max_subdiv * L::LEVELS_PER_SPLIT as u32)
+}
+
+/// [`sdf_geq_everywhere_in`] with the budget given in **levels** rather than in
+/// full subdivisions.
+///
+/// Which is the honest unit for a binary layout: `LEVELS_PER_SPLIT` is `D`, so
+/// one "subdivision" of budget is 100 levels at `D = 100`, and an undecided box
+/// then drives a binary branch-and-bound a hundred deep — `2^100` boxes in the
+/// worst case, and in practice a hang. Callers that want a *cheap* answer rather
+/// than a thorough one should say so here.
+///
+/// At zero levels this is exactly the inscribed-ball test: the root either
+/// clears on `(f-g)(c) ≥ (L_f + L_g)·h`, or fails.
+pub fn sdf_geq_everywhere_levels<L, _Float, F, G, const D: usize>(
+  f: F,
+  g: G,
+  domain: Aabb<_Float, D>,
+  l_f: _Float,
+  l_g: _Float,
+  levels: u32,
+) -> bool
+where
+  _Float: Real,
+  F: Fn(Point<_Float, D>) -> _Float,
+  G: Fn(Point<_Float, D>) -> _Float,
+  L: Layout<D>,
+{
   let two = _Float::one() + _Float::one();
   let l_sum = l_f + l_g;
-  let budget = max_subdiv * L::LEVELS_PER_SPLIT as u32;
   let mut stack = vec![(domain, 0u32)];
   while let Some((rect, depth)) = stack.pop() {
     let diff = f(rect.center()) - g(rect.center());
@@ -362,12 +450,12 @@ where
     if diff >= l_sum * half_diag {
       continue; // `f - g >= 0` proved over the whole box
     }
-    if depth >= budget {
+    if depth >= levels {
       return false; // undecided within budget → conservatively assume a witness
     }
     // `depth` doubles as the cut-axis counter for `Kd`, and is ignored by
     // `Orthant` — the same call serves both.
-    for sub in L::children_from_fn(|i| L::child_rect(rect, depth as u8, i)) {
+    for sub in L::children_from_fn(|i| L::child_rect(&rect, depth as u16, i)) {
       stack.push((sub, depth + 1));
     }
   }
@@ -410,10 +498,10 @@ where
     init: Vec<Primitive<_Float, D>>,
   ) -> Self {
     let lipschitz_max = bucket_lipschitz(&init);
-    let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u8::MAX as usize) as u8;
+    let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u16::MAX as usize) as u16;
     Self {
       tree: Tree::new_in(domain, levels, Bucket::Leaf(init)),
-      prune_subdiv: 8,
+      prune_levels: 8 * L::LEVELS_PER_SPLIT as u32,
       lipschitz_max,
       split_round: 1,
       bucket_size: BUCKET_SIZE,
@@ -442,7 +530,16 @@ where
   /// Controls precision of primitive pruning in a bucket: the redundancy test may
   /// refine a node up to `subdiv` times to prove `f >= g` (see [`sdf_geq_everywhere`]).
   pub fn with_prune_subdiv(mut self, subdiv: u32) -> Self {
-    self.prune_subdiv = subdiv;
+    self.prune_levels = subdiv * L::LEVELS_PER_SPLIT as u32;
+    self
+  }
+
+  /// The same budget in tree **levels**, which above `D ≈ 12` is the only usable
+  /// unit: one subdivision is `D` levels for a binary layout, so
+  /// [`Self::with_prune_subdiv`] cannot express anything cheaper than `D`.
+  /// Single digits are normal here.
+  pub fn with_prune_levels(mut self, levels: u32) -> Self {
+    self.prune_levels = levels;
     self
   }
 
@@ -483,6 +580,28 @@ where
   /// memory ×620 larger, so query-heavy work in `4..10` may want it off.
   pub fn with_cut_must_prune(mut self, require: bool) -> Self {
     self.cut_must_prune = require;
+    self
+  }
+
+  /// Set the depth budget in tree **levels**, replacing the full-subdivision
+  /// count [`Self::new`] derived.
+  ///
+  /// "Halve every axis once" stops being a useful unit in high dimension: a k-d
+  /// tree spends `D` levels on it, so at `D = 100` a single subdivision is 100
+  /// levels and two is already most of what a `u16` will hold. Worse, it is the
+  /// wrong unit — on a weighted domain the tail axes are deliberately never cut,
+  /// so a "full" subdivision is not something the tree ever wants to complete.
+  /// Budget the levels directly instead:
+  ///
+  /// ```
+  /// # use adaptive_distance_field::adf::{self, ADF, Kd, Primitive};
+  /// # use adaptive_distance_field::sdf;
+  /// let field = ADF::<f64, 100, Kd>::new(1, vec![Primitive::new(sdf::boundary_rect)])
+  ///   .with_levels(24);   // 24 cuts, not 100
+  /// assert_eq!(field.tree.max_depth, 24);
+  /// ```
+  pub fn with_levels(mut self, levels: u16) -> Self {
+    self.tree.max_depth = levels;
     self
   }
 
@@ -552,11 +671,104 @@ where
     radius: _Float,
     prim: Primitive<_Float, D>
   ) -> bool {
+    self.insert_within_reach(Reach::Ball { centre: center, radius }, prim)
+  }
+
+  /// Certify that the field is non-negative everywhere in `rect` — that the box
+  /// is free space.
+  ///
+  /// [`sdf_geq_everywhere_in`] with the constant zero on the right: sound one
+  /// way only, so `true` means proved and `false` means *undecided within the
+  /// budget*, never "occupied".
+  /// `levels` is a budget in tree levels, not subdivisions — see
+  /// [`sdf_geq_everywhere_levels`]. Small is right here: at zero this is the
+  /// inscribed-ball test, each level buys one halving of `h`, and an undecided
+  /// box is not worth chasing when the caller can simply try a smaller one.
+  pub fn box_is_free(&self, rect: Aabb<_Float, D>, levels: u32) -> bool {
+    sdf_geq_everywhere_levels::<L, _, _, _, D>(
+      |p| self.sdf(p),
+      |_| _Float::zero(),
+      rect,
+      self.lipschitz_max,
+      _Float::zero(),
+      levels,
+    )
+  }
+
+  /// The largest box at `p` of the given aspect that the field certifies free.
+  ///
+  /// A ball is the wrong body once the domain is not a cube: it is limited by
+  /// the *thinnest* free direction and wastes every other one, which at
+  /// `D = 100` is essentially all of them. This grows a box of fixed shape
+  /// instead, so a body placed on a weighted manifold inherits the manifold's
+  /// anisotropy — pass [`Manifold::aspect`](manifold::Manifold::aspect).
+  ///
+  /// `aspect` is normalised internally, so `t·aspect` has circumradius `t` and
+  /// the search can start at `t = g(p)` with no proof at all: that box is inside
+  /// the free ball. From there it doubles while the certificate holds, then
+  /// bisects. `steps` bounds each half, so the cost is `2·steps`
+  /// certifications and never a search over `D` axes separately.
+  ///
+  /// Sound by construction: every returned box has been proved free, or is the
+  /// unproved-but-inscribed starting box. Returns an empty box at `p` when the
+  /// field there is not positive.
+  pub fn grow_box(
+    &self,
+    p: Point<_Float, D>,
+    aspect: Vector<_Float, D>,
+    steps: u32,
+    levels: u32,
+  ) -> Aabb<_Float, D> {
+    let two = _Float::one() + _Float::one();
+    let clearance = self.sdf(p);
+    let norm = aspect.length();
+    if !(clearance > _Float::zero()) || !(norm > _Float::zero()) {
+      return Aabb { min: p, max: p };
+    }
+    let unit = aspect / norm;
+    let at = |t: _Float| Aabb {
+      min: Point::from(p.coords - unit * t),
+      max: Point::from(p.coords + unit * t),
+    };
+
+    // `lo` is always free — the inscribed box to begin with, circumradius
+    // `clearance` and so inside the free ball — and `hi` never proved so.
+    let mut lo = clearance;
+    let mut hi = clearance * two;
+    for _ in 0..steps {
+      if self.box_is_free(at(hi), levels) { lo = hi; hi = hi * two } else { break }
+    }
+    // bisect the gap even when the first doubling was refused, or everything
+    // between the inscribed box and twice it goes unexamined
+    for _ in 0..steps {
+      let mid = (lo + hi) / two;
+      if self.box_is_free(at(mid), levels) { lo = mid } else { hi = mid }
+    }
+    at(lo)
+  }
+
+  /// [`Self::insert_within`] with the containment set given as a [`Reach`]
+  /// rather than always as a ball.
+  ///
+  /// The `D*` argument never needed a ball. For any `S ⊆ B`, every `v` satisfies
+  /// `f(v) ≥ dist(v, B)`, so a subtree `R` cannot change and is skipped once
+  /// `ĝ(c_R) + L_B·h(R) ≤ dist(R, B)` — the same inequality [`Reach::Ball`]
+  /// spells out with `dist(R, x₀) − d`.
+  ///
+  /// Which matters for anisotropic bodies. A box of half-extents `ρ` is
+  /// contained in a ball of radius `‖ρ‖`, its **circumradius**, so describing it
+  /// as a ball inflates the visited region by the shape's anisotropy
+  /// `κ = R_S/r_S` — `√D` for a box, hence `D^(D/2)` in volume. Passing
+  /// [`Reach::Box`] keeps the walk as tight as the body actually is.
+  pub fn insert_within_reach(
+    &mut self,
+    reach: Reach<_Float, D>,
+    prim: Primitive<_Float, D>
+  ) -> bool {
     self.insert_where(move |node| {
-      let dist = (center - node.rect.clamp_point(&center)).length();
       // One scalar at an internal node, one bucket evaluation at a leaf — see
       // [`Bucket`].
-      node.data.upper_bound(&node.rect) > dist - radius
+      node.data.upper_bound(&node.rect) > reach.distance_to(&node.rect)
     }, prim)
   }
 
@@ -568,7 +780,7 @@ where
     self.lipschitz_max = self.lipschitz_max.max(prim.lipschitz);
     // Copied out so the parallel `decide` closure captures plain values instead
     // of borrowing `self` (which `refine_leaves` already borrows via `tree`).
-    let subdiv = self.prune_subdiv;
+    let levels = self.prune_levels;
     let max_depth = self.tree.max_depth;
     let split_round = self.split_round;
     let capacity = self.bucket_size;
@@ -584,17 +796,17 @@ where
       let l_bucket = bucket_lipschitz(bucket);
 
       // f(v) >= g(v) forall v e D — the new primitive never lowers the field here.
-      if sdf_geq_everywhere_in::<L, _, _, _, D>(
+      if sdf_geq_everywhere_levels::<L, _, _, _, D>(
         f.as_ref(), |p| bucket.sdf(p),
-        node.rect, prim.lipschitz, l_bucket, subdiv
+        node.rect, prim.lipschitz, l_bucket, levels
       ) {
         return Refine::None;
       }
 
       // g(v) >= f(v) forall v e D — f dominates the whole node, replace it.
-      if sdf_geq_everywhere_in::<L, _, _, _, D>(
+      if sdf_geq_everywhere_levels::<L, _, _, _, D>(
         |p| bucket.sdf(p), f.as_ref(),
-        node.rect, l_bucket, prim.lipschitz, subdiv
+        node.rect, l_bucket, prim.lipschitz, levels
       ) {
         return Refine::SetData(Bucket::Leaf(vec![prim.clone()]));
       }
@@ -624,10 +836,10 @@ where
         let mut combined = bucket.to_vec();
         combined.push(prim.clone());
         let round_end = (node.depth as usize + split_round as usize)
-          .min(max_depth as usize) as u8;
+          .min(max_depth as usize) as u16;
 
         let (children, min_kept) = divide_round::<_Float, D, L>(
-          &combined, node.rect, node.depth, round_end, subdiv, capacity);
+          &combined, node.rect, node.depth, round_end, levels, capacity);
 
         // Below `CUT_MUST_PRUNE_MIN_DIMS` this refusal is a local-greedy trap: the
         // first cut of the domain prunes nothing, so the tree never reaches the
@@ -737,7 +949,7 @@ where
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     use humansize::{FileSize, file_size_opts as options};
 
-    let mut max_depth = 0u8;
+    let mut max_depth = 0u16;
     let mut bucket_slots = 0usize;
     self.tree.traverse(&mut |node| {
       max_depth = max_depth.max(node.depth);

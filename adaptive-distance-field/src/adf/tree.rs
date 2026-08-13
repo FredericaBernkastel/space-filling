@@ -97,10 +97,20 @@ pub trait Layout<const DIMS: usize> {
   /// The `i`-th sub-cell of a node with cell `rect` at `depth`. Child cells
   /// share their boundary coordinates bit-for-bit with the parent and each
   /// other (min/max representation), so the tiling is exact.
-  fn child_rect<F: Real>(rect: Aabb<F, DIMS>, depth: u8, i: usize) -> Aabb<F, DIMS>;
+  fn child_rect<F: Real>(rect: &Aabb<F, DIMS>, depth: u16, i: usize) -> Aabb<F, DIMS>;
   /// Which child of a node at `depth` contains `pt` — the descent step, and the
   /// exact inverse of [`Self::child_rect`] on the half-open cells.
-  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, depth: u8, pt: &Point<F, DIMS>) -> usize;
+  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, depth: u16, pt: &Point<F, DIMS>) -> usize;
+  /// Halve `cell` in place into its `i`-th child — the descent's inner step.
+  ///
+  /// Defaulted to `*cell = child_rect(cell, depth, i)`. A binary layout
+  /// overrides it to write a single scalar where the assignment would move
+  /// `2·DIMS` floats: 1.6 KiB per level at `DIMS = 100`, and by then the
+  /// dominant cost of a query.
+  #[inline]
+  fn halve_into<F: Real>(cell: &mut Aabb<F, DIMS>, depth: u16, i: usize) {
+    *cell = Self::child_rect(cell, depth, i);
+  }
 }
 
 /// Splits every axis at once: `2^DIMS` children per node, one level per full
@@ -121,7 +131,7 @@ pub trait CutPolicy<const DIMS: usize> {
   /// The axis to halve, for the cell `rect` at `depth`. Takes the cell rather
   /// than its extent so that a policy ignoring geometry costs literally nothing:
   /// computing `rect.size()` for [`Cyclic`] to discard measured real time.
-  fn axis<F: Real>(rect: &Aabb<F, DIMS>, depth: u8) -> usize;
+  fn axis<F: Real>(rect: &Aabb<F, DIMS>, depth: u16) -> usize;
 }
 
 /// Round-robin `depth % DIMS`, indifferent to extent.
@@ -144,7 +154,7 @@ pub struct Widest;
 impl<const DIMS: usize> CutPolicy<DIMS> for Cyclic {
   const NAME: &'static str = "k-d";
   #[inline]
-  fn axis<F: Real>(_rect: &Aabb<F, DIMS>, depth: u8) -> usize {
+  fn axis<F: Real>(_rect: &Aabb<F, DIMS>, depth: u16) -> usize {
     cut_axis::<DIMS>(depth)
   }
 }
@@ -152,7 +162,7 @@ impl<const DIMS: usize> CutPolicy<DIMS> for Cyclic {
 impl<const DIMS: usize> CutPolicy<DIMS> for Widest {
   const NAME: &'static str = "k-d widest";
   #[inline]
-  fn axis<F: Real>(rect: &Aabb<F, DIMS>, _depth: u8) -> usize {
+  fn axis<F: Real>(rect: &Aabb<F, DIMS>, _depth: u16) -> usize {
     const { assert!(DIMS > 0, "Kd needs at least one axis to cut") }
     let (mut best, mut longest) = (0, rect.max[0] - rect.min[0]);
     // strictly greater, so equal extents resolve to the lowest index — the tie
@@ -205,13 +215,13 @@ where
   /// Bit `a` of `i` selects the upper half along axis `a`. For `DIMS = 2` this
   /// is the quadrant order TL, TR, BL, BR.
   #[inline]
-  fn child_rect<F: Real>(rect: Aabb<F, DIMS>, _depth: u8, i: usize) -> Aabb<F, DIMS> {
-    child_rect(rect, i)
+  fn child_rect<F: Real>(rect: &Aabb<F, DIMS>, _depth: u16, i: usize) -> Aabb<F, DIMS> {
+    child_rect(*rect, i)
   }
 
   /// Per-axis comparison against the centre — `pt[a] >= center[a]` sets bit `a`.
   #[inline]
-  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, _depth: u8, pt: &Point<F, DIMS>) -> usize {
+  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, _depth: u16, pt: &Point<F, DIMS>) -> usize {
     let center = rect.center();
     let mut child = 0usize;
     for a in 0..DIMS {
@@ -239,18 +249,27 @@ impl<P: CutPolicy<DIMS>, const DIMS: usize> Layout<DIMS> for KdBy<P> {
 
   /// Child 0 is the lower half along the cut axis, child 1 the upper.
   #[inline]
-  fn child_rect<F: Real>(rect: Aabb<F, DIMS>, depth: u8, i: usize) -> Aabb<F, DIMS> {
-    let a = P::axis(&rect, depth);
-    let mid = rect.center()[a];
-    let mut out = rect;
-    if i == 0 { out.max[a] = mid } else { out.min[a] = mid }
+  fn child_rect<F: Real>(rect: &Aabb<F, DIMS>, depth: u16, i: usize) -> Aabb<F, DIMS> {
+    let mut out = *rect;
+    Self::halve_into(&mut out, depth, i);
     out
   }
 
+  /// One scalar written, and the midpoint spelled exactly as `Aabb::center`
+  /// spells it so the cells stay bit-identical to `child_rect`'s.
   #[inline]
-  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, depth: u8, pt: &Point<F, DIMS>) -> usize {
+  fn halve_into<F: Real>(cell: &mut Aabb<F, DIMS>, depth: u16, i: usize) {
+    let two = F::one() + F::one();
+    let a = P::axis(cell, depth);
+    let mid = cell.min[a] + (cell.max[a] - cell.min[a]) / two;
+    if i == 0 { cell.max[a] = mid } else { cell.min[a] = mid }
+  }
+
+  #[inline]
+  fn child_index<F: Real>(rect: &Aabb<F, DIMS>, depth: u16, pt: &Point<F, DIMS>) -> usize {
+    let two = F::one() + F::one();
     let a = P::axis(rect, depth);
-    (pt[a] >= rect.center()[a]) as usize
+    (pt[a] >= rect.min[a] + (rect.max[a] - rect.min[a]) / two) as usize
   }
 }
 
@@ -262,7 +281,7 @@ impl<P: CutPolicy<DIMS>, const DIMS: usize> Layout<DIMS> for KdBy<P> {
 /// `DIMS`, and a zero-dimensional tree would divide by zero here rather than fail
 /// to typecheck.
 #[inline]
-pub fn cut_axis<const DIMS: usize>(depth: u8) -> usize {
+pub fn cut_axis<const DIMS: usize>(depth: u16) -> usize {
   const { assert!(DIMS > 0, "Kd needs at least one axis to cut") }
   depth as usize % DIMS
 }
@@ -310,7 +329,7 @@ where
 #[derive(Clone)]
 pub struct Node<Data, Float: Scalar, const DIMS: usize> {
   pub rect: Aabb<Float, DIMS>,
-  pub depth: u8,
+  pub depth: u16,
   pub data: Data,
   /// Arena index of the first child, or `None` for a leaf.
   children: Option<NonZeroU32>,
@@ -338,7 +357,7 @@ pub struct Tree<Data, Float: Scalar, const DIMS: usize, L> {
   /// `DIMS` levels per split feels `DIMS` times over.
   links: Vec<Option<NonZeroU32>>,
   /// Maximum depth in **levels** — not full splits. `ADF` converts.
-  pub max_depth: u8,
+  pub max_depth: u16,
   /// `fn() -> L` rather than `L`, so the tree's `Send`/`Sync`/`Copy` never
   /// depend on the marker.
   layout: PhantomData<fn() -> L>,
@@ -391,7 +410,7 @@ where
 {
   /// A tree with a single root node covering the unit hypercube. `max_depth` is
   /// in tree *levels*; see [`Layout::LEVELS_PER_SPLIT`].
-  pub fn new(max_depth: u8, init: Data) -> Self {
+  pub fn new(max_depth: u16, init: Data) -> Self {
     Self::new_in(Aabb::unit(), max_depth, init)
   }
 
@@ -403,7 +422,7 @@ where
   /// [`Widest`] reads to cut in descending weight. Seed the field with
   /// [`boundary_box`](crate::sdf::boundary_box) over the same box, or the walls
   /// will not agree with the domain.
-  pub fn new_in(domain: Aabb<_Float, DIMS>, max_depth: u8, init: Data) -> Self {
+  pub fn new_in(domain: Aabb<_Float, DIMS>, max_depth: u16, init: Data) -> Self {
     let root = Node {
       rect: domain,
       depth: 0,
@@ -483,10 +502,10 @@ where
       // rect rather than the unit cube: `new_in` admits any domain, and starting
       // elsewhere silently descends into the wrong leaf.
       let mut cell = self.root().rect;
-      let mut depth = 0u8;
+      let mut depth = 0u16;
       while let Some(first) = self.links[idx] {
         let child = L::child_index(&cell, depth, &pt);
-        cell = L::child_rect(cell, depth, child);
+        L::halve_into(&mut cell, depth, child);
         idx = first.get() as usize + child;
         depth += 1;
       }
@@ -603,7 +622,7 @@ where
     let first = NonZeroU32::new(self.nodes.len() as u32).expect("root occupies index 0");
     let mut deeper = Vec::new();
     for (i, child) in children.into_iter().enumerate() {
-      let rect = L::child_rect(rect, depth, i);
+      let rect = L::child_rect(&rect, depth, i);
       match child {
         Split::Leaf(data) =>
           self.push(Node { rect, depth: depth + 1, data, children: None }),
@@ -667,7 +686,7 @@ mod tests {
     let mut tree = KdTree::<u32, f64, 3>::new(6, 0);
     // split the root (axis 0), then its lower child (axis 1), then that child's
     // lower child (axis 2) — a full round
-    for step in 0..3u8 {
+    for step in 0..3u16 {
       tree.refine_leaves(
         |node| node.depth <= step,
         |node| if node.depth == step && node.rect.min == Point::origin() {

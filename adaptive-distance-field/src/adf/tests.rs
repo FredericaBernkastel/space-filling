@@ -290,7 +290,7 @@ fn climb<const D: usize>(
 /// fingerprint, strictly stronger than agreeing on the field.
 fn fingerprint<const D: usize, L: tree::Layout<D>>(
   f: &ADF<f64, D, L>,
-) -> Vec<(u8, [u64; D], [u64; D], usize)> {
+) -> Vec<(u16, [u64; D], [u64; D], usize)> {
   let mut out = vec![];
   f.tree.traverse(&mut |n| {
     out.push((
@@ -336,7 +336,7 @@ where
 
   // the schedule proper, level for level over three full rounds
   let mut cell = Aabb::<f64, D>::unit();
-  for depth in 0..3 * D as u8 {
+  for depth in 0..3 * D as u16 {
     let w = <Widest as CutPolicy<D>>::axis(&cell, depth);
     assert_eq!(w, <Cyclic as CutPolicy<D>>::axis(&cell, depth),
       "the cut schedules part company at depth {depth}");
@@ -374,7 +374,7 @@ where
   const D: usize = 3;
   let mut cell = Aabb::new(Point::from([0.0; D]), Point::from([8.0, 1.0, 1.0]));
   let mut schedule = vec![];
-  for depth in 0..7u8 {
+  for depth in 0..7u16 {
     let a = <Widest as CutPolicy<D>>::axis(&cell, depth);
     schedule.push(a);
     cell.max[a] = cell.center()[a];
@@ -384,7 +384,7 @@ where
   assert_eq!(schedule, vec![0, 0, 0, 0, 1, 2, 0]);
 
   // Cyclic is indifferent to all of that
-  let cyclic: Vec<_> = (0..7u8)
+  let cyclic: Vec<_> = (0..7u16)
     .map(|d| <Cyclic as CutPolicy<D>>::axis(&cell, d))
     .collect();
   assert_eq!(cyclic, vec![0, 1, 2, 0, 1, 2, 0]);
@@ -461,5 +461,137 @@ where
     check::<Kd>(extents);
     check::<WeightedKd>(extents);
     check::<tree::Orthant>(extents);
+  }
+}
+
+/// An axis-aligned box as a bare field: the exact SDF, hence 1-Lipschitz.
+fn abox<const D: usize>(
+  centre: Point<f64, D>,
+  half: Vector<f64, D>,
+) -> impl Fn(Point<f64, D>) -> f64 + Send + Sync + 'static {
+  move |p| {
+    let q = (p - centre).abs() - half;
+    let outside = q.map(|x| x.max(0.0)).length();
+    let inside = q.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)).min(0.0);
+    outside + inside
+  }
+}
+
+/// A box's reach is tighter than the ball that contains it, and the tightening
+/// is free: both describe the same body, so the field cannot notice.
+///
+/// The looseness is the anisotropy `κ = R_S/r_S` of §6.1 — `√D` for a box — and
+/// it is what made placing an anisotropic body cost a ball-shaped walk.
+#[test] fn a_box_reaches_less_far_than_its_ball() {
+  const D: usize = 6;
+  let centre = Point::from([0.5; D]);
+  let half = Vector::<f64, D>::from_fn(|i, _| 0.02 * (i as f64 + 1.0));
+  let body = Aabb::new(
+    Point::from(centre.coords - half),
+    Point::from(centre.coords + half));
+  let as_box = Reach::Box(body);
+  let as_ball = Reach::Ball { centre, radius: half.length() };
+
+  // the ball is never tighter, and is strictly looser somewhere
+  let mut strictly_looser = false;
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0xB0);
+  for _ in 0..2000 {
+    let lo = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.0..0.9)));
+    let cell = Aabb::new(lo, Point::from(lo.coords.map(|x| x + 0.05)));
+    let (b, s) = (as_box.distance_to(&cell), as_ball.distance_to(&cell));
+    assert!(b >= s - 1e-12, "the box reach must not exceed the ball's: {b} < {s}");
+    if b > s + 1e-9 { strictly_looser = true }
+  }
+  assert!(strictly_looser, "the two reaches never differed — nothing was tested");
+
+  // and inserting through either describes the same field, to the bit
+  let build = |reach: Reach<f64, D>| {
+    let mut f = ADF::<f64, D, Kd>::new(3, vec![Primitive::new(sdf::boundary_rect)])
+      .with_prune_subdiv(2)
+      .with_cut_must_prune(false);
+    f.insert_within_reach(reach, Primitive::new(abox(centre, half)));
+    f
+  };
+  let (tight, loose) = (build(as_box), build(as_ball));
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0x5EED);
+  for _ in 0..4000 {
+    let p = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.0..1.0)));
+    assert_eq!(tight.sdf(p).to_bits(), loose.sdf(p).to_bits(),
+      "a tighter reach changed the field at {p:?}");
+  }
+}
+
+/// `grow_box` returns free space, and on a weighted manifold it claims far more
+/// of it than the inscribed ball the solver would otherwise hand over.
+#[test] fn grow_box_claims_more_than_the_inscribed_ball() {
+  const D: usize = 8;
+  let m = Manifold::<f64, D>::sobolev(1.5);
+  let field: ADF<f64, D, WeightedKd> = m.field(2);
+  let centre = Point::origin();
+
+  let grown = field.grow_box(centre, *m.weights(), 12, 6);
+  assert!(field.box_is_free(grown, 6), "grow_box returned a box it cannot certify");
+
+  // log volumes: the box's 2ρᵢ against the inscribed cube of the free ball,
+  // whose half-side is d/√D — the κ = √D penalty, stated in the units that
+  // survive high dimension
+  let d = field.sdf(centre);
+  let log_box: f64 = grown.size().iter().map(|s| s.ln()).sum();
+  let log_ball_cube = D as f64 * (2.0 * d / (D as f64).sqrt()).ln();
+  assert!(log_box > log_ball_cube,
+    "the grown box claimed less than the ball's inscribed cube: {log_box} vs {log_ball_cube}");
+
+  // it is a box, not a cube: the aspect follows the manifold
+  let size = grown.size();
+  assert!(size[0] > size[D - 1] * 5.0,
+    "the grown box ignored the weights: {size:?}");
+}
+
+/// The weights say how many axes matter, and the answer is not `D`.
+#[test] fn effective_dimension_counts_the_axes_that_matter() {
+  assert!((Manifold::<f64, 16>::sobolev(0.0).effective_dimension() - 16.0).abs() < 1e-9,
+    "a cube's effective dimension is its ambient one");
+  assert!((Manifold::<f64, 32>::finite_rank(4, 1e-9).effective_dimension() - 4.0).abs() < 1e-3,
+    "a rank-4 manifold in 32 dimensions is 4-dimensional");
+
+  // Sobolev decay settles to a constant: adding axes adds nothing
+  let (a, b) = (
+    Manifold::<f64, 24>::sobolev(2.0).effective_dimension(),
+    Manifold::<f64, 100>::sobolev(2.0).effective_dimension());
+  assert!((a - b).abs() < 0.15, "s = 2 should not care much whether D is 24 or 100: {a} vs {b}");
+  assert!(b > 2.0 && b < 3.0, "s = 2 is about two and a half axes, got {b}");
+}
+
+/// A hundred dimensions: constructible, queryable, and the field still exact.
+#[test] fn a_hundred_dimensions() {
+  const D: usize = 100;
+  let m = Manifold::<f64, D>::sobolev(2.0);
+  let mut field: ADF<f64, D, WeightedKd> = m.field(1);
+  field = field.with_levels(24).with_prune_levels(4);
+  assert_eq!(field.tree.max_depth, 24, "the u8 ceiling used to cap this at 2 subdivisions");
+
+  let walls = m.walls();
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(100);
+  let mut bodies = vec![];
+  for _ in 0..12 {
+    let c = Point::from(Vector::<f64, D>::from_fn(|i, _| {
+      (rng.random_range(-0.3..0.3)) * m.weights()[i]
+    }));
+    let bx = field.grow_box(c, *m.weights(), 6, 4);
+    let half = bx.size() / 2.0;
+    if !(half[0] > 0.0) { continue }
+    field.insert_within_reach(Reach::Box(bx), Primitive::new(abox(c, half)));
+    bodies.push((c, half));
+  }
+  assert!(bodies.len() >= 8, "only {} bodies placed", bodies.len());
+
+  // exact against brute force, at a hundred dimensions
+  for _ in 0..200 {
+    let p = Point::from(Vector::<f64, D>::from_fn(|i, _| {
+      rng.random_range(-0.49..0.49) * m.weights()[i]
+    }));
+    let truth = bodies.iter().fold(walls(p), |acc, &(c, h)| acc.min(abox(c, h)(p)));
+    assert!((field.sdf(p) - truth).abs() < 1e-12,
+      "D = 100: {} against a true {truth}", field.sdf(p));
   }
 }

@@ -522,3 +522,99 @@ and all three layouts.
 
 `BoundingBox for ADF` likewise returned `Aabb::unit()` regardless of the tree, and
 now returns the root's cell.
+
+## Anisotropic bodies, compact manifolds, and a hundred dimensions
+
+Roadmap step 3. The engineering all works and the ceiling is genuinely raised;
+the headline claim — that per-axis radii beat a ball at high `N` — **does not
+survive measurement**, and the reason is worth more than the claim was.
+
+### Added
+
+| API | Meaning |
+|---|---|
+| `adf::Reach` | what an insertion can reach: `Ball { centre, radius }` or `Box(Aabb)` |
+| `ADF::insert_within_reach` | the insertion walk against a `Reach`; `insert_within` is now the `Ball` case |
+| `adf::Manifold<Float, D>` | a compact manifold as per-axis weights `γ` |
+| `Manifold::{sobolev, exponential, finite_rank, from_extents}` | the standard families |
+| `Manifold::{domain, walls, aspect, effective_dimension, log_volume, field}` | and what they derive |
+| `ADF::box_is_free` | certify a box free — the redundancy proof with zero on the right |
+| `ADF::grow_box` | the largest aspect-locked box the field will certify at a point |
+| `ADF::with_levels` | depth budget in tree levels rather than full subdivisions |
+| `ADF::with_prune_levels` | proof budget likewise |
+| `adf::sdf_geq_everywhere_levels` | the proof, budgeted in levels |
+| `Layout::halve_into` | halve a cell in place; defaulted, overridden by `KdBy` |
+
+`Tree::max_depth` and `Node::depth` widen from `u8` to `u16`, and
+`Layout::child_rect` takes `&Aabb` rather than an `Aabb` by value.
+
+### Levels, not subdivisions
+
+Every budget in the crate was denominated in *full subdivisions*, which a binary
+layout spends `D` levels on. That is unusable at `D = 100`: the mildest setting of
+`with_prune_subdiv` is a hundred levels, and an undecided proof then walks a binary
+tree a hundred deep. Budgets are now stored in levels, with the subdivision
+setters kept as exact-behaviour wrappers (`subdiv × LEVELS_PER_SPLIT`), so nothing
+below `D ≈ 12` moves at all.
+
+The same applies to the arena: `max_depth × D ≤ 255` allowed **two** subdivisions
+at `D = 100`. `u16` and `with_levels` remove it. Per-node cost is the other half —
+`child_rect` copied a 1.6 KiB `Aabb` per call at `D = 100`, and `halve_into` writes
+one scalar instead.
+
+Result: `a_hundred_dimensions` builds a weighted field at `D = 100`, grows and
+places bodies, and reads back exact against brute force. 150–880 µs per grow,
+30–300 µs per insertion.
+
+### Effective dimension is the number that matters
+
+`Manifold::effective_dimension` is the participation ratio `(Σγ)²/Σγ²`: `D` on a
+cube, `k` on a rank-`k` manifold, and for Sobolev decay a constant that does not
+move with `D` — **2.38 at `D = 24` and 2.47 at `D = 100`**, both `s = 2`. That is
+the whole compact-manifold claim in one number, and it is now computable rather
+than inferred from timings.
+
+### The negative result: a box cannot be certified
+
+`tests/high_d.rs` scores claimed volume in logs, because nothing here is
+representable otherwise — a Sobolev domain's volume at `D = 100` is `10^(−316)`.
+Ratios of claimed to domain volume, and the gap between the two bodies:
+
+|  D |  s | eff dim | ln ball÷dom | ln box÷dom | **ln gap** |
+|---:|---:|---:|---:|---:|---:|
+| 24 | 1.0 | 8.89 | −69.8 | −64.2 | **+5.6** |
+| 24 | 2.0 | 2.38 | −88.9 | −99.1 | −10.1 |
+| 48 | 1.0 | 12.24 | −166.3 | −172.5 | −6.2 |
+| 48 | 2.0 | 2.44 | −200.3 | −266.3 | −66.0 |
+| 100 | 1.0 | 16.46 | −392.7 | −442.5 | −49.8 |
+| 100 | 2.0 | 2.47 | −483.2 | −725.3 | **−242.1** |
+
+The box wins in exactly one row — the mildest anisotropy at the lowest dimension —
+and loses by a widening margin everywhere else. **The geometry is not what binds;
+the certificate is.** A box of aspect `γ` is free out to the walls, but proving it
+free needs the Lipschitz test, and that test compares the cell's *half-diagonal*
+against the field's clearance. The half-diagonal is set by the **longest** axis and
+the clearance by the **shortest**, so an aspect ratio of `10^4` at `D = 100, s = 2`
+is a factor of `10^4` the proof has to close by refinement alone.
+
+It closes it, slowly, and pays exponentially. At `D = 24, s = 2`, the gap against
+the levels `box_is_free` may refine:
+
+| levels | 0 | 2 | 4 | 8 | 12 |
+|---|---:|---:|---:|---:|---:|
+| ln gap | −72.4 | −48.3 | −35.8 | −21.4 | −10.1 |
+
+Roughly halving per four levels while the cost doubles per level. Twenty levels at
+`D = 100` did not finish inside five minutes.
+
+So step 3 as stated is not pure engineering after all. Per-axis radii need a
+certificate that is anisotropic too — the natural one being the Lipschitz bound in
+the *weighted* metric, where the manifold is a cube again and the half-diagonal
+stops being dominated by an axis the clearance knows nothing about. That is a
+change to the proof, which §2.3 explicitly promised would not be needed, and it is
+the honest prerequisite for this step rather than an optimisation of it.
+
+Everything else stands: `Reach::Box` is sound and strictly tighter than the ball
+that contains it (`a_box_reaches_less_far_than_its_ball` pins both), `grow_box`
+returns only certified-free boxes, and on the one workload where the certificate
+can keep up it does win.
