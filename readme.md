@@ -144,10 +144,11 @@ D* = { v : g(v) > |v − x₀| − d }
 
 ## Higher D
 
-Three parameters decide the cost, and the right setting for each is dimensional: the **layout** (how a node
-divides), the **cut policy** (which axis a binary cut takes), and **`prune_subdiv`** (how far the redundancy proof
-may refine). The bands below are what to reach for. `Kd` and `WeightedKd` are aliases of `KdBy<Cyclic>` and
-`KdBy<Widest>`; the policy is spelled out here to keep the choice visible.
+Four parameters decide the cost, and the right setting for each is dimensional: the **layout** (how a node
+divides), the **cut policy** (which axis a binary cut takes), the **proof budget** (how far the redundancy proof
+may refine), and the **probe** (how the ascent samples a direction). The bands below are what to reach for. `Kd`,
+`WeightedKd` and `LineSearch` are aliases of `KdBy<Cyclic>`, `KdBy<Widest>` and `Search<P, Axial>`; the policy is
+spelled out here to keep the choice visible.
 
 Every certificate rests on the cell's half-diagonal `h(R) = ½√(Σ sᵢ²)`, which on the unit cube is `√D/2` — `√D`
 times its half-side. A cell is therefore `√D` harder to certify than the same cell in one dimension, the early
@@ -171,7 +172,9 @@ within noise of k-d here (×0.94 at `D = 2`, ×0.98 at `D = 3`), so there is not
 default of 8 is a two-dimensional default and is correct in this band, and `cut_must_prune` is off below `D = 4`,
 so the tree is built in full.
 
-No cut policy to choose: `Orthant` takes every axis at once, so the question does not arise.
+No cut policy to choose: `Orthant` takes every axis at once, so the question does not arise. The ascent stays
+[`LineSearch`](adaptive-distance-field/src/line_search.rs) — `D` forward differences are exact and, at `D = 2`,
+reach placement accuracy in 16 field evaluations against a randomized probe's 50.
 
 ### D ∈ [4, 12]
 
@@ -203,37 +206,67 @@ Two defaults change under you here, both deliberately:
 Pruning is never disabled and never becomes unsound — it is still attempted on every trial cell, and still only
 ever drops a primitive it has *proved* redundant. What is refused is the subdivision that would buy nothing.
 
+The ascent still stays axial: the randomized probe does not overtake finite differences until about `D = 24`, and
+below that they are both cheaper and exact.
+
 ### D ∈ [12, ∞)
 
-[`KdBy<Widest>`](adaptive-distance-field/src/adf/tree.rs) over a domain whose extents decay, and nothing else.
+[`KdBy<Widest>`](adaptive-distance-field/src/adf/tree.rs) over a
+[`Manifold`](adaptive-distance-field/src/adf/manifold.rs), bodies carrying inclusion functions, and the ascent
+sampling probes rather than axes.
 
 ```rust
-const D: usize = 20;
-// γᵢ = (i+1)^−2 — the domain box's extents are where per-axis weights live
-let gamma = Vector::<f64, D>::from_fn(|i, _| ((i + 1) as f64).powf(-2.0));
-let domain = Aabb::new(Point::from([0.0; D]), Point::from(gamma));
+const D: usize = 100;
+let m = Manifold::<f64, D>::sobolev(2.0);        // γᵢ = (i+1)^−2
+assert!(m.effective_dimension() < 2.5);          // the number that governs cost — not 100
 
-let field = ADF::<f64, D, KdBy<Widest>>::new_in(
-    domain, 2, vec![Primitive::new(sdf::boundary_box(domain))])
-  .with_prune_subdiv(1);
+// domain and walls come from the manifold together, so they cannot disagree
+let mut field: ADF<f64, D, KdBy<Widest>> = m.field(1);
+field = field.with_levels(24).with_prune_levels(4);
+
+// a body with per-axis radii, and an exact bound over any box
+let bx = field.grow_box(peak, *m.weights(), 8, 4);
+let half = bx.size() / 2.0;
+field.insert_within_reach(Reach::Box(bx), Primitive::centred(peak, body(peak, half)));
+
+// m probes per step, whatever D is
+let ascent: RandomSearch<f64, D> = Search {
+  probe: Gaussian::weighted(8, 1e-6, *m.weights()), ..Default::default()
+};
 ```
 
 This band is for **compact manifolds** — domains whose effective dimension sits far below the ambient one. On a
 cube it does not work at all, and that is information-theoretic rather than a deficiency of the tree: past
 `D ≈ 13` nothing prunes, the arenas come out as exact `2^k − 1` complete binary trees with every leaf holding
 every primitive, and clearance decays as `k^{−1/D}`, so twenty balls still leave 70% of the original clearance.
-No data structure changes that exponent.
+No data structure changes that exponent. `Manifold::effective_dimension` is the participation ratio `(Σγ)²/Σγ²`,
+and it says what the domain really costs: 2.38 at `D = 24` and 2.47 at `D = 100`, for the same decay.
 
-Weight is what works. `Widest` cuts the widest axis — the greedy move against `h`, since halving side `sᵢ` reduces
-`h²` in proportion to `sᵢ²` — so on a decaying domain the tail axes are never reached and cost tracks the number
-of axes that matter. At `D = 6` with `γᵢ = (i+1)^−2` that is build ×0.04 and memory ×0.09 against round-robin, for
-a bit-identical field, and the gain grows with the decay rate. It also makes cuts bite: under `cut_must_prune` the
-weighted tree keeps 7 487 nodes where round-robin keeps 27. Seed the field with
-[`sdf::boundary_box`](adaptive-distance-field/src/sdf.rs) over the same box — `boundary_rect` bounds the unit cube
-and would not agree with the domain.
+**Weight the cuts.** `Widest` takes the widest axis — the greedy move against `h`, since halving side `sᵢ` reduces
+`h²` in proportion to `sᵢ²` — so the tail axes are never reached. At `D = 6` with `γᵢ = (i+1)^−2` that is build
+×0.04 and memory ×0.09 against round-robin, for a bit-identical field, and it makes cuts bite: under
+`cut_must_prune` the weighted tree keeps 7 487 nodes where round-robin keeps 27.
 
-The mechanical ceiling is `max_depth × D ≤ 255` levels, the arena storing depth in a `u8`. Measured to `D = 20`
-([`tests/stress_kd.rs`](adaptive-distance-field/tests/stress_kd.rs),
+**Budget in levels, not subdivisions.** A binary layout spends `D` levels per subdivision, so the mildest setting
+of `with_prune_subdiv` is a hundred levels at `D = 100` and an undecided proof walks a binary tree that deep. Use
+[`with_levels`](adaptive-distance-field/src/adf/mod.rs) and `with_prune_levels`; single digits are normal for the
+proof.
+
+**Give bodies an inclusion function.** Without one the *certificate* limits an anisotropic body, not the geometry:
+its half-diagonal is set by the longest axis and the field's clearance by the shortest, so per-axis radii lose to
+balls by `ln 242` at `D = 100`. [`Primitive::centred`](adaptive-distance-field/src/adf/mod.rs) derives an exact
+bound for any body monotone in the componentwise distance from its centre — one evaluation at a clamped point —
+and flips that to a `ln 122` win, with the run dropping from 94.4 s to 0.6 s. `Primitive::enclosing` is the mirror
+for walls, whose field falls away from the centre; using the wrong one is unsound rather than merely loose.
+
+**Probe the ascent.** [`RandomSearch`](adaptive-distance-field/src/line_search.rs) samples `m` Gaussian directions
+instead of `D` differences. At `D = 100` that reaches placement accuracy in 50 evaluations against 410, and
+converges in 158 against 1538. Weight the covariance with the manifold's own `γ`: *isotropic* probes lose at every
+`D` above 2, so the weights are the precondition, not a refinement.
+
+Depth is a `u16`, so the ceiling is `max_depth × D ≤ 65535` levels and `with_levels` sidesteps it entirely.
+Measured to `D = 100` ([`tests/high_d.rs`](adaptive-distance-field/tests/high_d.rs),
+[`tests/probe.rs`](adaptive-distance-field/tests/probe.rs),
 [`tests/weights.rs`](adaptive-distance-field/tests/weights.rs)).
 
 ## Examples
