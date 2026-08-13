@@ -38,7 +38,7 @@ use {
 pub mod builder;
 pub mod tree;
 pub use builder::{builder, AdfBuilder, Dims, Unset};
-pub use tree::{Kd, Layout, Orthant};
+pub use tree::{CutPolicy, Cyclic, Kd, KdBy, Layout, Orthant, WeightedKd, Widest};
 /// The tree module's previous name, so existing paths keep resolving.
 pub use tree as quadtree;
 
@@ -390,10 +390,29 @@ where
   /// `init` specifies initial sdf primitives. The arena stores the budget in
   /// levels, which for [`Kd`] is `max_depth * D`.
   pub fn new(max_depth: u8, init: Vec<Primitive<_Float, D>>) -> Self {
+    Self::new_in(Aabb::unit(), max_depth, init)
+  }
+
+  /// A field over an arbitrary domain box rather than the unit cube.
+  ///
+  /// The domain's extents are where per-axis weights live: a box of extent `γ`
+  /// makes axis `i` matter in proportion to `γᵢ`, and
+  /// [`Widest`] cuts in descending `γ` so that refinement cost
+  /// follows the *effective* dimension rather than `D`. On a cube every axis
+  /// weighs the same and `Widest` is exactly [`Cyclic`].
+  ///
+  /// `init` must bound the same box — [`sdf::boundary_box`](crate::sdf::boundary_box)
+  /// over `domain`, not [`boundary_rect`](crate::sdf::boundary_rect), unless the
+  /// domain *is* the unit cube.
+  pub fn new_in(
+    domain: Aabb<_Float, D>,
+    max_depth: u8,
+    init: Vec<Primitive<_Float, D>>,
+  ) -> Self {
     let lipschitz_max = bucket_lipschitz(&init);
     let levels = (max_depth as usize * L::LEVELS_PER_SPLIT).min(u8::MAX as usize) as u8;
     Self {
-      tree: Tree::new(levels, Bucket::Leaf(init)),
+      tree: Tree::new_in(domain, levels, Bucket::Leaf(init)),
       prune_subdiv: 8,
       lipschitz_max,
       split_round: 1,
@@ -701,9 +720,14 @@ where
       None => self.tree.root().data.primitives().sdf(pixel),
     }}}
 
-impl <_Float: Real, const D: usize, L> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D, L> {
+impl <_Float: Real, const D: usize, L> crate::geometry::BoundingBox<_Float, D> for ADF<_Float, D, L>
+where
+  L: Layout<D>,
+{
+  /// The domain the field was built over — the root's cell, not necessarily the
+  /// unit cube, since [`ADF::new_in`] admits any box.
   fn bounding_box(&self) -> Aabb<_Float, D> {
-    Aabb::unit()
+    self.tree.root().rect
   }}
 
 impl <_Float: Real, const D: usize, L> Debug for ADF<_Float, D, L>

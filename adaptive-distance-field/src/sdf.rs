@@ -75,6 +75,32 @@ pub fn boundary_rect<T: Real, const D: usize>(pixel: Point<T, D>) -> T {
   -(outside + inside)
 }
 
+/// Distance to the walls of an arbitrary box, positive inside — the seed for an
+/// [`ADF`](crate::adf::ADF) whose domain is not the unit cube.
+///
+/// [`boundary_rect`] is this at [`Aabb::unit`], and the two agree bit for bit
+/// there. Anisotropic domains are how weights are expressed: a box of extent
+/// `γ` makes axis `i` matter in proportion to `γᵢ`, which is what
+/// [`Widest`](crate::adf::tree::Widest) orders its cuts by.
+///
+/// Negation preserves the constant — 1-Lipschitz.
+pub fn boundary_box<T: Real + Send + Sync + 'static, const D: usize>(
+  domain: Aabb<T, D>,
+) -> impl Fn(Point<T, D>) -> T + Copy + Send + Sync + 'static {
+  let two = T::one() + T::one();
+  let centre = domain.center();
+  let half = domain.size() / two;
+  move |pixel: Point<T, D>| {
+    // distance from the box's centre, per axis, minus that axis's half-extent
+    let q = (pixel - centre).zip_map(&half, |x, h| x.abs() - h);
+    let outside = q.map(|x| x.max(T::zero())).length();
+    let inside = q.iter()
+      .fold(T::neg_infinity(), |a, &b| a.max(b))
+      .min(T::zero());
+    -(outside + inside)
+  }
+}
+
 /// Union of two SDFs: `min(s1, s2)`.
 /// See [`Combinator::union`](crate::geometry::Combinator::union); `max(L₁, L₂)`-Lipschitz.
 #[derive(Clone, Copy, Debug)]

@@ -144,65 +144,97 @@ D* = { v : g(v) > |v − x₀| − d }
 
 ## Higher D
 
-The tree's subdivision layout is a compile-time parameter.
+Three parameters decide the cost, and the right setting for each is dimensional: the **layout** (how a node
+divides), the **cut policy** (which axis a binary cut takes), and **`prune_subdiv`** (how far the redundancy proof
+may refine). The bands below are what to reach for. `Kd` and `WeightedKd` are aliases of `KdBy<Cyclic>` and
+`KdBy<Widest>`; the policy is spelled out here to keep the choice visible.
 
-- [`Orthant`](adaptive-distance-field/src/adf/tree.rs) halves every axis at once, `2^D` children per node. It
-  exists for `D = 1..=6` only. It wins **queries** at every dimension it
-  supports, by 1.5–1.9×, its descent being `D` times shallower.
-- [`Kd`](adaptive-distance-field/src/adf/tree.rs) halves one axis per level, 2 children per
-  node. Carries no ceiling, and its **build** advantage grows with dimension: ×0.94 at `D = 3`, ×0.46 at
-  `D = 6`. One subdivision allocates 2 nodes rather than `2^D` — or a million per split at `D = 20`.
-
-So `Orthant` for query-heavy work in two or three dimensions, `Kd` above three and necessarily above six. The
-depth budget counts *full* subdivisions in either layout, which for `Kd` is `D` levels; since the arena stores
-depth in a `u8`, the mechanical ceiling is `max_depth × D ≤ 255`. Measured to `D = 20`.
-
-#### What dimension does to the proof
-
-Every certificate rests on the cell's **half-diagonal** `h(R)`, which on the unit cube is `√D/2` — that is `√D`
-times its half-side, so a cell is `√D` harder to certify than the same cell in one dimension. Two consequences,
-and neither is optional above `D ≈ 6`:
-
-- The branch-and-bound descends toward its budget instead of returning early, and that budget is
-  `prune_subdiv × D` levels under `Kd`. The default of `8` is a two-dimensional default: a *single* insertion
-  measures 6.1 s at `D = 8` and 4.4 s at `D = 10`, against 3 ms at `D = 20` with
-  [`with_prune_subdiv(1)`](adaptive-distance-field/src/adf/mod.rs).
-- From `D ≈ 4` a one-axis cut prunes nothing whatever — a ball straddling it survives on both sides, so both
-  children inherit the parent's whole bucket and both overflow again on the next insertion. Left alone the tree
-  **doubles on every insertion**: the `D ≥ 13` arenas came out as exact `2^k − 1` complete binary trees, every
-  leaf holding every primitive, 300 MiB for twenty balls.
-
-Therefore pruning is *not* disabled, and never becomes unsound — it is still attempted on every trial cell, and still only
-ever drops a primitive it has proved redundant. What is refused is the **subdivision** that would buy nothing,
-from `CUT_MUST_PRUNE_MIN_DIMS = 4` upward, which collapses a k-d field to a single fat leaf answering queries
-with exactly the primitives the deep tree would have held. Worth ×3.9 to ×75 the circles placed and 1450–12600×
-less memory. The threshold is where the covering overhead of a box against the ball its own certificate can
-actually cover, `(√D/2)^D = (D/4)^(D/2)`, passes 1 — which is exactly `D = 4`. Query-heavy work in `4..10` can
-have the deep tree back with [`with_cut_must_prune(false)`](adaptive-distance-field/src/adf/mod.rs): at `D = 6`
-that is build ×5.0 slower, query ×2.96 faster, memory ×620 larger.
-
-For why the `√D` is intrinsic to boxes rather than to Lipschitz certification, and what a ball-based hierarchical
-cover would change, see [§2.2 *Where the certificate breaks, exactly*](doc/publications/infinite_dimensions/readme.md#22-where-the-certificate-breaks-exactly)
+Every certificate rests on the cell's half-diagonal `h(R) = ½√(Σ sᵢ²)`, which on the unit cube is `√D/2` — `√D`
+times its half-side. A cell is therefore `√D` harder to certify than the same cell in one dimension, the early
+exit fires that much less often, and the branch-and-bound descends toward its budget instead of returning. That
+one fact drives all three bands. For why the `√D` is intrinsic to *boxes* rather than to Lipschitz certification,
+and what a ball-based hierarchical cover would change, see
+[§2.2 *Where the certificate breaks, exactly*](doc/publications/infinite_dimensions/readme.md#22-where-the-certificate-breaks-exactly)
 and [§6.6](doc/publications/infinite_dimensions/readme.md#66-metric-space-adf-the-structural-generalization).
 
-#### Constructing one
+### D ∈ [1, 3]
+
+[`Orthant`](adaptive-distance-field/src/adf/tree.rs), and every default as it stands.
 
 ```rust
-// Three dimensions, all axes at once: the fastest queries, and the historical layout.
-let octree = ADF::<f64, 3, Orthant>::new(6, vec![Primitive::new(sdf::boundary_rect)]);
-
-// Twenty dimensions, one axis per level — 2 full subdivisions, so 40 k-d levels.
-// Above D ≈ 6 the proof budget has to come down, or one insertion takes seconds.
-let wide = ADF::<f64, 20, Kd>::new(2, vec![Primitive::new(sdf::boundary_rect)])
-  .with_prune_subdiv(1);
-
-// Or pin one parameter at a time, in any order; `bounded` seeds the domain walls for you.
-let field = adf::builder().f64().dims::<6>().kd().prune_subdiv(1).bounded(3);
-
-// Keep the deep tree in a middling dimension, paying build to save query.
-let deep = ADF::<f64, 6, Kd>::new(2, vec![Primitive::new(sdf::boundary_rect)])
-  .with_cut_must_prune(false);
+let field = ADF::<f64, 3, Orthant>::new(6, vec![Primitive::new(sdf::boundary_rect)]);
 ```
+
+`Orthant` halves every axis at once, `2^D` children per node, so its descent is `D` times shallower than a binary
+tree's and it wins **queries** by 1.5–1.8× — 35.9 ms against 65.8 ms at `D = 2` over 300 000 queries. Builds are
+within noise of k-d here (×0.94 at `D = 2`, ×0.98 at `D = 3`), so there is nothing to trade away. `prune_subdiv`'s
+default of 8 is a two-dimensional default and is correct in this band, and `cut_must_prune` is off below `D = 4`,
+so the tree is built in full.
+
+No cut policy to choose: `Orthant` takes every axis at once, so the question does not arise.
+
+### D ∈ [4, 12]
+
+[`KdBy<Cyclic>`](adaptive-distance-field/src/adf/tree.rs) on a cube, `KdBy<Widest>` if the domain is not one, and
+`prune_subdiv` down to 1–3.
+
+```rust
+let field = ADF::<f64, 8, KdBy<Cyclic>>::new(2, vec![Primitive::new(sdf::boundary_rect)])
+  .with_prune_subdiv(2);
+```
+
+`Orthant` stops being *constructible* past `D = 6` — `Branching` supplies `[T; 2^D]` arrays for `D = 1..=6` only —
+and stops being affordable before that: at `D = 6` its 64-way fan-out takes 2.355 s to build where the binary
+layout takes 209 ms. One subdivision allocates 2 nodes rather than `2^D`.
+
+Two defaults change under you here, both deliberately:
+
+- **`cut_must_prune` turns on at `D = 4`.** A one-axis cut prunes nothing once a ball straddling it survives on
+  both sides: both children inherit the parent's whole bucket, both overflow again, and the tree doubles on every
+  insertion. Refusing such a cut keeps one fat leaf instead, answering queries with exactly the primitives the
+  deep tree would have held — worth ×3.9 to ×75 the circles placed and 1450–12600× less memory. Query-heavy work
+  can buy the deep tree back with [`with_cut_must_prune(false)`](adaptive-distance-field/src/adf/mod.rs): at
+  `D = 6` that is build ×5.0 slower, query ×2.96 faster, memory ×620 larger. The threshold of 4 is where the
+  covering overhead of a box against the ball its own certificate covers, `(√D/2)^D = (D/4)^(D/2)`, passes 1.
+- **`prune_subdiv = 8` becomes unusable.** The budget is `prune_subdiv × D` levels for a binary layout, and a
+  *single* insertion measures 6.1 s at `D = 8` and 4.4 s at `D = 10`, against 3 ms at `D = 20` with
+  [`with_prune_subdiv(1)`](adaptive-distance-field/src/adf/mod.rs).
+
+Pruning is never disabled and never becomes unsound — it is still attempted on every trial cell, and still only
+ever drops a primitive it has *proved* redundant. What is refused is the subdivision that would buy nothing.
+
+### D ∈ [12, ∞)
+
+[`KdBy<Widest>`](adaptive-distance-field/src/adf/tree.rs) over a domain whose extents decay, and nothing else.
+
+```rust
+const D: usize = 20;
+// γᵢ = (i+1)^−2 — the domain box's extents are where per-axis weights live
+let gamma = Vector::<f64, D>::from_fn(|i, _| ((i + 1) as f64).powf(-2.0));
+let domain = Aabb::new(Point::from([0.0; D]), Point::from(gamma));
+
+let field = ADF::<f64, D, KdBy<Widest>>::new_in(
+    domain, 2, vec![Primitive::new(sdf::boundary_box(domain))])
+  .with_prune_subdiv(1);
+```
+
+This band is for **compact manifolds** — domains whose effective dimension sits far below the ambient one. On a
+cube it does not work at all, and that is information-theoretic rather than a deficiency of the tree: past
+`D ≈ 13` nothing prunes, the arenas come out as exact `2^k − 1` complete binary trees with every leaf holding
+every primitive, and clearance decays as `k^{−1/D}`, so twenty balls still leave 70% of the original clearance.
+No data structure changes that exponent.
+
+Weight is what works. `Widest` cuts the widest axis — the greedy move against `h`, since halving side `sᵢ` reduces
+`h²` in proportion to `sᵢ²` — so on a decaying domain the tail axes are never reached and cost tracks the number
+of axes that matter. At `D = 6` with `γᵢ = (i+1)^−2` that is build ×0.04 and memory ×0.09 against round-robin, for
+a bit-identical field, and the gain grows with the decay rate. It also makes cuts bite: under `cut_must_prune` the
+weighted tree keeps 7 487 nodes where round-robin keeps 27. Seed the field with
+[`sdf::boundary_box`](adaptive-distance-field/src/sdf.rs) over the same box — `boundary_rect` bounds the unit cube
+and would not agree with the domain.
+
+The mechanical ceiling is `max_depth × D ≤ 255` levels, the arena storing depth in a `u8`. Measured to `D = 20`
+([`tests/stress_kd.rs`](adaptive-distance-field/tests/stress_kd.rs),
+[`tests/weights.rs`](adaptive-distance-field/tests/weights.rs)).
 
 ## Examples
 

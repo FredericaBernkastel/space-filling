@@ -285,3 +285,181 @@ fn climb<const D: usize>(
       "the field moved at {p:?}: {} against {}", fat.sdf(p), deep.sdf(p));
   }
 }
+
+/// Every node's depth, cell and occupancy in traversal order — a structural
+/// fingerprint, strictly stronger than agreeing on the field.
+fn fingerprint<const D: usize, L: tree::Layout<D>>(
+  f: &ADF<f64, D, L>,
+) -> Vec<(u8, [u64; D], [u64; D], usize)> {
+  let mut out = vec![];
+  f.tree.traverse(&mut |n| {
+    out.push((
+      n.depth,
+      std::array::from_fn(|a| n.rect.min[a].to_bits()),
+      std::array::from_fn(|a| n.rect.max[a].to_bits()),
+      n.data.len(),
+    ));
+    Ok(())
+  }).ok();
+  out
+}
+
+fn pack_cube<const D: usize, L: tree::Layout<D>>(subdiv: u32) -> ADF<f64, D, L>
+where
+  L::Children<tree::Split<Bucket<f64, D>, D, L>>: Send,
+{
+  let mut field = ADF::<f64, D, L>::new(3, vec![Primitive::new(sdf::boundary_rect)])
+    // forced off, or D = 5 collapses to a single leaf and the comparison is vacuous
+    .with_cut_must_prune(false)
+    .with_prune_subdiv(subdiv);
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0xB0A);
+  for _ in 0..40 {
+    let c = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.2..0.8)));
+    field.insert_within(c, 0.06, Primitive::new(ball(c, 0.06)));
+  }
+  field
+}
+
+/// On a cube the widest axis is whichever was cut least recently, so [`Widest`]
+/// walks `0, 1, .., D-1` and back — exactly [`Cyclic`].
+///
+/// Pinned on the schedule itself, and on the tree only while the proof is barred
+/// from refining, because with `prune_subdiv > 0` the *trees* legitimately
+/// diverge: [`sdf_geq_everywhere_in`] subdivides through the same [`Layout`], and
+/// the box it starts from is the node's cell — which is not a cube at any depth
+/// that is not a multiple of `D`. [`Widest`] cuts those along their longest axis,
+/// so the proofs land differently and prune differently. That is a gain, not a
+/// discrepancy: it is the same greedy reduction of `h` applied to the branch and
+/// bound. What can never differ is the field, pruning being sound either way.
+#[test] fn widest_reduces_to_cyclic_on_a_cube() {
+  const D: usize = 5;
+
+  // the schedule proper, level for level over three full rounds
+  let mut cell = Aabb::<f64, D>::unit();
+  for depth in 0..3 * D as u8 {
+    let w = <Widest as CutPolicy<D>>::axis(&cell, depth);
+    assert_eq!(w, <Cyclic as CutPolicy<D>>::axis(&cell, depth),
+      "the cut schedules part company at depth {depth}");
+    cell.max[w] = cell.center()[w];
+  }
+
+  // with the proof unable to refine, the trees are identical node for node
+  let (cyclic, widest) = (pack_cube::<D, Kd>(0), pack_cube::<D, WeightedKd>(0));
+  assert!(cyclic.tree.node_count() > 100, "the comparison needs a real tree");
+  let (a, b) = (fingerprint(&cyclic), fingerprint(&widest));
+  if let Some((i, (x, y))) = a.iter().zip(&b).enumerate().find(|(_, (x, y))| x != y) {
+    let cell = |v: &[u64; D]| v.map(f64::from_bits);
+    panic!("node {i} of {} differs
+  cyclic depth {} {:?}..{:?} len {}
+  widest depth {} {:?}..{:?} len {}",
+      a.len().min(b.len()),
+      x.0, cell(&x.1), cell(&x.2), x.3,
+      y.0, cell(&y.1), cell(&y.2), y.3);
+  }
+  assert_eq!(a.len(), b.len(), "same cells, different node counts");
+
+  // let the proof refine and the trees may part; the field still may not
+  let (cyclic, widest) = (pack_cube::<D, Kd>(2), pack_cube::<D, WeightedKd>(2));
+  let mut rng = rand_pcg::Pcg64::seed_from_u64(0x5EED);
+  for _ in 0..2000 {
+    let p = Point::from(Vector::<f64, D>::from_fn(|_, _| rng.random_range(0.0..1.0)));
+    assert_eq!(cyclic.sdf(p).to_bits(), widest.sdf(p).to_bits(),
+      "the field moved at {p:?}");
+  }
+}
+
+/// The whole point: on an elongated domain the cuts go where the diameter is,
+/// spending four levels on the long axis before touching either short one.
+#[test] fn widest_spends_its_cuts_on_the_long_axis() {
+  const D: usize = 3;
+  let mut cell = Aabb::new(Point::from([0.0; D]), Point::from([8.0, 1.0, 1.0]));
+  let mut schedule = vec![];
+  for depth in 0..7u8 {
+    let a = <Widest as CutPolicy<D>>::axis(&cell, depth);
+    schedule.push(a);
+    cell.max[a] = cell.center()[a];
+  }
+  // 8 → 4 → 2 → 1 on axis 0 (the last of those a tie it wins by index), then the
+  // two short axes, then round-robin again now that the box is a cube
+  assert_eq!(schedule, vec![0, 0, 0, 0, 1, 2, 0]);
+
+  // Cyclic is indifferent to all of that
+  let cyclic: Vec<_> = (0..7u8)
+    .map(|d| <Cyclic as CutPolicy<D>>::axis(&cell, d))
+    .collect();
+  assert_eq!(cyclic, vec![0, 1, 2, 0, 1, 2, 0]);
+}
+
+/// An anisotropic domain needs its walls to match, or the seed field bounds the
+/// wrong box.
+#[test] fn a_domain_box_bounds_itself() {
+  const D: usize = 3;
+  let domain = Aabb::new(Point::from([0.0; D]), Point::from([8.0, 1.0, 1.0]));
+  let walls = sdf::boundary_box(domain);
+  let field = ADF::<f64, D, WeightedKd>::new_in(domain, 2, vec![Primitive::new(walls)]);
+
+  assert_eq!(field.tree.root().rect.min, domain.min);
+  assert_eq!(field.tree.root().rect.max, domain.max);
+  // the centre of the long box is half a unit from the near walls, not four
+  assert!((field.sdf(Point::from([4.0, 0.5, 0.5])) - 0.5).abs() < 1e-12);
+  assert!(field.sdf(Point::from([0.02, 0.5, 0.5])) > 0.0, "just inside");
+  assert!(field.sdf(Point::from([-0.5, 0.5, 0.5])) < 0.0, "outside the near wall");
+
+  // and it agrees with `boundary_rect` when the box *is* the unit cube
+  let unit = sdf::boundary_box(Aabb::<f64, D>::unit());
+  for p in [[0.5; D], [0.1, 0.9, 0.5], [0.0; D], [1.5, 0.2, 0.2]] {
+    let p = Point::from(p);
+    assert_eq!(unit(p).to_bits(), sdf::boundary_rect(p).to_bits());
+  }
+}
+
+/// A field over a non-cubic domain is still the exact `min` over everything
+/// inserted, checked against brute force rather than against another tree.
+///
+/// The descent used to start from `Aabb::unit()` whatever the root actually was,
+/// so every anisotropic domain silently resolved to the wrong leaf: 44 627 of
+/// 200 000 probes wrong, by as much as 0.1. Two trees compared against each other
+/// would not have caught it — both were wrong — which is why this one is pinned
+/// against the primitives themselves.
+#[test] fn an_anisotropic_domain_reads_exactly() {
+  const D: usize = 3;
+  fn check<L: tree::Layout<D>>(extents: [f64; D])
+  where
+    L::Children<tree::Split<Bucket<f64, D>, D, L>>: Send,
+  {
+    let dom = Aabb::new(Point::from([0.0; D]), Point::from(extents));
+    let walls = sdf::boundary_box(dom);
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(7);
+    let balls: Vec<_> = (0..30)
+      .map(|_| {
+        let c = Point::from(Vector::<f64, D>::from_fn(|i, _| {
+          (0.15 + rng.random_range(0.0..0.7)) * dom.size()[i]
+        }));
+        (c, rng.random_range(0.01..0.03))
+      })
+      .collect();
+
+    let mut field = ADF::<f64, D, L>::new_in(dom, 3, vec![Primitive::new(walls)])
+      .with_prune_subdiv(2)
+      .with_cut_must_prune(false);
+    for &(c, r) in &balls {
+      field.insert_within(c, r, Primitive::new(ball(c, r)));
+    }
+
+    let mut rng = rand_pcg::Pcg64::seed_from_u64(99);
+    for _ in 0..20_000 {
+      let p = Point::from(
+        Vector::<f64, D>::from_fn(|i, _| rng.random_range(0.0..1.0) * dom.size()[i]));
+      let truth = balls.iter()
+        .fold(walls(p), |acc, &(c, r)| acc.min((p - c).length() - r));
+      assert!((field.sdf(p) - truth).abs() < 1e-12,
+        "{} on {extents:?}: {} against a true {truth} at {p:?}",
+        L::NAME, field.sdf(p));
+    }
+  }
+  for extents in [[1.0, 1.0, 1.0], [1.0, 0.5, 0.25], [1.0, 0.1, 0.02]] {
+    check::<Kd>(extents);
+    check::<WeightedKd>(extents);
+    check::<tree::Orthant>(extents);
+  }
+}

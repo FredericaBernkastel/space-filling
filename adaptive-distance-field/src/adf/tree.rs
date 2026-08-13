@@ -1,15 +1,20 @@
-//! Region tree over the unit hypercube `[0, 1]^DIMS`, backed by a flat arena,
-//! in one of two **compile-time** subdivision layouts.
+//! Region tree over a box — the unit hypercube `[0, 1]^DIMS` by default, or any
+//! [`Aabb`] through [`Tree::new_in`] — backed by a flat arena, in one of three
+//! **compile-time** subdivision layouts.
 //!
 //! | layout | children per node | levels per full split | ceiling on `DIMS` |
 //! |---|---|---|---|
 //! | [`Orthant`] | `2^DIMS` | 1 | 6 |
 //! | [`Kd`] | 2 | `DIMS` | none |
+//! | [`WeightedKd`] | 2 | `DIMS` (an upper bound) | none |
 //!
 //! [`Orthant`] splits every axis at once — a quadtree at `DIMS = 2`, an octree
 //! at `DIMS = 3` — and is the historical layout. [`Kd`] splits a single axis per
 //! level, cycling `depth % DIMS`, so its branching factor is 2 in every
-//! dimension. Both reach the same cell sizes; they differ in how many nodes and
+//! dimension. [`WeightedKd`] is [`Kd`] cutting the *widest* axis instead, which
+//! on an anisotropic domain spends its cuts where the diameter is and leaves the
+//! short axes alone; on a cube the two are the same tree. Both reach the same cell
+//! sizes as [`Orthant`]; they differ in how many nodes and
 //! how much per-node work it takes to get there, which is what makes the choice
 //! matter as `DIMS` grows (see `tests/layout.rs`).
 //!
@@ -104,14 +109,83 @@ pub trait Layout<const DIMS: usize> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Orthant;
 
-/// Splits one axis per level, cycling `depth % DIMS`: 2 children per node,
-/// `DIMS` levels per full split.
+/// Which axis a binary cut halves.
+///
+/// The certificate clears a cell when the centre margin covers
+/// `(L_f + L_g)·h(R)`, and `h(R) = ½√(Σ sᵢ²)`, so halving side `sᵢ` buys a
+/// reduction proportional to `sᵢ²`. Cutting the *widest* axis is therefore the
+/// greedy move against the only quantity the proof cares about, and on a domain
+/// whose extents encode weights it is the same rule as "cut in descending γ".
+pub trait CutPolicy<const DIMS: usize> {
+  const NAME: &'static str;
+  /// The axis to halve, for the cell `rect` at `depth`. Takes the cell rather
+  /// than its extent so that a policy ignoring geometry costs literally nothing:
+  /// computing `rect.size()` for [`Cyclic`] to discard measured real time.
+  fn axis<F: Real>(rect: &Aabb<F, DIMS>, depth: u8) -> usize;
+}
+
+/// Round-robin `depth % DIMS`, indifferent to extent.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Cyclic;
+
+/// Descending weight: the widest axis, ties to the lowest index.
+///
+/// On a cube this *is* [`Cyclic`] — sides start equal, so the argmax picks axis
+/// 0, then 1 once axis 0 is short, and so on, returning to 0 exactly when every
+/// axis has been halved once. The two produce identical trees there, which
+/// `widest_reduces_to_cyclic_on_a_cube` pins.
+///
+/// On an anisotropic domain the tail axes are never reached: the proof succeeds
+/// while they still contribute nothing to `h`, so levels-to-certify tracks the
+/// number of *significant* axes rather than `DIMS`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Widest;
+
+impl<const DIMS: usize> CutPolicy<DIMS> for Cyclic {
+  const NAME: &'static str = "k-d";
+  #[inline]
+  fn axis<F: Real>(_rect: &Aabb<F, DIMS>, depth: u8) -> usize {
+    cut_axis::<DIMS>(depth)
+  }
+}
+
+impl<const DIMS: usize> CutPolicy<DIMS> for Widest {
+  const NAME: &'static str = "k-d widest";
+  #[inline]
+  fn axis<F: Real>(rect: &Aabb<F, DIMS>, _depth: u8) -> usize {
+    const { assert!(DIMS > 0, "Kd needs at least one axis to cut") }
+    let (mut best, mut longest) = (0, rect.max[0] - rect.min[0]);
+    // strictly greater, so equal extents resolve to the lowest index — the tie
+    // rule that makes a cube reproduce `depth % DIMS`
+    for a in 1..DIMS {
+      let len = rect.max[a] - rect.min[a];
+      if len > longest {
+        best = a;
+        longest = len;
+      }
+    }
+    best
+  }
+}
+
+/// A binary tree cutting one axis per level, choosing that axis by `P`.
+///
+/// Spell it [`Kd`] for round-robin cuts or [`WeightedKd`] for weight-ordered
+/// ones; both are aliases of this.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KdBy<P>(PhantomData<P>);
+
+/// [`KdBy`] cutting axes round-robin, `depth % DIMS`: 2 children per node,
+/// `DIMS` levels per full split — the historical `Kd`.
 ///
 /// Reaches the same cell sizes as [`Orthant`] while allocating only the cells a
 /// descent actually enters, and carries no ceiling on `DIMS`, since it needs no
 /// `2^DIMS`-sized array.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Kd;
+pub type Kd = KdBy<Cyclic>;
+
+/// [`KdBy`] cutting the widest axis first, so cost follows the effective
+/// dimension of an anisotropic domain rather than its ambient one.
+pub type WeightedKd = KdBy<Widest>;
 
 impl<const DIMS: usize> Layout<DIMS> for Orthant
 where
@@ -147,10 +221,14 @@ where
   }
 }
 
-impl<const DIMS: usize> Layout<DIMS> for Kd {
+impl<P: CutPolicy<DIMS>, const DIMS: usize> Layout<DIMS> for KdBy<P> {
   const CHILDREN: usize = 2;
+  /// Levels to halve every axis once. Under [`Widest`] on an anisotropic domain
+  /// a round may spend several cuts on one long axis and never reach a short
+  /// one, so this is a conservative *upper* bound there rather than an exact
+  /// count — budgets derived from it stay at least as large as they are today.
   const LEVELS_PER_SPLIT: usize = DIMS;
-  const NAME: &'static str = "k-d";
+  const NAME: &'static str = P::NAME;
   const CARRY_CELL: bool = true;
   type Children<T> = [T; 2];
 
@@ -162,7 +240,7 @@ impl<const DIMS: usize> Layout<DIMS> for Kd {
   /// Child 0 is the lower half along the cut axis, child 1 the upper.
   #[inline]
   fn child_rect<F: Real>(rect: Aabb<F, DIMS>, depth: u8, i: usize) -> Aabb<F, DIMS> {
-    let a = cut_axis::<DIMS>(depth);
+    let a = P::axis(&rect, depth);
     let mid = rect.center()[a];
     let mut out = rect;
     if i == 0 { out.max[a] = mid } else { out.min[a] = mid }
@@ -171,7 +249,7 @@ impl<const DIMS: usize> Layout<DIMS> for Kd {
 
   #[inline]
   fn child_index<F: Real>(rect: &Aabb<F, DIMS>, depth: u8, pt: &Point<F, DIMS>) -> usize {
-    let a = cut_axis::<DIMS>(depth);
+    let a = P::axis(rect, depth);
     (pt[a] >= rect.center()[a]) as usize
   }
 }
@@ -314,8 +392,20 @@ where
   /// A tree with a single root node covering the unit hypercube. `max_depth` is
   /// in tree *levels*; see [`Layout::LEVELS_PER_SPLIT`].
   pub fn new(max_depth: u8, init: Data) -> Self {
+    Self::new_in(Aabb::unit(), max_depth, init)
+  }
+
+  /// A tree over an arbitrary root box. `max_depth` is in tree *levels*; see
+  /// [`Layout::LEVELS_PER_SPLIT`].
+  ///
+  /// The domain's extents are the only place per-axis weights live: a root of
+  /// extent `γ` makes axis `i` matter in proportion to `γᵢ`, which
+  /// [`Widest`] reads to cut in descending weight. Seed the field with
+  /// [`boundary_box`](crate::sdf::boundary_box) over the same box, or the walls
+  /// will not agree with the domain.
+  pub fn new_in(domain: Aabb<_Float, DIMS>, max_depth: u8, init: Data) -> Self {
     let root = Node {
-      rect: Aabb::unit(),
+      rect: domain,
       depth: 0,
       data: init,
       children: None,
@@ -377,18 +467,22 @@ where
   }
 
   /// The smallest node containing `pt`, or `None` if `pt` lies outside the root
-  /// hypercube (including NaN coordinates). Descent is [`Layout::child_index`],
+  /// cell (including NaN coordinates). Descent is [`Layout::child_index`],
   /// which matches the half-open child cells exactly.
   pub fn pt_to_node(&self, pt: Point<_Float, DIMS>) -> Option<&Node<Data, _Float, DIMS>> {
-    if !Aabb::unit().contains(&pt) {
+    // Borrowed, not copied: the read-rect descent never needs the root's cell
+    // again, and copying `2·DIMS` floats per query costs real time at DIMS = 6.
+    if !self.root().rect.contains(&pt) {
       return None;
     }
     let mut idx = 0usize;
     if L::CARRY_CELL {
-      // The root's cell is the unit hypercube by construction and every child
-      // cell follows from its parent's, so the walk halves a local copy and never
-      // loads a rect — touching four bytes per level instead of a whole node.
-      let mut cell = Aabb::unit();
+      // Every child cell follows from its parent's, so the walk halves a local
+      // copy from the root's own cell and never loads a rect — touching four
+      // bytes per level instead of a whole node. It must start from the root's
+      // rect rather than the unit cube: `new_in` admits any domain, and starting
+      // elsewhere silently descends into the wrong leaf.
+      let mut cell = self.root().rect;
       let mut depth = 0u8;
       while let Some(first) = self.links[idx] {
         let child = L::child_index(&cell, depth, &pt);

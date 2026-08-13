@@ -439,3 +439,86 @@ balls with 300 000 queries the policy is build ×5.0 faster (1.004 s → 199 ms)
 ×2.96 slower (81.5 ms → 241 ms) and memory ×620 smaller (2.3 MiB → 3.7 KiB). Net
 positive here, and negative past roughly 1.5 M queries, since a fat leaf trades an
 `O(1)` descent for an `O(n)` bucket scan. Hence a setter and not only a constant.
+
+## Weight-ordered axes
+
+Roadmap step 2 of `doc/publications/infinite_dimensions`: subdivide in descending
+weight, so cost follows the *effective* dimension rather than the ambient one.
+
+### Added
+
+| API | Meaning |
+|---|---|
+| `Tree::new_in`, `ADF::new_in` | a field over an arbitrary domain box, not only the unit cube |
+| `sdf::boundary_box(domain)` | the walls of that box; `boundary_rect` is this at `Aabb::unit()`, bit for bit |
+| `tree::CutPolicy<DIMS>` | which axis a binary cut halves, given the cell and its depth |
+| `tree::Cyclic`, `tree::Widest` | round-robin `depth % DIMS`, and the widest axis |
+| `tree::KdBy<P>` | the binary layout, parameterised by the policy |
+| `tree::WeightedKd` | `KdBy<Widest>` |
+
+`Kd` is now `KdBy<Cyclic>` — a type alias, so every existing `ADF<f64, 6, Kd>`
+still compiles and behaves identically.
+
+Weights are the domain box's extents. A root of extent `γ` makes axis `i` matter
+in proportion to `γᵢ`, which is the ellipsoid `Ωₐ` of §2.3 in axis-aligned
+clothing, and needs no state threaded through `Layout`: `child_rect` and
+`child_index` already receive the cell.
+
+`CutPolicy::axis` takes the *cell*, not its extent. Passing `rect.size()` cost
+`Cyclic` a vector subtraction per descent step that it then discarded — worth
+×1.6 on the `D = 2` k-d build before it was removed.
+
+### The mechanism
+
+The certificate clears a cell when the margin covers `(L_f + L_g)·h(R)`, and
+`h = ½√(Σ sᵢ²)`, so halving side `sᵢ` buys a reduction proportional to `sᵢ²`.
+Cutting the widest axis is the greedy move against the only quantity the proof
+reads. On a cube it *is* round-robin — sides start equal, so the argmax walks
+`0, 1, .., D-1` and back — and `widest_reduces_to_cyclic_on_a_cube` pins the
+schedule level for level, plus the trees node for node while the proof is barred
+from refining.
+
+Barred, because with `prune_subdiv > 0` the trees legitimately diverge even on a
+cube: `sdf_geq_everywhere_in` subdivides through the same `Layout`, and the box it
+starts from is the node's cell, which is *not* a cube at any depth that is not a
+multiple of `D`. `Widest` cuts those along their longest axis too. That is an
+unlooked-for second helping of the same idea — the roadmap only claimed the
+domain — and it is why the `s = 0` control below is not exactly ×1.00.
+
+### Measurements
+
+`tests/weights.rs`, `D = 6`, 500 insertions, `γᵢ = (i+1)^(−s)`. Ratios are
+weight-ordered ÷ round-robin, so below 1.0 the policy wins.
+
+| s | build | query | nodes | memory |
+|---:|---:|---:|---:|---:|
+| 0.0 (cube) | ×0.99 | ×1.33 | ×0.97 | ×0.98 |
+| 0.5 | ×0.90 | ×0.93 | ×1.00 | ×0.98 |
+| 1.0 | ×0.61 | ×0.97 | ×0.93 | ×0.81 |
+| **2.0** | **×0.04** | ×0.63 | ×0.18 | **×0.09** |
+
+At `s = 2` — the paper's `log N(10⁻²) ≈ 10` row — that is 30.4 s and 122 MiB
+against 1.2 s and 11.3 MiB, for the same 500 balls and a bit-identical field. The
+gain is monotone in the decay rate, which is the claim: cost tracks the number of
+axes that matter. Round-robin gets *worse* from `s = 1` to `s = 2` (9.1 s → 30.4 s)
+because it keeps spending `D-1` of every `D` cuts on axes already too short to
+matter, while weight-ordered cuts get monotonically better (5.5 s → 1.2 s).
+
+**It also makes cuts bite.** The prediction was that weight-ordered cuts would
+survive `cut_must_prune`, which at `D = 6` refuses a division that prunes nothing.
+Nodes surviving with the policy on: at `s = 1`, 14 671 round-robin against 59 197
+weight-ordered; at `s = 2`, **27 against 7 487**. Round-robin collapses to
+essentially nothing; weight-ordered keeps a real tree.
+
+### Fixed
+
+**`pt_to_node` hardcoded the unit cube**, in the containment test and as the
+carry-cell descent's starting cell, so every domain that was not `[0,1]^D`
+silently resolved to the wrong leaf: 44 627 of 200 000 probes wrong, by up to 0.1,
+under *both* layouts. Comparing two trees against each other would never have
+caught it — they were both wrong — so `an_anisotropic_domain_reads_exactly` checks
+against brute-force `min` over the primitives instead, across three aspect ratios
+and all three layouts.
+
+`BoundingBox for ADF` likewise returned `Aabb::unit()` regardless of the tree, and
+now returns the root's cell.
