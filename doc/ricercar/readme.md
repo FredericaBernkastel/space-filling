@@ -429,9 +429,7 @@ grid scan at verification depth finds a best remaining clearance of **−0.0104*
 
 **Three things this does not deliver.**
 
-*The subject is not Bach's.* The roadmap names BWV 867 and the code uses a labelled stand-in with the right
-character — slow, stepwise, spanning a fourth. Writing out a subject from memory and calling it Bach would be a
-fabrication in a document that is otherwise measured. Swapping in the real notes is a change to one array.
+*The subject was not Bach's, and now is.* See §7.5.
 
 *Two points are not a decay curve.* §6.1 promised a capacity *exponent*, and a sequence of length two cannot give
 one. Whatever else changes, the texture has to admit enough entries for `d_k` to have a slope.
@@ -440,6 +438,48 @@ one. Whatever else changes, the texture has to admit enough entries for `d_k` to
 this run forbids very nearly everything a real fugue does. Capacity is acutely sensitive to a number §7.3 already
 flagged as unprincipled. **Step 5 is blocked on that**: a corpus comparison run at an arbitrary threshold measures
 the threshold, not the subjects, and would produce a ranking that looks like a result and is not one.
+
+### 7.5 The real subject, and two things it broke
+
+A score of BWV 867 in MusicXML settled the transcription that no prose analysis would. The prelude is 24 bars and
+the fugue 75, which is exactly the file's 99, so fugue bar 1 is file measure 25:
+
+| # | pitch | cents from B♭4 | duration |
+|---:|---|---:|---|
+| 1 | B♭4 | 0 | half |
+| 2 | F4 | **−500** | half |
+| — | *rest* | | quarter |
+| 3 | G♭5 | **+800** | quarter |
+| 4 | F5 | +700 | quarter |
+| 5 | E♭5 | +500 | quarter |
+| 6 | D♭5 | +300 | quarter |
+
+Every prose claim checks against it. F4 to G♭5 is 13 semitones — the minor ninth, upward, between the second and
+third sounding notes. The quarter rest opening bar 2 is the rhetorical pause. The limbs are B♭–F and the
+descending tail the episodes are built on. D♭ is the minor third altered to major five times.
+
+**And the opening falls a fourth.** Reading the quoted "B♭–F–G♭" as ascending — the natural reading, and the one
+memory supplies — inverts the subject's whole shape. That is why it was worth refusing to guess.
+
+**The real subject broke the search, and the safety net caught it.** The longer subject took the window from 3.2 s
+to 7 s, and the greedy search placed *zero* entries while the independent grid scan still found a legal placement
+at 712 cents and 0.21 s. The design was wrong: the search ran on the *certified* field, which is a **lower** bound,
+and a loose lower bound is negative everywhere. A search wants an optimistic guide with a sound verification
+behind it, not a sound bound in front of it. Fixed by guiding with the sampled minimum and certifying only the
+placement chosen.
+
+Worth recording what the grid found in that broken run: **a perfect fifth**, which is what a fugal answer is. The
+model has no notion of tonality and picked the interval Bach picks.
+
+**Capacity is 1 answer at `θ = 0.30`, and Bach fits five.** Stretto II puts five entries inside two bars. So the
+threshold is not merely unprincipled, it is *wrong*, and §7.4's blocker now has its calibration:
+
+> `θ` must be at least large enough that BWV 867's own Stretto II certifies as legal.
+
+That is principled rather than tuned — Bach's five-voice hyperstretto is by construction acceptable counterpoint,
+so a threshold rejecting it is wrong about music rather than about the passage. And it falsifies in both
+directions: if no plausible `θ` admits that texture under a roughness model, the *model* is inadequate, which
+would itself be the finding.
 
 ---
 

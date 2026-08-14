@@ -413,16 +413,40 @@ fn step3(timbre: &Timbre) {
   step4(timbre);
 }
 
-/// A slow stepwise subject spanning a fourth, in the *manner* of BWV 867.
+/// The subject of BWV 867, read from the score.
 ///
-/// **Not a transcription.** The roadmap names WTC I No. 22 as the benchmark, and
-/// its real subject should be entered here — but writing one out from memory and
-/// labelling it Bach would be a fabrication in a document that is otherwise
-/// measured, so this is a labelled stand-in with the right character: slow, mostly
-/// stepwise, narrow in range. Swapping in the real notes is a change to this one
-/// array and nothing else.
-const SUBJECT_867ISH: [(f64, f64); 5] =
-  [(0.0, 0.4), (200.0, 0.2), (300.0, 0.2), (500.0, 0.4), (300.0, 0.4)];
+/// `(offset in quarters, cents from B♭4, duration in quarters)`. Transcribed from
+/// `BWV_0867/BWV_0867.xml`, fugue bars 1–3 — file measures 25–27, since the
+/// prelude's 24 bars precede it and 24 + 75 = 99 is the file's length.
+///
+/// ```text
+/// B♭4 half | F4 half | (quarter rest) G♭5 F5 E♭5 | D♭5
+/// ```
+///
+/// Everything the prose analyses claim is visible in it. F4 to G♭5 is **13
+/// semitones** — the minor ninth, upward, between the second and third sounding
+/// notes. The quarter rest opening bar 2 is the "rhetorical pause". The two limbs
+/// are B♭–F and the descending tail G♭–F–E♭–D♭, which is the material the
+/// episodes are built on. D♭ is the minor third that gets altered to major five
+/// times. And the opening falls a *fourth*: reading the quoted "B♭–F–G♭" as
+/// ascending, which is the natural reading, would have got that wrong.
+const SUBJECT_867: [(f64, f64, f64); 6] = [
+  (0.0, 0.0, 2.0),     // B♭4  half
+  (2.0, -500.0, 2.0),  // F4   half
+  //  quarter rest — the rhetorical pause
+  (5.0, 800.0, 1.0),   // G♭5  quarter  <- a minor ninth above the F
+  (6.0, 700.0, 1.0),   // F5   quarter
+  (7.0, 500.0, 1.0),   // E♭5  quarter
+  (8.0, 300.0, 1.0),   // D♭5  quarter
+];
+
+/// Seconds per quarter. The piece is slow; this is brisk enough to keep the
+/// certified time window affordable.
+const QUARTER: f64 = 0.30;
+
+fn subject_867_seconds() -> Vec<(f64, f64, f64)> {
+  SUBJECT_867.iter().map(|&(o, c, d)| (o * QUARTER, c, d * QUARTER)).collect()
+}
 
 fn interval_name(cents: f64) -> &'static str {
   let c = ((cents % 1200.0) + 1200.0) % 1200.0;
@@ -446,14 +470,14 @@ fn interval_name(cents: f64) -> &'static str {
 fn step4(timbre: &Timbre) {
   const THETA_PAIR: f64 = 0.30;
   const ATTACK: f64 = 0.020;
-  const WIN: (f64, f64) = (0.0, 3.2);
+  const WIN: (f64, f64) = (0.0, 7.0);
 
   println!("\n\n===== step 4: contrapuntal capacity =====");
-  println!("\n   subject: 5 notes, stepwise, spanning a fourth — in the manner of");
-  println!("   BWV 867 but NOT a transcription (see the source comment)\n");
+  println!("\n   subject: BWV 867, read from the score — 6 notes over 9 quarters,");
+  println!("   falling a fourth then leaping a minor ninth, with the rest\n");
 
   let mut setup = capacity::Setup {
-    subject: SUBJECT_867ISH.to_vec(),
+    subject: subject_867_seconds(),
     theta_pair: THETA_PAIR,
     attack: ATTACK,
     timbre: timbre.clone(),
@@ -478,7 +502,7 @@ fn step4(timbre: &Timbre) {
     scale.cents_per_unit, scale.secs_per_unit * 1e3);
 
   let placed = capacity::capacity(
-    &setup, (0.0, 1200.0), (0.15, 1.30), &scale, 10, 9, 15);
+    &setup, (0.0, 1200.0), (0.15, 1.60), &scale, 10, 15);
 
   println!("   {:>3} {:>9} {:>9} {:>14} {:>10}", "k", "onset", "cents", "interval", "d_k");
   println!("   {}", "-".repeat(50));

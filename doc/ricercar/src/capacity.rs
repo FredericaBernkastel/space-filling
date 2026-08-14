@@ -26,6 +26,7 @@
 //! motion-planning plan.
 
 use {
+  crate::voice,
   adaptive_distance_field::{
     adf::{Orthant, Primitive, ADF},
     geometry::{Aabb, P2},
@@ -69,7 +70,10 @@ impl Scale {
 /// borrow of the caller's setup.
 #[derive(Clone)]
 pub struct Setup {
-  pub subject: Vec<(f64, f64)>,
+  /// `(offset from entry, cents, duration)` — an explicit offset rather than
+  /// notes laid end to end, because BWV 867's subject contains a rest and the
+  /// rest is the point: it is the "rhetorical pause" every description names.
+  pub subject: Vec<(f64, f64, f64)>,
   pub theta_pair: f64,
   pub attack: f64,
   pub timbre: Timbre,
@@ -79,19 +83,30 @@ pub struct Setup {
 
 impl Setup {
   pub fn voice(&self, e: Entry) -> Voice {
-    let mut t = e.onset;
     Voice {
-      notes: self.subject.iter().map(|&(c, d)| {
-        let n = Note { onset: t, duration: d, cents: c + e.cents };
-        t += d;
-        n
+      notes: self.subject.iter().map(|&(off, c, d)| Note {
+        onset: e.onset + off,
+        duration: d,
+        cents: c + e.cents,
       }).collect(),
     }
   }
 
+  /// A *guide* for the search: the sampled minimum, which is an over-estimate.
+  ///
+  /// The search must not use the certified bound. That bound is a lower one, and
+  /// a loose lower bound is negative everywhere — which is exactly what happened
+  /// when BWV 867's subject lengthened the window from 3.2 s to 7 s and the
+  /// search went from two placements to none while a grid scan still found a
+  /// legal fifth. A guide may be optimistic; the verification behind it is what
+  /// has to be sound.
+  pub fn pair_guide(&self, a: Entry, b: Entry) -> f64 {
+    let voices = [self.voice(a), self.voice(b)];
+    voice::field(&voices, self.theta_pair, self.attack, &self.timbre, self.window, 1200)
+  }
+
   /// `min over t (θ_pair − r(a, b; t))`, certified by the step-2 branch and
-  /// bound. `depth` trades tightness for cost: the search runs cheap and the
-  /// chosen placement is re-certified deep.
+  /// bound. Used to *verify* a placement the guide proposed, never to find one.
   pub fn pair_clearance(&self, a: Entry, b: Entry, depth: u32) -> f64 {
     let voices = [self.voice(a), self.voice(b)];
     certify::certified_min(
@@ -110,7 +125,6 @@ pub fn capacity(
   domain_onset: (f64, f64),
   scale: &Scale,
   max_entries: usize,
-  depth_search: u32,
   depth_verify: u32,
 ) -> Vec<(Entry, f64)> {
   let lo = scale.to_unit(Entry { cents: domain_cents.0, onset: domain_onset.0 });
@@ -132,7 +146,7 @@ pub fn capacity(
     for &e in &committed {
       let (s, sc) = (setup.clone(), *scale);
       field.insert_primitive_domain(domain, Primitive::new(move |u: P2<f64>| {
-        s.pair_clearance(sc.to_entry(u), e, depth_search)
+        s.pair_guide(sc.to_entry(u), e)
       }));
     }
 
