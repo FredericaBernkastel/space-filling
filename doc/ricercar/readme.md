@@ -6,6 +6,39 @@ The name is the argument in miniature. A *ricercar* is the fugue's ancestor, and
 search** — the form was named after the activity this crate performs. Bach's *Ricercar a 6* is the six-voice fugue
 of the *Musical Offering*, written on a subject he was handed and asked to develop on the spot.
 
+## Where this stands
+
+Steps 1–4 of §7 are implemented and measured. **Step 5 is blocked twice over**, once on principle and once on cost.
+
+**Established.**
+
+- The roughness field is certifiable — 5 to 9 levels of subdivision resolve a usable margin, against the order of
+  279 that made the main crate's anisotropic-body attempt intractable (§7.1).
+- A certificate beats any fixed grid: 50 ms sampling pronounces a texture holding a 20 ms dissonance legal, and
+  the branch and bound catches it at depth 4 in 31 evaluations (§7.2).
+- The legal placement region is **piecewise constant in entry offset, at the note grid** — measured, not argued,
+  and it is why fugal onsets are quantized in practice (§7.3).
+- The field becomes `ADF`-shaped the moment the threshold moves from the texture to the **pair** (§7.4).
+- **BWV 867's subject, from the score** — and its opening falls a fourth, which memory would have inverted (§7.5).
+- **`θ_pair ≥ 0.82`, calibrated against Bach's own Stretto II** rather than chosen (§7.6).
+
+**Not established.**
+
+- **No capacity figure survives.** Every number before §7.6 was taken at `θ = 0.30`, which rejects Bach's own
+  hyperstretto by a factor of 2.7. The re-run at the calibrated threshold was killed at thirty minutes without
+  reaching a single placement.
+- No MIDI, and so nothing audible.
+- No corpus comparison, and so nothing yet about which subjects stretto well — which was the point (§6.1).
+
+**Three defects the work found in itself**, each surfaced by an independent check rather than by reading the code:
+
+- searching on a *lower* bound blinds the search — caught by a grid scan that found a legal fifth where the greedy
+  loop found nothing (§7.5);
+- step 1's constant was swept at middle C and understates the bass, where close intervals are far rougher — caught
+  by Bach's five-octave texture (§7.6);
+- `capacity()` rebuilds the whole field every round, which was cheap at two entries and intractable at ten —
+  caught by a timeout (§7.6).
+
 ---
 
 ## 0. Why this is not merely an analogy
@@ -91,7 +124,10 @@ with `roughness` the Plomp–Levelt curve over log-frequency — smooth, bounded
 which is where consonance comes from in the first place. Then:
 
 - **in pitch**: Lipschitz, with constant `(V−1)·L_R` for `V` voices, where `L_R` is the roughness curve's maximum
-  slope in cents;
+  slope in cents. **`L_R` is register-dependent and this was measured wrongly at first** — §7.1 swept it at middle
+  C, and §7.6 found Bach's bass register reaching 0.809 where that sweep peaked at 0.608. The critical bandwidth
+  is narrower in hertz but *wider in cents* lower down, so `L_R` should be a function of register rather than a
+  scalar;
 - **in onset**: Lipschitz *only if notes have amplitude envelopes*. With `A_i(t)` a raised cosine over a few
   milliseconds, a note fades into and out of the texture continuously and the jumps disappear. The constant scales
   as `1/attack`, so **sharp attacks make the certificate expensive** — a real trade, and one to measure rather than
@@ -218,6 +254,9 @@ subjects stretto densely and some will not, and that difference is precisely wha
 treatment.** Bach chose subjects that stretto well; the *Art of Fugue* is the extended demonstration. Ranking a
 corpus by measured capacity is falsifiable against what musicians already believe, which makes it a real result
 rather than a demo.
+
+> **Blocked.** §7.6 gives the threshold this needs and §7.4 the pipeline, but the two together do not yet run —
+> see *Where this stands*. Nothing below is measured.
 
 ### 6.2 The design problem
 
