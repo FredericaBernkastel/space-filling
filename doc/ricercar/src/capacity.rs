@@ -28,7 +28,7 @@
 use {
   adaptive_distance_field::{
     adf::{Orthant, Primitive, ADF},
-    geometry::{Aabb, Point, P2},
+    geometry::{Aabb, P2},
     line_search::LineSearch,
     sdf::SDF,
   },
