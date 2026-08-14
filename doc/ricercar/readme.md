@@ -481,6 +481,41 @@ so a threshold rejecting it is wrong about music rather than about the passage. 
 directions: if no plausible `θ` admits that texture under a roughness model, the *model* is inadequate, which
 would itself be the finding.
 
+### 7.6 Step 5: θ, calibrated against Bach
+
+§7.5 left the calibration stated but not run:
+
+> `θ_pair` must be at least the largest pairwise roughness Bach's own stretto reaches.
+
+Stretto II is read straight from the score — fugue bars 67–71, file measures 91–95, **74 notes with five entries
+beginning inside two bars**, up to seven sounding at once, spanning MIDI 41 to 78. Every note is taken as its own
+voice, since the field cares only which pitches coincide. Sampled at 120 000 points with a Lipschitz margin added,
+so the figure is an *upper* bound on the maximum and safe to threshold against.
+
+| | |
+|---|---:|
+| worst **pairwise** roughness | **0.809** (+0.012 margin) |
+| worst **total** roughness | 4.754 |
+| `θ_pair` used through step 4 | 0.300 |
+| `θ_pair` Bach requires | **≥ 0.821** |
+
+**Step 4's threshold rejects Bach's own hyperstretto by a factor of 2.7.** So the capacity of 1 measured in §7.5
+was measuring the threshold, which is exactly the failure §7.4 predicted for an unpinned `θ` — now demonstrated
+rather than feared.
+
+**And 0.809 exceeds the peak of §7.1's two-tone curve, which was 0.608.** That is not a contradiction, it is a
+gap in the earlier measurement: §7.1 swept intervals at middle C, and roughness is register-dependent — the
+critical bandwidth is narrower in hertz but wider in *cents* lower down, so a close interval in the bass is far
+rougher than the same interval in the treble. Bach's stretto puts voices down to MIDI 41. Any threshold derived
+from a single register is wrong for a texture that spans five octaves, and the eventual model should make `θ`
+register-dependent rather than scalar.
+
+**Capacity at the calibrated threshold is not yet measured.** `θ_pair` is set to 0.82 in the code, but the re-run
+had not finished when this was written: raising the threshold makes far more placements legal, so the greedy loop
+commits more entries and each round certifies more, and the cost grows with the square of what it finds. That the
+*measurement* got more expensive the moment the threshold stopped being wrong is itself the expected shape of the
+thing. The number belongs here when it lands.
+
 ---
 
 ## 8. What this will not do

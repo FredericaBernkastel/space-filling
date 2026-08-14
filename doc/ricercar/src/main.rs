@@ -411,7 +411,91 @@ fn step3(timbre: &Timbre) {
   println!("   Step 4 packs entries into the cleared region.");
 
   step4(timbre);
+  step5(timbre);
 }
+
+/// Bach's Stretto II, fugue bars 67-71 (file measures 91-95), read from the
+/// score: `(onset in quarters, MIDI note, duration in quarters)`.
+///
+/// Five entries begin inside two bars — the passage the analyses call the
+/// closest stretto, reserved for last. Every note is taken as its own voice,
+/// since the roughness field cares only which pitches sound together.
+const STRETTO_II: [(f64, i32, f64); 74] = [
+  (0.0, 51, 1.0),
+  (0.0, 57, 2.0),
+  (0.0, 60, 1.0),
+  (0.0, 65, 4.0),
+  (1.0, 49, 0.5),
+  (1.0, 63, 2.0),
+  (1.5, 48, 0.5),
+  (2.0, 49, 1.0),
+  (2.0, 58, 2.0),
+  (2.0, 70, 2.0),
+  (3.0, 51, 1.0),
+  (3.0, 61, 1.0),
+  (4.0, 53, 1.0),
+  (4.0, 57, 2.0),
+  (4.0, 60, 2.0),
+  (4.0, 65, 2.0),
+  (4.0, 65, 2.0),
+  (5.0, 51, 1.0),
+  (6.0, 49, 1.0),
+  (6.0, 58, 2.0),
+  (6.0, 58, 2.0),
+  (7.0, 48, 1.0),
+  (7.0, 78, 1.0),
+  (8.0, 49, 1.0),
+  (8.0, 53, 2.0),
+  (8.0, 53, 2.0),
+  (8.0, 77, 1.0),
+  (9.0, 45, 1.0),
+  (9.0, 72, 1.0),
+  (9.0, 75, 1.0),
+  (10.0, 46, 2.0),
+  (10.0, 46, 2.0),
+  (10.0, 70, 1.0),
+  (10.0, 73, 1.0),
+  (11.0, 66, 1.0),
+  (11.0, 69, 1.0),
+  (11.0, 72, 1.0),
+  (12.0, 41, 2.0),
+  (12.0, 65, 1.0),
+  (12.0, 70, 1.0),
+  (12.0, 73, 1.0),
+  (13.0, 60, 1.0),
+  (13.0, 63, 1.0),
+  (13.0, 69, 1.0),
+  (13.0, 75, 1.0),
+  (14.0, 58, 1.0),
+  (14.0, 61, 1.0),
+  (14.0, 70, 1.0),
+  (14.0, 77, 1.0),
+  (15.0, 54, 1.0),
+  (15.0, 57, 1.0),
+  (15.0, 60, 1.0),
+  (15.0, 72, 1.0),
+  (15.0, 75, 1.0),
+  (16.0, 53, 1.0),
+  (16.0, 58, 1.0),
+  (16.0, 61, 0.5),
+  (16.0, 70, 1.0),
+  (16.0, 73, 1.0),
+  (16.5, 63, 0.5),
+  (17.0, 51, 1.0),
+  (17.0, 60, 1.0),
+  (17.0, 65, 2.0),
+  (17.0, 69, 1.0),
+  (17.0, 72, 1.0),
+  (18.0, 49, 1.0),
+  (18.0, 61, 1.0),
+  (18.0, 70, 2.0),
+  (18.0, 70, 2.0),
+  (18.0, 70, 2.0),
+  (18.0, 70, 2.0),
+  (19.0, 48, 1.0),
+  (19.0, 63, 1.0),
+  (19.0, 66, 1.0),
+];
 
 /// The subject of BWV 867, read from the score.
 ///
@@ -468,7 +552,7 @@ fn interval_name(cents: f64) -> &'static str {
 
 /// Step 4: how many entries will this subject bear?
 fn step4(timbre: &Timbre) {
-  const THETA_PAIR: f64 = 0.30;
+  const THETA_PAIR: f64 = 0.82;   // calibrated in step 5 against BWV 867 Stretto II
   const ATTACK: f64 = 0.020;
   const WIN: (f64, f64) = (0.0, 7.0);
 
@@ -534,4 +618,78 @@ fn step4(timbre: &Timbre) {
   }
   println!("\n   d_k is the capacity curve of §6.1. Its decay is the number this whole");
   println!("   document exists to produce; comparing it across subjects is step 5.");
+}
+
+/// Step 5: what threshold does Bach's own hyperstretto require?
+///
+/// §7.4 left `θ` unpinned and §7.5 showed it is not merely unprincipled but
+/// wrong — capacity of 1 where Bach fits 5. The calibration writes itself: his
+/// five-voice stretto is by construction acceptable counterpoint, so
+///
+/// > `θ_pair` must be at least the largest pairwise roughness that passage ever
+/// > reaches.
+///
+/// Sampled densely with a Lipschitz margin added, so the figure is an *upper*
+/// bound on the maximum and therefore safe to threshold against.
+fn step5(timbre: &Timbre) {
+  const ATTACK: f64 = 0.020;
+  let span = 20.0 * QUARTER;
+
+  println!("
+
+===== step 5: calibrating θ against Bach =====");
+  println!("
+   BWV 867 Stretto II, fugue bars 67-71: {} notes, five entries in two bars",
+    STRETTO_II.len());
+
+  // every note its own voice — the field only cares which pitches coincide
+  let voices: Vec<Voice> = STRETTO_II.iter().map(|&(on, midi, dur)| Voice {
+    notes: vec![Note {
+      onset: on * QUARTER,
+      duration: dur * QUARTER,
+      cents: (midi - 70) as f64 * 100.0,
+    }],
+  }).collect();
+
+  let n = 120_000;
+  let (mut worst_pair, mut worst_total, mut at) = (0.0f64, 0.0f64, 0.0);
+  for k in 0..n {
+    let t = span * (k as f64 + 0.5) / n as f64;
+    let sounding: Vec<_> = voices.iter().filter_map(|v| v.sounding(t, ATTACK)).collect();
+    let mut total = 0.0;
+    let mut pair_max = 0.0f64;
+    for i in 0..sounding.len() {
+      for j in i + 1..sounding.len() {
+        let ((f1, a1), (f2, a2)) = (sounding[i], sounding[j]);
+        let r = roughness::between(timbre, f1, a1, f2, a2);
+        total += r;
+        pair_max = pair_max.max(r);
+      }
+    }
+    if pair_max > worst_pair { worst_pair = pair_max; at = t; }
+    worst_total = worst_total.max(total);
+  }
+  // the sampled maximum understates; add the Lipschitz margin over half a step
+  let l_t = certify::time_slope(&voices, ATTACK, timbre, (0.0, span), 120_000);
+  let margin = l_t * span / n as f64 * 0.5;
+
+  println!("
+   worst pairwise roughness   {:.4}  (at {:.2}s, +{:.4} margin)",
+    worst_pair, at, margin);
+  println!("   worst total roughness      {:.4}", worst_total);
+  println!("
+   θ_pair used in step 4      0.3000");
+  println!("   θ_pair Bach requires     >= {:.4}", worst_pair + margin);
+  let need = worst_pair + margin;
+  if need > 0.30 {
+    println!("
+   So step 4's threshold rejects Bach's own stretto by a factor of {:.1}.",
+      need / 0.30);
+    println!("   Capacity of 1 measured the threshold, not the subject — exactly the");
+    println!("   failure §7.4 predicted would happen if θ were left unpinned.");
+  } else {
+    println!("
+   Bach's stretto passes at step 4's threshold, so θ is not what");
+    println!("   limited capacity to 1 — something else is.");
+  }
 }
