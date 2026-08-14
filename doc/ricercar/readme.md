@@ -58,7 +58,7 @@ stretto is deliberately overlapping entries. So notes are not what is being pack
 
 | space filling | counterpoint |
 |---|---|
-| obstacle | a forbidden configuration: parallel fifths, unresolved dissonance, voice crossing, out of range |
+| obstacle | a forbidden configuration — but see §7.2: a roughness field sees *sensory* dissonance, not the stylistic rules |
 | clearance `g(x)` | **contrapuntal margin** — how far this placement is from breaking a rule |
 | a placed shape lowers the field | each committed voice constrains every future one |
 | `max g ≤ 0` | no further legal entry exists: the texture is *full* |
@@ -242,10 +242,12 @@ If the optimized subject scores below Bach's, that is the more interesting resul
 ## 7. Roadmap
 
 1. ~~**Roughness field and its constant.**~~ **Done — see §7.1. The answer is go.**
-2. **Two voices, one subject, fixed placements.** Certify legality over continuous time. Test: a texture known to
-   contain a parallel fifth is reported illegal, and no sampling density changes the verdict.
-3. **`min_over_curve` reuse.** The pitch-time path query is the motion-planning one; if that plan is built first,
-   this step is an import.
+2. ~~**Two voices, certified over continuous time.**~~ **Done — see §7.2.** The test as originally written was
+   impossible: it asked for a parallel fifth to be reported illegal, and a perfect fifth is one of the *least*
+   rough intervals there is (0.089, measured in §7.1). Substituted a brief semitone collision, which the model can
+   actually see.
+3. **`min_over_curve` in the pitch-time plane.** §7.2 certifies over *time* with a one-dimensional branch and
+   bound; the full query has to certify over the placement parameters too. Shared with the motion-planning plan.
 4. **Capacity for a fixed subject (§6.1), on BWV 867's subject.** Enumerate entries, use maximin to locate room,
    place each entry as tightly as the margin allows, record `d_k`. First audible artifact: render the packed
    stretto to MIDI and listen to it. The honest comparison is against Bach's own stretto in the same piece.
@@ -292,6 +294,49 @@ the subject-design problem of §6.2 has its own dimension and needs its own meas
 cheap axis and onsets being discrete there suggests it will be cheaper rather than dearer. And `min over t` is
 **sampled, so it is not yet a certificate** — that is `min_over_curve` from the motion-planning plan, and step 3.
 
+### 7.2 Step 2 result: a proof, not a sample
+
+Two voices, a tritone then a **20 ms semitone** then a fifth — a real dissonance, audible, and short.
+
+**A grid can be defeated, and is.**
+
+| samples | spacing | min seen | verdict |
+|---:|---:|---:|---|
+| 50 | 50.0 ms | +0.1477 | **LEGAL — wrong** |
+| 100 | 25.0 ms | −0.1172 | illegal |
+| 10 000 | 0.2 ms | −0.1172 | illegal |
+
+At 50 ms spacing the collision falls between grid points and the texture is pronounced clean. Any fixed density
+can be beaten by a short enough dissonance; the only question is who picks the constant last.
+
+**The branch and bound cannot be.** `min over [a,b] of (θ − R) ≥ (θ − R(mid)) − L_t·(b−a)/2` — the crate's own
+`sdf_geq_everywhere`, in one dimension over time. It reports *illegal* at every budget, from depth 4 and 31
+evaluations upward, and its bound converges from below: −139.3, −8.8, −0.66, −0.151, −0.119 against a true
+−0.1172. Sound at every depth, checked by assertion.
+
+**The expensive direction is proving a texture legal**, since a witness settles illegality in one point while
+legality needs every instant covered. On a consonant texture:
+
+| attack | measured slope of `R` in `t` | depth | evaluations | certified |
+|---:|---:|---:|---:|---:|
+| 1 ms | 385.2 | 12 | 8 191 | +0.0261 |
+| 20 ms | 19.3 | 8 | 511 | +0.0730 |
+| 100 ms | 3.9 | 8 | 361 | +0.2236 |
+
+Cost falls with attack exactly as §7.1 predicted — a gentler envelope is a smaller constant is a cheaper proof —
+and the whole range is affordable.
+
+**What step 2 also established, by failing to test what it meant to.** The written test asked for a *parallel
+fifth* to be reported illegal. It cannot be: a perfect fifth measured 0.089 in §7.1, among the least rough
+intervals there is. Parallel fifths are forbidden for **voice independence**, not for roughness — two voices in
+parallel fifths sound like one voice, which is a perceptual objection a pointwise dissonance functional has no
+access to. The same holds for unresolved suspensions, and for voice crossing, whose unison is perfectly smooth.
+
+So the roughness field detects **sensory dissonance and nothing else**. Every other rule in §2's table needs its
+own primitive, and several of them — parallel motion, preparation, resolution — are not pointwise functions of
+the sounding pitches at all. They are functions of *motion*, and a field over instantaneous pitch cannot express
+them. That is a larger limitation than this document originally claimed, and §8 now says so.
+
 ---
 
 ## 8. What this will not do
@@ -302,6 +347,11 @@ cheap axis and onsets being discrete there suggests it will be cheaper rather th
   around everything above.
 - **Harmony.** Roughness is not tonality. A texture can be perfectly smooth and harmonically incoherent, and
   nothing here knows the difference between a cadence and a stop.
+- **The stylistic rules.** Measured in §7.2 rather than supposed: a roughness field sees sensory dissonance only.
+  Parallel fifths are *consonant* by this measure and would never be flagged; voice crossing produces a smooth
+  unison; a suspension is indistinguishable from an accident. These are objections about voice independence and
+  about motion, and a field over instantaneous pitch cannot express any of them. Counterpoint's rulebook needs
+  primitives this model does not have.
 - **The 2-approximation guarantee, meaningfully.** It bounds `k`-center in a metric space. Applied to entry
   *diversity* (§6.4's reading) it says something real; applied to musical quality it says nothing at all.
 - **Resolution.** The roughness field is instantaneous. It cannot represent a dissonance that is *prepared and

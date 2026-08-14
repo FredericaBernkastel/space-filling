@@ -19,6 +19,7 @@
 //! and the largest secant over random pairs (a lower bound on the true constant,
 //! which also catches jumps a derivative would step over).
 
+mod certify;
 mod roughness;
 mod voice;
 
@@ -218,4 +219,107 @@ fn main() {
   println!("\n   A cell is cleared when the centre margin covers L·h. Levels above ~20");
   println!("   mean the branch-and-bound is resolving below a cent or below a");
   println!("   millisecond, and the certificate is not buying anything musical.");
+
+  step2(&timbre);
+}
+
+/// Two voices whose note changes are staggered by `gap`, so that between the two
+/// changes a *brief* semitone sounds with a tritone and a fifth either side.
+///
+/// Before: 0 against 600 cents, a tritone. During: 500 against 600, a semitone —
+/// the roughest interval there is. After: 500 against 1200, a fifth. The
+/// dissonance is real, audible and short, which is the case a sampled check is
+/// blind to.
+fn brief_collision(gap: f64) -> Vec<Voice> {
+  let t = 1.0;
+  vec![
+    Voice { notes: vec![
+      Note { onset: 0.0, duration: t, cents: 0.0 },
+      Note { onset: t, duration: 1.5, cents: 500.0 },
+    ]},
+    Voice { notes: vec![
+      Note { onset: 0.0, duration: t + gap, cents: 600.0 },
+      Note { onset: t + gap, duration: 1.5 - gap, cents: 1200.0 },
+    ]},
+  ]
+}
+
+/// Step 2: replace the sampled minimum with a proof.
+fn step2(timbre: &Timbre) {
+  const THETA2: f64 = 0.45; // above the tritone at 0.30, below the semitone at 0.60
+  const ATTACK: f64 = 0.001;
+  let gap = 0.020;
+  let voices = brief_collision(gap);
+
+  println!("\n\n===== step 2: a certificate, not a sample =====");
+  println!("\n   two voices, note changes staggered by {:.0} ms, θ = {THETA2}", gap * 1e3);
+  println!("   a tritone, then a {:.0} ms semitone, then a fifth\n", gap * 1e3);
+
+  let l_t = certify::time_slope(&voices, ATTACK, timbre, WINDOW, 200_000);
+  println!("   measured |dR/dt| = {l_t:.1} per second; the certificate uses ×{} of it\n",
+    certify::SAFETY);
+
+  println!("   {:>9} {:>11} {:>12}   {}", "samples", "spacing", "min seen", "verdict");
+  println!("   {}", "-".repeat(54));
+  for n in [50usize, 100, 200, 500, 2000, 10_000] {
+    let g = voice::field(&voices, THETA2, ATTACK, timbre, WINDOW, n);
+    let spacing = (WINDOW.1 - WINDOW.0) / n as f64 * 1e3;
+    println!("   {:>9} {:>8.1} ms {:>12.4}   {}", n, spacing, g,
+      if g > 0.0 { "LEGAL  <- wrong" } else { "illegal" });
+  }
+
+  println!("\n   {:>9} {:>9} {:>12} {:>11}   {}",
+    "max depth", "evals", "certified", "observed", "verdict");
+  println!("   {}", "-".repeat(62));
+  for d in [4u32, 8, 12, 16, 20] {
+    let (c, o, e) = certify::certified_min(&voices, THETA2, ATTACK, timbre, WINDOW, l_t, d);
+    println!("   {:>9} {:>9} {:>12.4} {:>11.4}   {}", d, e, c, o,
+      if c > 0.0 { "legal" } else { "illegal" });
+  }
+
+  // The bound must never sit above a densely observed minimum, at any budget.
+  let dense = voice::field(&voices, THETA2, ATTACK, timbre, WINDOW, 500_000);
+  for d in [4u32, 8, 12, 16, 20] {
+    let (c, _, _) = certify::certified_min(&voices, THETA2, ATTACK, timbre, WINDOW, l_t, d);
+    assert!(c <= dense + 1e-12,
+      "depth {d}: certified {c} exceeds a dense observation {dense} — not a bound");
+  }
+  println!("\n   soundness: certified <= densely observed ({dense:.4}) at every depth  ok");
+  println!("\n   The certificate has no sampling parameter to get wrong. A grid reports");
+  println!("   legal until it happens to be fine enough; this cannot.");
+
+  // Finding a witness is the easy direction — one point below zero settles it.
+  // Proving a texture *legal* is the expensive one, since every instant has to be
+  // covered, and that is the direction the packing actually needs.
+  println!("\n   proving the other direction: a consonant texture is LEGAL\n");
+  let calm = vec![
+    Voice { notes: vec![
+      Note { onset: 0.0, duration: 1.2, cents: 0.0 },
+      Note { onset: 1.2, duration: 1.3, cents: 200.0 },
+    ]},
+    Voice { notes: vec![
+      Note { onset: 0.0, duration: 1.2, cents: 702.0 },
+      Note { onset: 1.2, duration: 1.3, cents: 884.0 },
+    ]},
+  ];
+  println!("   {:>9} {:>10} {:>7} {:>10} {:>12}   {}",
+    "attack", "|dR/dt|", "depth", "evals", "certified", "proves legal");
+  println!("   {}", "-".repeat(66));
+  for attack_ms in [1.0f64, 20.0, 100.0] {
+    let attack = attack_ms / 1000.0;
+    let l = certify::time_slope(&calm, attack, timbre, WINDOW, 200_000);
+    let mut shown = false;
+    for d in [8u32, 12, 16, 18, 20, 22] {
+      let (c, _, e) = certify::certified_min(&calm, THETA2, attack, timbre, WINDOW, l, d);
+      if c > 0.0 || d == 22 {
+        println!("   {:>7.0} ms {:>10.1} {:>7} {:>10} {:>12.4}   {}",
+          attack_ms, l, d, e, c, if c > 0.0 { "yes" } else { "not yet" });
+        shown = true;
+        break;
+      }
+    }
+    let _ = shown;
+  }
+  println!("\n   Cost falls with attack exactly as step 1 said it would: a gentler");
+  println!("   envelope is a smaller constant is a cheaper proof.");
 }
