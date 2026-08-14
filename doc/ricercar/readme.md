@@ -1,6 +1,6 @@
 # Ricercar — counterpoint as a space-filling problem
 
-*Theory and implementation roadmap. Nothing here is built yet.*
+*Theory, implementation roadmap, and results as they land.*
 
 The name is the argument in miniature. A *ricercar* is the fugue's ancestor, and *ricercare* is Italian for **to
 search** — the form was named after the activity this crate performs. Bach's *Ricercar a 6* is the six-voice fugue
@@ -241,10 +241,7 @@ If the optimized subject scores below Bach's, that is the more interesting resul
 
 ## 7. Roadmap
 
-1. **Roughness field and its constant.** Implement Plomp–Levelt over log-frequency with amplitude envelopes;
-   measure the realised Lipschitz constant of `g = min_t(θ − R(t))` in pitch and in onset, as a function of attack
-   time. **This is the go/no-go.** If the constant is enormous — because roughness spikes near unisons — the
-   certificate proves nothing below the root and the metric needs reconsidering before any music is written.
+1. ~~**Roughness field and its constant.**~~ **Done — see §7.1. The answer is go.**
 2. **Two voices, one subject, fixed placements.** Certify legality over continuous time. Test: a texture known to
    contain a parallel fifth is reported illegal, and no sampling density changes the verdict.
 3. **`min_over_curve` reuse.** The pitch-time path query is the motion-planning one; if that plan is built first,
@@ -258,6 +255,42 @@ If the optimized subject scores below Bach's, that is the more interesting resul
    head. Compare against the corpus.
 7. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
    keep.
+
+### 7.1 Step 1 result: go
+
+`cargo run --release` in this directory. Sethares' parametrisation of Plomp–Levelt over harmonic spectra of six
+partials, `rolloff = 0.88`, raised-cosine envelopes.
+
+**The model is behaving.** Interior minima of the two-tone curve land at **316, 386, 498, 702 and 884 cents** —
+the minor third, major third, perfect fourth, perfect fifth and major sixth — with the peak at **81 cents** and
+the unison and octave lowest of all. Consonance falls out of the summed partial pairs rather than being put in by
+hand, which is the only reason the constants below are worth anything.
+
+**Pitch is cheap.** `L ≈ 0.021` per cent. The steepest point is right against the unison, which is exactly the
+failure the plan feared — but the absolute number is small, and the fear was misplaced.
+
+**Onset scales as `1/attack`, as predicted.**
+
+| attack | 1 ms | 5 ms | 20 ms | 50 ms | 100 ms |
+|---|---:|---:|---:|---:|---:|
+| `L` (per second) | 65.2 | 45.2 | 17.5 | 7.14 | 3.58 |
+
+Doubling the attack from 50 ms to 100 ms halves the constant exactly (7.14 → 3.58), and the relation holds down to
+about 20 ms before saturating — below that the note's *pitch* change rather than its envelope sets the slope.
+
+**Verdict: 5 to 9 levels of subdivision** resolve a margin of `0.05·θ` over ±600 cents and ±0.5 s. For comparison,
+the anisotropic-body attempt in the main crate needed on the order of **279** and was abandoned. The certificate
+is affordable here by two orders of magnitude, and that is the go/no-go answered.
+
+**The numbers are not sampling artefacts.** `min over t` is sampled, so a coarse grid could invent jumps and
+inflate every constant. Quadrupling the sample count moves the measured slope from 65.1566 to 65.1566 at a 1 ms
+attack and from 17.5282 to 17.5362 at 20 ms — five significant figures and 0.05%. (The secant column bounces,
+because it redraws random pairs each run; the swept slope is the reliable statistic.)
+
+**Two things this does not license.** It measures the *two-parameter* case, one interval and one entry offset;
+the subject-design problem of §6.2 has its own dimension and needs its own measurement, though pitch being the
+cheap axis and onsets being discrete there suggests it will be cheaper rather than dearer. And `min over t` is
+**sampled, so it is not yet a certificate** — that is `min_over_curve` from the motion-planning plan, and step 3.
 
 ---
 

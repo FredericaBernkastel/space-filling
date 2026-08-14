@@ -1,0 +1,27 @@
+# Roadmap step 1 of readme.md: implement the Plomp–Levelt roughness field and
+# measure whether it has a Lipschitz constant small enough to certify with.
+#
+# This is the go/no-go for the whole ricercar idea. If the field is too steep,
+# `sdf_geq_everywhere` proves nothing below the root box and the metric has to be
+# reconsidered before any music is written.
+#
+#   cd doc/ricercar && cargo run --release
+[package]
+name = "ricercar"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "ricercar"
+path = "src/main.rs"
+
+[dependencies]
+rand = { version = "0.10", default-features = false }
+rand_pcg = "0.10"
+
+[profile.release]
+debug = false
+
+# own workspace root, so cargo does not attach this to the parent
+[workspace]
