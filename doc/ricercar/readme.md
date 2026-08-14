@@ -510,11 +510,18 @@ rougher than the same interval in the treble. Bach's stretto puts voices down to
 from a single register is wrong for a texture that spans five octaves, and the eventual model should make `θ`
 register-dependent rather than scalar.
 
-**Capacity at the calibrated threshold is not yet measured.** `θ_pair` is set to 0.82 in the code, but the re-run
-had not finished when this was written: raising the threshold makes far more placements legal, so the greedy loop
-commits more entries and each round certifies more, and the cost grows with the square of what it finds. That the
-*measurement* got more expensive the moment the threshold stopped being wrong is itself the expected shape of the
-thing. The number belongs here when it lands.
+**Capacity at the calibrated threshold could not be computed.** `θ_pair` is set to 0.82 in the code, and the
+re-run was **killed at thirty minutes** without reaching a single placement — where the same loop at `θ = 0.30`
+finished in about two. The measurement became intractable at the moment the threshold stopped being wrong.
+
+The bottleneck is identified and it is mine, not the problem's. `capacity()` **rebuilds the whole field every
+round**, calling `insert_primitive_domain` over the entire domain for every committed entry, and each primitive
+evaluation is a 1200-sample roughness computation. The comment justifying that rebuild says it is "cheaper than
+the bookkeeping to update it in place" — which was true at two entries and is false at ten. The `ADF` is built for
+incremental insertion and this code throws that away.
+
+So step 5's corpus comparison is blocked a second time, on cost rather than on principle: it runs this loop once
+per subject. Fixing the rebuild is the prerequisite, and it is ordinary work rather than a modelling question.
 
 ---
 
