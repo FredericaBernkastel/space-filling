@@ -322,4 +322,90 @@ fn step2(timbre: &Timbre) {
   }
   println!("\n   Cost falls with attack exactly as step 1 said it would: a gentler");
   println!("   envelope is a smaller constant is a cheaper proof.");
+
+  step3(timbre);
+}
+
+/// Step 3: the legal region of placement space, certified cell by cell.
+///
+/// A subject in one voice, answered in another at some transposition and entry
+/// offset. Which `(transposition, offset)` pairs give a legal stretto? That
+/// region is the free space a packing would place entries into, and mapping it is
+/// the same operation the main crate performs on a square: subdivide, and prove
+/// each cell clear or find a witness in it.
+fn step3(timbre: &Timbre) {
+  const THETA3: f64 = 0.55;
+  const ATTACK: f64 = 0.020; // 19 per second, from step 2 — the affordable end
+  const WIN: (f64, f64) = (0.0, 2.6);
+  const COLS: usize = 24; // transposition, 0..1200 cents
+  const ROWS: usize = 14; // entry offset, 0.05..0.75 s
+  const DEPTH: u32 = 18;
+
+  println!("\n\n===== step 3: the legal region of placement space =====");
+
+  let texture = |cents: f64, onset: f64| vec![subject_at(0.0, 0.0), subject_at(onset, cents)];
+  let r = |cents: f64, onset: f64, t: f64| {
+    voice::roughness_at(&texture(cents, onset), t, ATTACK, timbre)
+  };
+
+  // per-axis constants: pitch from step 1, time from step 2, and the offset axis
+  // measured the same way as pitch
+  let l_t = {
+    let mut worst: f64 = 0.0;
+    for i in 0..8 {
+      let v = texture(150.0 * i as f64, 0.3);
+      worst = worst.max(certify::time_slope(&v, ATTACK, timbre, WIN, 50_000));
+    }
+    worst
+  };
+  let l = [0.021 * 2.0, 25.0, l_t * certify::SAFETY];
+  println!("\n   θ = {THETA3}, attack {:.0} ms, constants: {:.3}/cent  {:.1}/s onset  {:.1}/s time",
+    ATTACK * 1e3, l[0], l[1], l[2]);
+  println!("   grid {COLS}×{ROWS} cells, max depth {DEPTH}\n");
+
+  let (mut legal, mut illegal, mut unknown, mut evals) = (0usize, 0usize, 0usize, 0usize);
+  let mut tightest = f64::INFINITY;
+  let mut rows = vec![];
+  for row in 0..ROWS {
+    let o0 = 0.05 + 0.70 * row as f64 / ROWS as f64;
+    let o1 = 0.05 + 0.70 * (row + 1) as f64 / ROWS as f64;
+    let mut line = String::new();
+    for col in 0..COLS {
+      let c0 = 1200.0 * col as f64 / COLS as f64;
+      let c1 = 1200.0 * (col + 1) as f64 / COLS as f64;
+      let (lo, obs, e) = certify::certify_region(
+        r, (c0, c1), (o0, o1), WIN, THETA3, l, DEPTH);
+      evals += e;
+      line.push(if lo > 0.0 {
+        legal += 1;
+        if o0 < tightest { tightest = o0 }
+        '#'
+      } else if obs < 0.0 {
+        illegal += 1;
+        '.'
+      } else {
+        unknown += 1;
+        '?'
+      });
+    }
+    rows.push((o0, line));
+  }
+
+  println!("      {:>6}  transposition 0 .. 1200 cents", "offset");
+  for (o, line) in &rows {
+    println!("      {o:>5.2}s  {line}");
+  }
+  println!("      {:>6}  {}", "", "^unison".to_string());
+
+  let total = (COLS * ROWS) as f64;
+  println!("\n   # certified legal   {legal:>4}  ({:.0}%)", 100.0 * legal as f64 / total);
+  println!("   . witness found     {illegal:>4}  ({:.0}%)", 100.0 * illegal as f64 / total);
+  println!("   ? undecided at {DEPTH:>2}   {unknown:>4}  ({:.0}%)", 100.0 * unknown as f64 / total);
+  println!("   {evals} evaluations, {:.0} per cell", evals as f64 / total);
+  if tightest.is_finite() {
+    println!("\n   tightest certified-legal stretto: entry at {tightest:.2} s");
+  }
+  println!("\n   This map is an ADF over placement space in all but name: cells proved");
+  println!("   clear, cells with a witness, and cells the budget could not settle.");
+  println!("   Step 4 packs entries into the cleared region.");
 }

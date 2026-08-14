@@ -98,3 +98,82 @@ pub fn certified_min(
   }
   (certified, observed, evaluated)
 }
+
+/// A certified bound over a **box of placements crossed with time**.
+///
+/// Step 2 proved a single texture legal by bounding over `t`. A packing needs
+/// more: whether *every* placement in a range of transpositions and entry
+/// offsets is legal, which is a bound over the product space. Lipschitz
+/// continuity gives it directly, one term per axis,
+///
+/// ```text
+/// min over the box of (θ − R) ≥ (θ − R(centre)) − Σᵢ Lᵢ·halfᵢ
+/// ```
+///
+/// The axes are wildly unlike each other — cents against seconds, with constants
+/// differing by three orders of magnitude — so the cut goes to whichever axis
+/// contributes most slack, `argmax Lᵢ·halfᵢ`. That is the main crate's `Widest`
+/// policy in the metric the constants define, and for the same reason: halving
+/// the axis that dominates the bound is the only cut that buys anything.
+///
+/// Returns the certified lower bound, the smallest value observed, and the
+/// evaluations spent. `lower > 0` proves every placement in the box legal;
+/// `observed < 0` exhibits one that is not.
+pub fn certify_region(
+  r: impl Fn(f64, f64, f64) -> f64,
+  cents: (f64, f64),
+  onset: (f64, f64),
+  time: (f64, f64),
+  theta: f64,
+  l: [f64; 3],
+  max_depth: u32,
+) -> (f64, f64, usize) {
+  let mut observed = f64::INFINITY;
+  let mut certified = f64::INFINITY;
+  let mut evaluated = 0usize;
+  let mut stack = vec![([cents, onset, time], 0u32)];
+
+  while let Some((b, depth)) = stack.pop() {
+    let mid = [
+      0.5 * (b[0].0 + b[0].1),
+      0.5 * (b[1].0 + b[1].1),
+      0.5 * (b[2].0 + b[2].1),
+    ];
+    let v = theta - r(mid[0], mid[1], mid[2]);
+    evaluated += 1;
+    if v < observed {
+      observed = v;
+    }
+
+    let mut slack = 0.0;
+    let mut worst_axis = 0;
+    let mut worst_slack = -1.0;
+    for i in 0..3 {
+      let half = 0.5 * (b[i].1 - b[i].0);
+      let s = l[i] * half;
+      slack += s;
+      if s > worst_slack {
+        worst_slack = s;
+        worst_axis = i;
+      }
+    }
+    let lower = v - slack;
+
+    if lower >= observed || depth >= max_depth {
+      if lower < certified {
+        certified = lower;
+      }
+      continue;
+    }
+    // halve the axis carrying the most slack — `Widest`, in the metric the
+    // Lipschitz constants define
+    let (a, c) = b[worst_axis];
+    let m = 0.5 * (a + c);
+    let (mut lo, mut hi) = (b, b);
+    lo[worst_axis] = (a, m);
+    hi[worst_axis] = (m, c);
+    stack.push((lo, depth + 1));
+    stack.push((hi, depth + 1));
+  }
+  (certified, observed, evaluated)
+}

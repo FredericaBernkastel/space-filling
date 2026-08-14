@@ -246,8 +246,7 @@ If the optimized subject scores below Bach's, that is the more interesting resul
    impossible: it asked for a parallel fifth to be reported illegal, and a perfect fifth is one of the *least*
    rough intervals there is (0.089, measured in §7.1). Substituted a brief semitone collision, which the model can
    actually see.
-3. **`min_over_curve` in the pitch-time plane.** §7.2 certifies over *time* with a one-dimensional branch and
-   bound; the full query has to certify over the placement parameters too. Shared with the motion-planning plan.
+3. ~~**Certify over the placement parameters, not only time.**~~ **Done — see §7.3.**
 4. **Capacity for a fixed subject (§6.1), on BWV 867's subject.** Enumerate entries, use maximin to locate room,
    place each entry as tightly as the margin allows, record `d_k`. First audible artifact: render the packed
    stretto to MIDI and listen to it. The honest comparison is against Bach's own stretto in the same piece.
@@ -336,6 +335,63 @@ So the roughness field detects **sensory dissonance and nothing else**. Every ot
 own primitive, and several of them — parallel motion, preparation, resolution — are not pointwise functions of
 the sounding pitches at all. They are functions of *motion*, and a field over instantaneous pitch cannot express
 them. That is a larger limitation than this document originally claimed, and §8 now says so.
+
+### 7.3 Step 3 result: the legal region, and what its shape gives away
+
+Step 2 proved one texture legal. A packing needs the *set* of legal placements, so the bound extends over the
+product space — a subject in one voice, its answer in another at some transposition and entry offset, certified
+over `(cents × onset × time)` at once:
+
+```text
+min over the box of (θ − R) ≥ (θ − R(centre)) − Σᵢ Lᵢ·halfᵢ
+```
+
+The axes are wildly unlike — 0.042 per cent against 92.5 per second — so the cut goes to `argmax Lᵢ·halfᵢ`. That
+is the main crate's `Widest` policy, in the metric the constants define, arrived at for the same reason: halving
+the axis that dominates the slack is the only cut that buys anything.
+
+`θ = 0.55`, 20 ms attack, `#` proved legal, `.` a witness found, `?` undecided at depth 18:
+
+```text
+   offset  transposition 0 .. 1200 cents
+    0.05s  ...???###??......?####?#
+    0.10s  ...???###??......?####?#
+    0.15s  ...???###??......?####?#
+    0.20s  ...???###??......?####?#
+    0.25s  ?####??..........?######
+    0.30s  ?####??..........?######
+    0.35s  ?####??..........?######
+    0.40s  ?####??..........?######
+    0.45s  ?####??..........?######
+    0.50s  ???..........??#########
+    0.55s  ???..........??#########
+    0.60s  ???..........??#########
+    0.65s  ???..........??#########
+    0.70s  ???..........??#########
+```
+
+38% certified legal, 40% with a witness, 22% undecided at that budget.
+
+**The rows come in bands, and the bands break at 0.25 s.** The subject's notes are quarter-second; offsets inside
+one note give identical verdicts, and the pattern changes only when the entry crosses a note boundary. Nothing in
+the code knows about the note grid — the bands fall out of the certificate.
+
+That is §3's claim arriving as a measurement rather than an argument. **The legal region really is piecewise
+constant in the entry offset, at the note grid**, which is why fugal onsets are quantized in practice, and why a
+continuous search over onset has almost nothing to find. It also sharpens §3's conclusion: of the three
+candidate continua, the one worth having is not onset but the *subject's own contour*.
+
+Read musically the map is a stretto table. Tight entries admit thirds and the sixth-to-octave band; entries at one
+note admit the narrow intervals and the upper band; entries at two notes admit everything from the fifth up. That
+is the shape of a real one.
+
+**The cost is the finding to act on.** 143 million evaluations, 425 000 per cell — because each cell re-runs an
+independent branch and bound over the full time window, sharing nothing with its neighbours. A single field over
+placement space would prune once and reuse it, which is exactly what `ADF` does and exactly why the next step
+should hand this to the main crate rather than hand-roll a fourth branch and bound.
+
+`θ` is a free parameter here, not a measured one: it sets how strict the counterpoint is, and the map's shape
+moves with it. Nothing in this document derives a principled value, and nothing should pretend to.
 
 ---
 
