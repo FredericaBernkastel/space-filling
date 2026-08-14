@@ -133,28 +133,76 @@ the certified path query is the expensive part and it is the same code.
 
 ---
 
-## 5. The objection, stated before the enthusiasm
+## 5. The objection, and what it is actually an objection to
 
-**"Sounds nice" is not unavailable to maximin — it is anti-correlated with it.**
+**Maximum clearance is not the goal, and stating it as one was an error.**
 
-Maximum clearance means maximum distance from every rule boundary: the safest counterpoint, which is the blandest.
-Real music lives *near* the boundary. A suspension is a dissonance held deliberately. Stretto is deliberately
-tight. The tension between voices is the content, not a defect to be maximised away. A greedy maximin composer
-writes faultless parallel-third wallpaper and never a false relation, and it will be correct and dead.
+The first version of this document said maximin is anti-correlated with sounding good: maximum distance from every
+rule boundary is the safest counterpoint, hence the blandest, while real music lives *near* the boundary. That
+much is true. The mistake was concluding that the maximin step is therefore the wrong instrument.
 
-The architecture therefore splits the roles, and this is not a workaround but the honest division:
+It is not the objective. **It is the search.** In circle packing, maximising clearance is how the algorithm
+*finds room*; it then places a circle **of that clearance size**, consuming the margin, and repeats until nothing
+fits. The result is a densely packed disc, not a maximally cautious one. Transposed:
 
-- **The ADF certifies.** It proves a texture legal and reports how much room remains. That is exactly how
-  counterpoint is *taught* — a rulebook with margins — and it is a well-defined job.
-- **Something else chooses.** Target a clearance *band* rather than its maximum, or let the field constrain a
-  search whose objective is aesthetic. "Nice" belongs in the primitive's definition (what counts as roughness) or
-  in an outer model. Never in the maximin step.
+> maximin locates where an entry can legally go; the entry is then placed as tightly as that margin allows,
+> using it up.
 
-Same shape as the ships: the machinery proves no collision; it does not decide where anyone wants to go.
+So the objective is **densest legal stretto** — minimise entry spacing subject to `g > 0` — not *safest
+counterpoint*. That is much closer to what BWV 867 actually does, and it rescues more of the method than the
+first draft admitted.
+
+### What remains a real limit
+
+Two things survive the correction, and they are the honest boundary.
+
+**Roughness is instantaneous; counterpoint is preparation and resolution.** A suspension is dissonant *now* and
+consonant *next*, and the tension-then-release is the whole effect. A field scoring the sounding interval at each
+instant sees a dissonance and marks it down; it cannot see that the dissonance was prepared and resolves. The
+fugues most worth imitating are largely made of that device, so this is not a corner case — it is the centre of
+the repertoire, and the model is blind to it.
+
+**Chromaticism sits near the threshold on purpose.** A search that respects `g > 0` will still prefer subjects
+whose strettos land on thirds and sixths over ones that grind. The austerity of BWV 849 and the friction of BWV
+857 come from a willingness to stay close to the boundary, and the closer a target sits to it the less the margin
+formulation has to say about why it works.
+
+The division of labour therefore stands, with the roles named more precisely:
+
+- **The ADF certifies and searches.** It proves a texture legal, reports the room remaining, and locates where the
+  next entry fits. All three are well defined, and the third is what circle packing has always used maximin for.
+- **Something else judges.** "Nice" belongs in the primitive's definition — what counts as roughness, and whether
+  it can represent resolution — or in an outer model. Never in the objective.
 
 ---
 
-## 6. What to build: contrapuntal capacity, then subject design
+## 6. What to build: densest legal stretto, measured, then designed
+
+### 6.0 The benchmark: BWV 867
+
+**WTC I No. 22 in B flat minor** is the target to aim at, chosen because it is hard rather than because it is
+convenient. It is famous precisely for stretto density — including inversion and augmentation, so the whole
+transformation group of §1 earns its keep — and if the method cannot say something true about *its* stretto it
+cannot say anything about fugue.
+
+It is also, mechanically, near the cheap end:
+
+| property | effect on this machinery |
+|---|---|
+| slow subject, long note values | `L_t ~ 1/(note duration)` — **the certificate is cheap**, the same inequality that made fast asteroids expensive |
+| short, stepwise subject | few continuous coordinates when the contour becomes the variable |
+| stretto-saturated, few episodes | a high fraction of the piece is the part that *is* packing |
+| **five voices** | 10 simultaneous pairs against 6 for four, and a `(V−1)` factor in the constant — the expensive end |
+
+Two nearby pieces are deliberately *not* the first target. **BWV 849** is a triple fugue, which is the multi-shape
+tiling problem and strictly harder. **BWV 857** is the case the roughness model handles worst, its chromatic
+subject living exactly where §5 says the model goes blind.
+
+A note worth recording, because it is counter-intuitive: the *Art of Fugue* is the **easier** target for this
+machinery, though it is the harder music. It is an explicit, systematic exploration of transformations of one
+subject, so its aesthetic content and its combinatorial content very nearly coincide — which is the ideal case for
+a method whose entire vocabulary is affine maps of a shape. The Well-Tempered Clavier fugues use counterpoint in
+service of affect, and affect is the part that does not transfer.
 
 ### 6.1 The measurement
 
@@ -201,8 +249,9 @@ If the optimized subject scores below Bach's, that is the more interesting resul
    contain a parallel fifth is reported illegal, and no sampling density changes the verdict.
 3. **`min_over_curve` reuse.** The pitch-time path query is the motion-planning one; if that plan is built first,
    this step is an import.
-4. **Capacity for a fixed subject (§6.1).** Enumerate entries, greedy-insert, record `d_k`. First audible
-   artifact: render the packed stretto to MIDI and listen to it.
+4. **Capacity for a fixed subject (§6.1), on BWV 867's subject.** Enumerate entries, use maximin to locate room,
+   place each entry as tightly as the margin allows, record `d_k`. First audible artifact: render the packed
+   stretto to MIDI and listen to it. The honest comparison is against Bach's own stretto in the same piece.
 5. **Corpus measurement.** Capacity for a dozen historical subjects against random contours. The validation, and
    the first result worth showing anyone.
 6. **Subject design (§6.2).** Continuous optimization over the contour, with `Manifold` weights decaying from the
@@ -222,5 +271,9 @@ If the optimized subject scores below Bach's, that is the more interesting resul
   nothing here knows the difference between a cadence and a stop.
 - **The 2-approximation guarantee, meaningfully.** It bounds `k`-center in a metric space. Applied to entry
   *diversity* (§6.4's reading) it says something real; applied to musical quality it says nothing at all.
+- **Resolution.** The roughness field is instantaneous. It cannot represent a dissonance that is *prepared and
+  resolves*, which is the device most of the repertoire worth imitating is built from. Extending the primitive to
+  see a short window of time rather than an instant is the obvious repair and is not planned here.
 - **Anything about whether the result is good.** §5 is not a caveat to be managed. It is the boundary of the
-  method, and the honest claim is a certificate of legality plus a measurement of capacity — not a composition.
+  method, and the honest claim is a certificate of legality, a search for where material fits, and a measurement
+  of capacity — not a composition.
