@@ -19,6 +19,7 @@
 //! and the largest secant over random pairs (a lower bound on the true constant,
 //! which also catches jumps a derivative would step over).
 
+mod capacity;
 mod certify;
 mod roughness;
 mod voice;
@@ -408,4 +409,105 @@ fn step3(timbre: &Timbre) {
   println!("\n   This map is an ADF over placement space in all but name: cells proved");
   println!("   clear, cells with a witness, and cells the budget could not settle.");
   println!("   Step 4 packs entries into the cleared region.");
+
+  step4(timbre);
+}
+
+/// A slow stepwise subject spanning a fourth, in the *manner* of BWV 867.
+///
+/// **Not a transcription.** The roadmap names WTC I No. 22 as the benchmark, and
+/// its real subject should be entered here — but writing one out from memory and
+/// labelling it Bach would be a fabrication in a document that is otherwise
+/// measured, so this is a labelled stand-in with the right character: slow, mostly
+/// stepwise, narrow in range. Swapping in the real notes is a change to this one
+/// array and nothing else.
+const SUBJECT_867ISH: [(f64, f64); 5] =
+  [(0.0, 0.4), (200.0, 0.2), (300.0, 0.2), (500.0, 0.4), (300.0, 0.4)];
+
+fn interval_name(cents: f64) -> &'static str {
+  let c = ((cents % 1200.0) + 1200.0) % 1200.0;
+  match c {
+    x if x < 50.0 || x > 1150.0 => "unison/8ve",
+    x if x < 150.0 => "minor 2nd",
+    x if x < 250.0 => "major 2nd",
+    x if x < 350.0 => "minor 3rd",
+    x if x < 450.0 => "major 3rd",
+    x if x < 550.0 => "perfect 4th",
+    x if x < 650.0 => "tritone",
+    x if x < 760.0 => "perfect 5th",
+    x if x < 850.0 => "minor 6th",
+    x if x < 950.0 => "major 6th",
+    x if x < 1050.0 => "minor 7th",
+    _ => "major 7th",
+  }
+}
+
+/// Step 4: how many entries will this subject bear?
+fn step4(timbre: &Timbre) {
+  const THETA_PAIR: f64 = 0.30;
+  const ATTACK: f64 = 0.020;
+  const WIN: (f64, f64) = (0.0, 3.2);
+
+  println!("\n\n===== step 4: contrapuntal capacity =====");
+  println!("\n   subject: 5 notes, stepwise, spanning a fourth — in the manner of");
+  println!("   BWV 867 but NOT a transcription (see the source comment)\n");
+
+  let mut setup = capacity::Setup {
+    subject: SUBJECT_867ISH.to_vec(),
+    theta_pair: THETA_PAIR,
+    attack: ATTACK,
+    timbre: timbre.clone(),
+    window: WIN,
+    l_t: 0.0,
+  };
+  setup.l_t = {
+    let mut worst: f64 = 0.0;
+    let base = capacity::Entry { onset: 0.0, cents: 0.0 };
+    for i in 0..6 {
+      let v = [setup.voice(base),
+               setup.voice(capacity::Entry { onset: 0.3, cents: 200.0 * i as f64 })];
+      worst = worst.max(certify::time_slope(&v, ATTACK, timbre, WIN, 40_000));
+    }
+    worst
+  };
+
+  // normalise so every primitive is exactly 1-Lipschitz
+  let scale = capacity::Scale::from_constants(0.042, 25.0);
+  println!("   θ_pair = {THETA_PAIR}, attack {:.0} ms, |dR/dt| = {:.1}/s", ATTACK * 1e3, setup.l_t);
+  println!("   normalised: {:.0} cents and {:.0} ms to the unit\n",
+    scale.cents_per_unit, scale.secs_per_unit * 1e3);
+
+  let placed = capacity::capacity(
+    &setup, (0.0, 1200.0), (0.15, 1.30), &scale, 10, 9, 15);
+
+  println!("   {:>3} {:>9} {:>9} {:>14} {:>10}", "k", "onset", "cents", "interval", "d_k");
+  println!("   {}", "-".repeat(50));
+  for (k, (e, d)) in placed.iter().enumerate() {
+    println!("   {:>3} {:>8.2}s {:>9.0} {:>14} {:>10.4}",
+      k + 1, e.onset, e.cents, interval_name(e.cents), d);
+  }
+
+  if placed.len() >= 2 {
+    let (first, last) = (placed[0].1, placed[placed.len() - 1].1);
+    println!("\n   clearance fell {first:.4} -> {last:.4} over {} entries", placed.len());
+  }
+  println!("   the texture took {} answers before no legal placement remained", placed.len());
+
+  // Is it full, or did the search give up? The greedy field is a lower bound, so
+  // it can hide legal placements. Scan independently.
+  let mut committed = vec![capacity::Entry { onset: 0.0, cents: 0.0 }];
+  committed.extend(placed.iter().map(|(e, _)| *e));
+  let (e, v) = capacity::best_remaining(
+    &setup, &committed, (0.0, 1200.0), (0.15, 1.30), 16, 10, 15);
+  println!("
+   independent grid scan of what remains:");
+  if v > 0.0 {
+    println!("   found {v:.4} at {:.2}s / {:.0} cents ({}) — the greedy search stopped",
+      e.onset, e.cents, interval_name(e.cents));
+    println!("   early, so the count above is a FLOOR on capacity, not a measurement");
+  } else {
+    println!("   best remaining clearance {v:.4} <= 0 — the texture really is full");
+  }
+  println!("\n   d_k is the capacity curve of §6.1. Its decay is the number this whole");
+  println!("   document exists to produce; comparing it across subjects is step 5.");
 }

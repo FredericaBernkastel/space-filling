@@ -17,6 +17,9 @@ name = "ricercar"
 path = "src/main.rs"
 
 [dependencies]
+# step 4 hands the placement search to the main crate rather than hand-rolling
+# a fourth branch and bound — see readme §7.3
+adaptive-distance-field = { path = "../../adaptive-distance-field" }
 rand = { version = "0.10", default-features = false }
 rand_pcg = "0.10"
 

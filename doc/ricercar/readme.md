@@ -247,11 +247,11 @@ If the optimized subject scores below Bach's, that is the more interesting resul
    rough intervals there is (0.089, measured in §7.1). Substituted a brief semitone collision, which the model can
    actually see.
 3. ~~**Certify over the placement parameters, not only time.**~~ **Done — see §7.3.**
-4. **Capacity for a fixed subject (§6.1), on BWV 867's subject.** Enumerate entries, use maximin to locate room,
-   place each entry as tightly as the margin allows, record `d_k`. First audible artifact: render the packed
-   stretto to MIDI and listen to it. The honest comparison is against Bach's own stretto in the same piece.
-5. **Corpus measurement.** Capacity for a dozen historical subjects against random contours. The validation, and
-   the first result worth showing anyone.
+4. ~~**Capacity for a fixed subject.**~~ **Partly done — see §7.4.** The pipeline runs and the capacity is
+   verified, but on a *stand-in* subject rather than BWV 867's, and the MIDI render is not written.
+5. **Corpus measurement.** Capacity for a dozen historical subjects against random contours. **Blocked on
+   pinning `θ`** — see §7.4: capacity is acutely sensitive to it, so a comparison run at an arbitrary threshold
+   measures the threshold rather than the subject. Needs the real BWV 867 subject entered, and MIDI, first.
 6. **Subject design (§6.2).** Continuous optimization over the contour, with `Manifold` weights decaying from the
    head. Compare against the corpus.
 7. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
@@ -392,6 +392,54 @@ should hand this to the main crate rather than hand-roll a fourth branch and bou
 
 `θ` is a free parameter here, not a measured one: it sets how strict the counterpoint is, and the map's shape
 moves with it. Nothing in this document derives a principled value, and nothing should pretend to.
+
+### 7.4 Step 4 result: the pipeline closes, on two answers
+
+§7.3 ended by saying to stop hand-rolling branch and bounds and hand the placement search to the main crate. Doing
+that needed one reformulation.
+
+**A sum is not a `min`.** Steps 1–3 thresholded the *total* roughness, `θ − Σ_pairs r`, and an `ADF` represents a
+minimum of primitives, so no single field can carry a sum. Moving the threshold onto the **pair** — no two voices
+exceed `θ_pair` at any instant — gives
+
+```text
+g(p) = min over committed e of [ min over t ( θ_pair − r(p, e; t) ) ]
+```
+
+which is exactly one primitive per committed entry. It is also the more musical rule: counterpoint constrains the
+interval between two voices, not the aggregate roughness of a texture.
+
+**Normalised coordinates retire the constants.** Cents and seconds differ by three orders of magnitude and the
+`ADF` charges one scalar against a Euclidean half-diagonal, so each axis is scaled by its own constant — 24 cents
+and 40 ms to the unit — and every primitive is then exactly 1-Lipschitz. The same trick as scaling a space-time box
+by the asteroid speed.
+
+With that, the whole main-crate pipeline applies unchanged: `ADF` over placement space, `LineSearch` to the
+emptiest point, insert, repeat.
+
+| k | onset | cents | interval | `d_k` |
+|---:|---:|---:|---|---:|
+| 1 | 0.72 s | 825 | minor 6th | 0.0489 |
+| 2 | 0.27 s | 1026 | minor 7th | 0.0354 |
+
+**Two answers, then saturation** — and the saturation is checked rather than assumed. The greedy search runs on a
+*lower* bound, which is sound but conservative: a loose bound understates clearance everywhere and could hide
+legal placements, so termination might be the search giving up rather than the texture being full. An independent
+grid scan at verification depth finds a best remaining clearance of **−0.0104**, so it really is full.
+
+**Three things this does not deliver.**
+
+*The subject is not Bach's.* The roadmap names BWV 867 and the code uses a labelled stand-in with the right
+character — slow, stepwise, spanning a fourth. Writing out a subject from memory and calling it Bach would be a
+fabrication in a document that is otherwise measured. Swapping in the real notes is a change to one array.
+
+*Two points are not a decay curve.* §6.1 promised a capacity *exponent*, and a sequence of length two cannot give
+one. Whatever else changes, the texture has to admit enough entries for `d_k` to have a slope.
+
+*And `θ` is doing far too much of the work.* A sustained major third measures 0.263 against a threshold of 0.30, so
+this run forbids very nearly everything a real fugue does. Capacity is acutely sensitive to a number §7.3 already
+flagged as unprincipled. **Step 5 is blocked on that**: a corpus comparison run at an arbitrary threshold measures
+the threshold, not the subjects, and would produce a ranking that looks like a result and is not one.
 
 ---
 
